@@ -396,7 +396,7 @@
       if (p.st.burnt) ctx.issue(p, 'burnt', 'danger', 'The knob burned inside', 'When the knob is turned to the end, its resistance is almost 0 Ω. With no other resistor, a big current flows and burns it.');
       else if (pw > 0.25) ctx.issue(p, 'hot', 'warn', 'The knob is getting hot', 'Too much current goes through the knob. Put a fixed resistor in the loop too.');
     },
-    hot: [{ id: 'knob', x: 2, y: -3.3, r: 2.8, kind: 'knob' }],
+    hot: [{ id: 'knob', x: 2, y: -3.3, r: 2.2, kind: 'knob' }],
     info: function (p) {
       var a = p.props.pos, R = p.props.r;
       return [['Leg 1 to wiper', fmtR(a * R)], ['Wiper to leg 3', fmtR((1 - a) * R)], ['Current', fmtI(p._i || 0)]];
@@ -421,7 +421,7 @@
     name: '9V battery', cat: 'power', kind: 'module',
     desc: 'A 9 volt battery with a snap clip. The red wire is +, the black wire is −.',
     pins: [{ n: '+', d: 'Red wire (+)' }, { n: '−', d: 'Black wire (−)' }],
-    size: [19.5, 10.5], leadFrom: [[19.5, 3.4], [19.5, 7.1]],
+    size: [19.5, 10.5], leadFrom: [[0, 3.4], [0, 7.1]],
     defaults: {}, props: [],
     stamp: function (p, n) { battStamp(p, n, 9, 2); },
     after: function (p, r, ctx) { battAfter(p, r, ctx, 1, '9V battery'); },
@@ -431,7 +431,7 @@
     name: 'AA battery holder', cat: 'power', kind: 'module',
     desc: 'A holder for AA batteries in series. Each AA cell gives 1.5 V, so 2 cells give 3 V and 4 cells give 6 V.',
     pins: [{ n: '+', d: 'Red wire (+)' }, { n: '−', d: 'Black wire (−)' }],
-    size: [22.5, 13], leadFrom: [[22.5, 4.5], [22.5, 8.5]],
+    size: [22.5, 13], leadFrom: [[0, 4.5], [0, 8.5]],
     defaults: { cells: 2 },
     props: [{ k: 'cells', label: 'Cells', type: 'select', options: [2, 4], labels: ['2 × AA (3 V)', '4 × AA (6 V)'] }],
     stamp: function (p, n) { battStamp(p, n, 1.5 * p.props.cells, 0.15 * p.props.cells); },
@@ -445,7 +445,7 @@
     desc: 'A power board that plugs onto the end of the breadboard. A yellow jumper on each side picks 3.3V or 5V for that pair of rails.',
     pins: [{ n: 'top +' }, { n: 'top +' }, { n: 'top −' }, { n: 'top −' }, { n: 'bottom +' }, { n: 'bottom +' }, { n: 'bottom −' }, { n: 'bottom −' }],
     pinPos: [[0, 0], [1, 0], [0, 1], [1, 1], [0, 16], [1, 16], [0, 17], [1, 17]],
-    body: [-9.2, -1.6, 3.3, 18.6],
+    body: [-9.2, -1.6, 3.3, 18.6], covers: true,
     defaults: { top: '5', bottom: '5', on: true, pcb: 'black' },
     props: [
       { k: 'top', label: 'Top rails', type: 'seg', options: ['3.3', 'off', '5'], labels: ['3.3V', 'OFF', '5V'] },
@@ -481,7 +481,7 @@
       }
       if (p.st.tripped && ctx.t - p.st.tripT > 1.5) p.st.tripped = false;
     },
-    hot: [{ id: 'jtop', x: -1.9, y: 2.6, r: 1.7, kind: 'jumper', side: 'top' }, { id: 'jbot', x: -1.9, y: 14.4, r: 1.7, kind: 'jumper', side: 'bottom' }, { id: 'sw', x: -6.6, y: 8.5, r: 1.8, kind: 'switch' }],
+    hot: [{ id: 'jtop', x: -1.7, y: 2.0, r: 1.6, kind: 'jumper', side: 'top' }, { id: 'jbot', x: -1.7, y: 13.8, r: 1.6, kind: 'jumper', side: 'bottom' }, { id: 'sw', x: -6.7, y: 8.5, r: 1.6, kind: 'switch' }],
     info: function (p, r) {
       return [['Top rails', p.props.top === 'off' ? 'Off' : p.props.top + ' V'], ['Bottom rails', p.props.bottom === 'off' ? 'Off' : p.props.bottom + ' V'], ['Power', p.props.on ? 'On' : 'Off'], ['Current out', fmtI(p._i || 0) + ' (max 700 mA)']];
     }
@@ -492,7 +492,7 @@
     name: 'Multimeter', cat: 'tools', kind: 'module',
     desc: 'Measures voltage (V), current (A) and resistance (Ω). Red probe = +, black probe = COM (−).',
     pins: [{ n: 'red', d: 'Red probe (V Ω mA)' }, { n: 'black', d: 'Black probe (COM)' }],
-    size: [22, 38], leadFrom: [[8.2, 37.2], [13.8, 37.2]],
+    size: [15.4, 26.6], leadFrom: [[5.74, 26.04], [9.66, 26.04]],
     defaults: { mode: 'V' },
     props: [{ k: 'mode', label: 'Dial', type: 'seg', options: ['off', 'V', 'A', 'ohm'], labels: ['OFF', 'V ⎓', 'mA ⎓', 'Ω'] }],
     stamp: function (p, n) {
@@ -537,10 +537,11 @@
           'In mA mode the meter is almost like a wire (about 1 Ω). Across a battery or rail it makes a short circuit, so its fuse blows. ' +
           'To measure current, open the circuit and put the meter in the gap (in series). Tap the meter and press “New fuse”.');
       }
+      p._i = p._e.el !== undefined ? r.i(p._e.el) : 0;
       p.st.reading = { m: m, text: read, unit: unit, val: val };
       p.vis = { text: read, unit: unit, m: m };
     },
-    hot: [{ id: 'dial', x: 11, y: 21.5, r: 6.5, kind: 'dial' }],
+    hot: [{ id: 'dial', x: 7.7, y: 15.05, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
       return [['Reading', (rd.text || '—') + ' ' + (rd.unit || '')]];
@@ -553,7 +554,7 @@
     name: 'Arduino Nano', cat: 'boards', kind: 'rigid', mcu: 'nano',
     desc: 'A small Arduino board (ATmega328P chip). It works at 5V. Put it across the middle gap so each pin has its own strip.',
     pins: np.pins, pinPos: np.pos,
-    body: [-2.0, -0.6, 15.0, 6.6],
+    body: [-2.0, -0.6, 15.0, 6.6], covers: true,
     defaults: { usb: true, program: 'none' },
     props: [{ k: 'usb', label: 'USB cable plugged in', type: 'toggle' }],
     links: function (p) { var g = []; var gi = []; np.pins.forEach(function (pin, i) { if (pin.kind === 'gnd') gi.push(i); }); for (var k = 1; k < gi.length; k++) g.push([gi[0], gi[k]]); return g; },
@@ -565,7 +566,7 @@
     name: 'ESP32 Feather (HUZZAH32)', cat: 'boards', kind: 'rigid', mcu: 'esp32',
     desc: 'An Adafruit board with an ESP32 chip (Wi-Fi + Bluetooth). It works at 3.3V: its pins must never get 5V.',
     pins: fp.pins, pinPos: fp.pos,
-    body: [-2.6, -0.55, 17.4, 8.55],
+    body: [-2.6, -0.55, 17.4, 8.55], covers: true,
     defaults: { usb: true, program: 'none' },
     props: [{ k: 'usb', label: 'USB cable plugged in', type: 'toggle' }],
     links: function () { return []; },
@@ -642,11 +643,11 @@
   function sclName(m) { var d = PARTS[m.type]; var q = d.pins.find(function (x) { return x.scl; }); return q ? q.n : 'SCL'; }
 
   PARTS.oled = {
-    name: 'OLED screen 128×64 (I2C)', cat: 'modules', kind: 'rigid',
-    desc: 'A small screen. It talks with the board over I2C: two wires, SDA (data) and SCL (clock). It works with 3.3V or 5V.',
+    name: 'OLED screen 128×64 (I2C)', cat: 'modules', kind: 'offboard',
+    desc: 'A small screen. It talks with the board over I2C: two wires, SDA (data) and SCL (clock). It works with 3.3V or 5V. Connect its 4 pins with jumper wires.',
     pins: [{ n: 'GND' }, { n: 'VCC' }, { n: 'SCL' }, { n: 'SDA' }],
-    pinPos: [[0, 0], [1, 0], [2, 0], [3, 0]],
-    body: [-3.8, -0.7, 6.8, 10.0],
+    pinPos: [[3.8, 0.75], [4.8, 0.75], [5.8, 0.75], [6.8, 0.75]],
+    size: [10.6, 10.7],
     defaults: {}, props: [],
     stamp: function (p, n) {
       n.R('p1', 'p0', 250); // about 20 mA at 5 V
@@ -677,7 +678,7 @@
     desc: 'Shows one digit with 7 LED bars (a to g) and a dot. All the − sides are joined at COM (common cathode). Each bar needs its own resistor.',
     pins: [{ n: 'g' }, { n: 'f' }, { n: 'COM' }, { n: 'a' }, { n: 'b' }, { n: 'e' }, { n: 'd' }, { n: 'COM' }, { n: 'c' }, { n: 'dp' }],
     pinPos: [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [0, 6], [1, 6], [2, 6], [3, 6], [4, 6]],
-    body: [-0.9, -0.55, 4.9, 6.55],
+    body: [-0.9, -0.55, 4.9, 6.55], covers: true,
     defaults: { color: 'red' }, props: [],
     links: function () { return [[2, 7]]; },
     stamp: function (p, n) {

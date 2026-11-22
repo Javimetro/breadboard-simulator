@@ -86,7 +86,7 @@
     var cov = {}, self = this;
     this.state.parts.forEach(function (p) {
       var def = PARTS[p.type];
-      if (def.kind !== 'rigid' || p.free || !def.body) return;
+      if (def.kind !== 'rigid' || p.free || !def.covers) return;
       var b = self.bodyRect(p);
       self.board.holes.forEach(function (h) {
         if (h.x > b.x0 + 0.3 && h.x < b.x1 - 0.3 && h.y > b.y0 + 0.3 && h.y < b.y1 - 0.3) cov[h.id] = p.id;
@@ -151,6 +151,7 @@
     var res = { v: accV, i: accI, island: r.island, refOf: r.refOf, converged: r.converged, capV: capV };
     this.interpret(built, res, dt, nets);
     this._dirty = false;
+    this.ver = (this.ver || 0) + 1;
     return this.res;
   };
 

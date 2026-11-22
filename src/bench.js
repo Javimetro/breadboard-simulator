@@ -1,0 +1,577 @@
+// The workbench view: draws the board and parts in an SVG, handles pan / pinch-zoom,
+// dragging parts and legs, the wire tool, hole highlights and the current animation.
+(function () {
+  'use strict';
+  var BB = (globalThis.BB = globalThis.BB || {});
+  var PARTS = BB.PARTS, U = BB.art.U, DRAW = BB.art.DRAW;
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  var LAYER = { offboard: 0, rigid: 1, leads: 2, module: 3, wire: 4 };
+
+  function Bench(svg, app) {
+    this.svg = svg; this.app = app;
+    svg.innerHTML = BB.art.defs();
+    this.world = el('g', { id: 'world' }, svg);
+    this.content = el('g', { id: 'content' }, this.world);
+    this.gBoard = el('g', {}, this.content);
+    this.gHi = el('g', { class: 'hi' }, this.content);
+    this.gParts = el('g', {}, this.content);
+    this.gFlow = el('g', { class: 'flow' }, this.content);
+    this.gLabels = el('g', { class: 'vlabels' }, this.content);
+    this.gUi = el('g', {}, this.content);
+    this.view = { s: 1, tx: 0, ty: 0 };
+    this.tool = 'move';
+    this.sel = null;
+    this.xray = false;
+    this.showFlow = false;
+    this.hiHole = null;
+    this.partEls = {};
+    this.partKeys = {};
+    this.pointers = {};
+    this.drag = null;
+    this.wireStart = null;
+    this.flowKey = '';
+    this.wireColorIdx = 0;
+    this.loupe = document.getElementById('loupe');
+    this.tip = document.getElementById('tip');
+    this.bind();
+  }
+  var B = Bench.prototype;
+
+  B.setSim = function (sim) { this.sim = sim; this.sel = null; this.hiHole = null; this.wireStart = null; this.renderBoard(); this.clearParts(); this.render(true); };
+  B.clearParts = function () { this.gParts.innerHTML = ''; this.partEls = {}; this.partKeys = {}; this.flowKey = ''; this.gFlow.innerHTML = ''; this.gLabels.innerHTML = ''; };
+
+  // ---------- view ----------
+  B.applyView = function () {
+    var v = this.view;
+    this.world.setAttribute('transform', 'translate(' + v.tx.toFixed(2) + ' ' + v.ty.toFixed(2) + ') scale(' + v.s.toFixed(4) + ')');
+  };
+  B.size = function () { var r = this.svg.getBoundingClientRect(); return { w: r.width || 1, h: r.height || 1, left: r.left, top: r.top }; };
+  // Fit a world rectangle into the view. insetTop keeps it below an overlay (the goal card).
+  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight) {
+    var sz = this.size(); pad = pad === undefined ? 16 : pad; insetTop = insetTop || 0; insetRight = insetRight || 0;
+    var w = (x1 - x0) * U, h = (y1 - y0) * U;
+    var aw = sz.w - insetRight, ah = sz.h - insetTop;
+    var s = Math.min((aw - 2 * pad) / w, (ah - 2 * pad) / h);
+    s = Math.max(0.25, Math.min(8, s));
+    this.view.s = s;
+    this.view.tx = (aw - w * s) / 2 - x0 * U * s;
+    this.view.ty = insetTop + (ah - h * s) / 2 - y0 * U * s;
+    this.applyView();
+  };
+  B.fitAll = function () {
+    var b = this.sim.board, x0 = b.x0, y0 = b.y0, x1 = b.x1, y1 = b.y1, self = this;
+    this.sim.state.parts.forEach(function (p) {
+      var r = self.sim.bodyRect(p);
+      x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1);
+      if (p.ends) self.sim.pinPoints(p).forEach(function (q) { x0 = Math.min(x0, q.x - 1); x1 = Math.max(x1, q.x + 1); y0 = Math.min(y0, q.y - 1); y1 = Math.max(y1, q.y + 4); });
+    });
+    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1);
+  };
+  B.toWorld = function (cx, cy) {
+    var sz = this.size(), v = this.view;
+    return { x: (cx - sz.left - v.tx) / v.s / U, y: (cy - sz.top - v.ty) / v.s / U };
+  };
+  B.toScreen = function (x, y) { var v = this.view; return { x: x * U * v.s + v.tx, y: y * U * v.s + v.ty }; };
+  B.zoomAt = function (cx, cy, k) {
+    var sz = this.size(), v = this.view;
+    var ns = Math.max(0.25, Math.min(8, v.s * k));
+    var px = cx - sz.left, py = cy - sz.top;
+    v.tx = px - (px - v.tx) * ns / v.s; v.ty = py - (py - v.ty) * ns / v.s; v.s = ns;
+    this.applyView();
+  };
+
+  // ---------- drawing ----------
+  B.renderBoard = function () { this.gBoard.innerHTML = BB.art.board(this.sim.board, this.xray); };
+  B.layerOf = function (p) {
+    var k = PARTS[p.type].kind;
+    if (p.type === 'wire') return LAYER.wire;
+    return LAYER[k] !== undefined ? LAYER[k] : 1;
+  };
+  B.render = function (force) {
+    var sim = this.sim, self = this, now = sim.t;
+    var parts = sim.state.parts.slice().sort(function (a, b) {
+      var la = self.layerOf(a), lb = self.layerOf(b);
+      if (la !== lb) return la - lb;
+      return (a.id === self.sel) - (b.id === self.sel);
+    });
+    var seen = {};
+    parts.forEach(function (p, idx) {
+      seen[p.id] = true;
+      var pts = sim.pinPoints(p);
+      var svg = DRAW[p.type](p, pts, now, p.id === self.sel);
+      if (p.free && PARTS[p.type].kind === 'rigid') svg = '<g opacity=".93" transform="translate(0 -3)">' + svg + '</g>';
+      var g = self.partEls[p.id];
+      if (!g) { g = el('g', { 'data-id': p.id }); self.partEls[p.id] = g; }
+      if (force || self.partKeys[p.id] !== svg) { g.innerHTML = svg; self.partKeys[p.id] = svg; }
+      if (self.gParts.childNodes[idx] !== g) self.gParts.insertBefore(g, self.gParts.childNodes[idx] || null);
+    });
+    Object.keys(this.partEls).forEach(function (id) { if (!seen[id]) { self.partEls[id].remove(); delete self.partEls[id]; delete self.partKeys[id]; } });
+    this.renderUi();
+    this.renderFlow();
+  };
+  // selection outline, issue rings, wire rubber band, highlighted holes
+  B.renderUi = function () {
+    var s = '', sim = this.sim, self = this;
+    if (this.sel) {
+      var p = sim.part(this.sel);
+      if (p) {
+        var r = sim.bodyRect(p);
+        s += '<rect x="' + (r.x0 * U - 3) + '" y="' + (r.y0 * U - 3) + '" width="' + ((r.x1 - r.x0) * U + 6) + '" height="' + ((r.y1 - r.y0) * U + 6) + '" rx="5" class="selbox"/>';
+        if (p.ends && !p.locked) sim.pinPoints(p).forEach(function (q) { s += '<circle cx="' + q.x * U + '" cy="' + q.y * U + '" r="' + Math.max(3.4, 9 / self.view.s) + '" class="handle"/>'; });
+      }
+    }
+    var issues = sim.res ? sim.res.issues : [];
+    var marked = {};
+    issues.forEach(function (is) {
+      if (marked[is.part]) return; marked[is.part] = 1;
+      var p = sim.part(is.part); if (!p) return;
+      var r = sim.bodyRect(p);
+      var cx = (r.x0 + r.x1) / 2 * U, cy = (r.y0 + r.y1) / 2 * U, rad = Math.max(14, Math.min(60, Math.max(r.x1 - r.x0, r.y1 - r.y0) * U / 2 + 6));
+      s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rad + '" class="issue ' + is.level + '"/>';
+    });
+    if (this.wireStart) {
+      var a = this.pointPos(this.wireStart);
+      s += '<circle cx="' + a.x * U + '" cy="' + a.y * U + '" r="5" class="wirestart"/>';
+      if (this.hover) s += '<path d="' + BB.wirePath({ x: a.x * U, y: a.y * U }, { x: this.hover.x * U, y: this.hover.y * U }) + '" class="rubber"/>';
+    }
+    if (this.drag && this.drag.kind === 'wire' && this.drag.moved && this.drag.cur) {
+      var a2 = this.pointPos(this.drag.start), c = this.drag.cur;
+      s += '<path d="' + BB.wirePath({ x: a2.x * U, y: a2.y * U }, { x: c.x * U, y: c.y * U }) + '" class="rubber"/>';
+      if (this.drag.snap) { var sp = this.pointPos(this.drag.snap); s += '<circle cx="' + sp.x * U + '" cy="' + sp.y * U + '" r="4.5" class="snap"/>'; }
+    }
+    if (this.drag && this.drag.snapShow) { var q = this.drag.snapShow; s += '<circle cx="' + q.x * U + '" cy="' + q.y * U + '" r="4.5" class="snap"/>'; }
+    this.gUi.innerHTML = s;
+    // highlighted holes
+    var h = '';
+    if (this.hiHole) {
+      var holes = sim.connectedHoles(this.hiHole);
+      holes.forEach(function (id) { var o = sim.board.byId[id]; h += '<rect x="' + (o.x * U - 3.6) + '" y="' + (o.y * U - 3.6) + '" width="7.2" height="7.2" rx="2"/>'; });
+      var me = sim.board.byId[this.hiHole];
+      if (me) h += '<circle cx="' + me.x * U + '" cy="' + me.y * U + '" r="6.5" class="me"/>';
+      sim.connectedPins('H:' + sim.board.byId[this.hiHole].strip).forEach(function (q) { if (!sim.board.holeAt(q.x, q.y)) h += '<circle cx="' + q.x * U + '" cy="' + q.y * U + '" r="4.5"/>'; });
+    }
+    this.gHi.innerHTML = h;
+  };
+  B.pointPos = function (at) { return this.sim.endPos({ at: at }); };
+
+  // Current animation: dashes move along each path in the direction of conventional current.
+  B.renderFlow = function () {
+    var sim = this.sim, res = sim.res;
+    if (!this.showFlow || !res) { if (this.flowKey) { this.gFlow.innerHTML = ''; this.gLabels.innerHTML = ''; this.flowKey = ''; } return; }
+    var segs = [], self = this;
+    function add(d, i) {
+      var a = Math.abs(i); if (a < 2e-6) return;
+      segs.push({ d: d, i: i, a: a });
+    }
+    function line(x1, y1, x2, y2, i) {
+      if (i < 0) { var t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+      add('M' + (x1 * U).toFixed(1) + ' ' + (y1 * U).toFixed(1) + 'L' + (x2 * U).toFixed(1) + ' ' + (y2 * U).toFixed(1), i);
+    }
+    sim.state.parts.forEach(function (p) {
+      var def = PARTS[p.type], pts = sim.pinPoints(p), pin = res.pinIn[p.id];
+      if (!pin) return;
+      if (def.kind === 'leads') {
+        var i = pin[0];
+        if (p.type === 'wire') {
+          var a = pts[0], b = pts[1];
+          if (i < 0) { var t = a; a = b; b = t; }
+          add(BB.wirePath({ x: a.x * U, y: a.y * U }, { x: b.x * U, y: b.y * U }), i);
+        } else line(pts[0].x, pts[0].y, pts[1].x, pts[1].y, i);
+      } else {
+        var r = sim.bodyRect(p), cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+        pts.forEach(function (q, k) {
+          var i2 = pin[k];
+          if (def.kind === 'module') { var lf = def.leadFrom[k]; line(q.x, q.y, p.x + lf[0], p.y + lf[1], i2); return; }
+          var dx = cx - q.x, dy = cy - q.y, L = Math.hypot(dx, dy) || 1, len = Math.min(1.6, L);
+          line(q.x, q.y, q.x + dx / L * len, q.y + dy / L * len, i2);
+        });
+      }
+    });
+    res.flows.forEach(function (f) { line(f.x1, f.y1, f.x2, f.y2, f.i); });
+    var key = segs.map(function (s) { return s.d + Math.round(Math.log10(s.a) * 4); }).join('|');
+    if (key !== this.flowKey) {
+      this.flowKey = key;
+      this.gFlow.innerHTML = segs.map(function (s) {
+        var lg = Math.log10(s.a); // 10 mA → -2
+        var dur = Math.max(0.18, Math.min(4, 0.9 - 0.45 * (lg + 2)));
+        var w = Math.max(1.2, Math.min(3.4, 2.2 + 0.5 * (lg + 2)));
+        return '<path d="' + s.d + '" style="animation-duration:' + dur.toFixed(2) + 's;stroke-width:' + w.toFixed(2) + '"/>';
+      }).join('');
+    }
+    // voltage tags: one per powered net, at its first used hole
+    var tags = {}, out = '';
+    sim.state.parts.forEach(function (p) {
+      sim.pinPoints(p).forEach(function (q, k) {
+        var key2 = sim.keyOf(q, p, k);
+        if (key2[0] === 'F' || !res.keyPowered[key2]) return;
+        var net = res.nets.find(key2);
+        if (tags[net]) return;
+        tags[net] = 1;
+        var v = res.keyV[key2];
+        out += '<g transform="translate(' + (q.x * U + 4) + ' ' + (q.y * U - 6) + ')"><rect x="0" y="-7" width="' + (v < 0 ? 30 : 26) + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
+      });
+    });
+    if (out !== this.lastLabels) { this.gLabels.innerHTML = out; this.lastLabels = out; }
+  };
+
+  // ---------- hit testing ----------
+  B.tolPx = function (e) { return e && e.pointerType === 'mouse' ? 12 : 24; };
+  // Nearest attach point (hole or off-board pin) to world point w, within r (pitch units).
+  B.nearestPoint = function (w, r, opts) {
+    opts = opts || {};
+    var sim = this.sim, occ = opts.occ || sim.occupancy(), cov = opts.cov || sim.covered();
+    var best = null, bd = r * r;
+    var h = sim.board.nearest(w.x, w.y, r, function (o) {
+      if (cov[o.id] && cov[o.id] !== opts.self) return false;
+      if (opts.free && occ[o.id] && !(occ[o.id].id === opts.self && occ[o.id].k === opts.k)) return false;
+      return true;
+    });
+    if (h) { best = h.id; bd = (h.x - w.x) * (h.x - w.x) + (h.y - w.y) * (h.y - w.y); }
+    sim.state.parts.forEach(function (p) {
+      if (PARTS[p.type].kind !== 'offboard') return;
+      PARTS[p.type].pinPos.forEach(function (q, k) {
+        var id = 'P:' + p.id + ':' + k;
+        if (opts.free && occ[id] && !(occ[id].id === opts.self && occ[id].k === opts.k)) return;
+        var d = (p.x + q[0] - w.x) * (p.x + q[0] - w.x) + (p.y + q[1] - w.y) * (p.y + q[1] - w.y);
+        if (d < bd) { bd = d; best = id; }
+      });
+    });
+    return best;
+  };
+  B.hitTest = function (w, e) {
+    var sim = this.sim, self = this, tol = this.tolPx(e) / this.view.s / U;
+    var parts = sim.state.parts;
+    // 1. leg / lead ends (selected part first)
+    var order = parts.slice().sort(function (a, b) { return (b.id === self.sel) - (a.id === self.sel) || self.layerOf(b) - self.layerOf(a); });
+    var bestEnd = null, bd = Infinity;
+    order.forEach(function (p) {
+      if (!p.ends || p.locked) return;
+      var lim = p.id === self.sel ? tol : Math.min(tol, 0.55);
+      sim.pinPoints(p).forEach(function (q, k) {
+        var d = Math.hypot(q.x - w.x, q.y - w.y);
+        if (d <= lim && d < bd - (p.id === self.sel ? 0.2 : 0)) { bd = d; bestEnd = { kind: 'end', id: p.id, k: k }; }
+      });
+    });
+    if (bestEnd) return bestEnd;
+    // 2. hot spots (button, knob, jumpers, switch, dial)
+    for (var i = order.length - 1; i >= 0; i--) { /* checked below in layer order */ }
+    var hot = null;
+    order.slice().reverse();
+    parts.slice().sort(function (a, b) { return self.layerOf(b) - self.layerOf(a); }).some(function (p) {
+      var def = PARTS[p.type];
+      if (!def.hot) return false;
+      return def.hot.some(function (h) {
+        var c = def.kind === 'rigid' ? BB.rotate(h.x, h.y, p.rot) : [h.x, h.y];
+        var d = Math.hypot(p.x + c[0] - w.x, p.y + c[1] - w.y);
+        if (d <= h.r + tol * 0.3) { hot = { kind: 'hot', id: p.id, hot: h }; return true; }
+        return false;
+      });
+    });
+    if (hot) return hot;
+    // 3. bodies, top layer first
+    var body = null;
+    parts.slice().sort(function (a, b) { return self.layerOf(b) - self.layerOf(a) || (b.id === self.sel) - (a.id === self.sel); }).some(function (p) {
+      if (p.ends && PARTS[p.type].kind === 'leads') {
+        var pts = sim.pinPoints(p);
+        var d = segDist(w, pts[0], pts[1]);
+        var lim = p.type === 'wire' ? Math.max(0.35, tol * 0.6) : Math.max(0.8, tol * 0.7);
+        if (d < lim) { body = { kind: 'body', id: p.id }; return true; }
+        return false;
+      }
+      var r = sim.bodyRect(p);
+      if (w.x >= r.x0 && w.x <= r.x1 && w.y >= r.y0 && w.y <= r.y1) { body = { kind: 'body', id: p.id }; return true; }
+      return false;
+    });
+    if (body) return body;
+    var h2 = sim.board.nearest(w.x, w.y, Math.max(0.5, tol * 0.8));
+    if (h2) return { kind: 'hole', hole: h2.id };
+    return { kind: 'empty' };
+  };
+  function segDist(p, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy;
+    var t = L ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L)) : 0;
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+  }
+
+  // ---------- pointer handling ----------
+  B.bind = function () {
+    var self = this, svg = this.svg;
+    svg.addEventListener('pointerdown', function (e) { self.down(e); });
+    svg.addEventListener('pointermove', function (e) { self.move(e); });
+    svg.addEventListener('pointerup', function (e) { self.up(e); });
+    svg.addEventListener('pointercancel', function (e) { self.cancel(e); });
+    svg.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') { self.hover = null; if (!self.drag && !self.stickyHi) { self.hiHole = null; self.renderUi(); } self.hideTip(); } });
+    svg.addEventListener('wheel', function (e) { e.preventDefault(); self.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015)); self.renderUi(); }, { passive: false });
+    svg.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  };
+  B.down = function (e) {
+    this.svg.setPointerCapture && this.svg.setPointerCapture(e.pointerId);
+    this.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(this.pointers);
+    if (ids.length === 2) { // pinch
+      if (this.drag && this.drag.undo && this.drag.moved) this.app.commit(this.drag.undo);
+      this.releasePress();
+      var a = this.pointers[ids[0]], b = this.pointers[ids[1]];
+      this.drag = { kind: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, v0: Object.assign({}, this.view) };
+      this.hideLoupe();
+      return;
+    }
+    if (ids.length > 2) return;
+    var w = this.toWorld(e.clientX, e.clientY);
+    var hit = this.tool === 'wire' ? this.wireHit(w, e) : this.hitTest(w, e);
+    this.drag = { kind: hit.kind, hit: hit, sx: e.clientX, sy: e.clientY, w0: w, t0: Date.now(), moved: false, v0: Object.assign({}, this.view), pid: e.pointerId, ptype: e.pointerType };
+    var p = hit.id ? this.sim.part(hit.id) : null;
+    if (hit.kind === 'hot' && hit.hot.kind === 'press') { p.st.pressed = true; this.sim.dirty(); this.app.onInteract('press', p); this.render(); }
+    if (hit.kind === 'hot' && hit.hot.kind === 'knob') { this.drag.pos0 = p.props.pos; this.drag.undo = this.app.snapshot(); }
+    if (hit.kind === 'body' && p && !p.locked) {
+      this.drag.undo = this.app.snapshot();
+      this.drag.orig = JSON.parse(JSON.stringify({ x: p.x, y: p.y, ends: p.ends, free: p.free }));
+    }
+    if (hit.kind === 'end') this.drag.undo = this.app.snapshot();
+  };
+  B.wireHit = function (w, e) {
+    var tol = Math.max(0.9, this.tolPx(e) / this.view.s / U);
+    var pnt = this.nearestPoint(w, tol);
+    if (pnt) return { kind: 'wire', start: pnt };
+    return { kind: 'empty' };
+  };
+  B.move = function (e) {
+    var d = this.drag;
+    if (this.pointers[e.pointerId]) this.pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var w = this.toWorld(e.clientX, e.clientY);
+    if (!d) { // mouse hover: highlight connected holes + tooltip
+      if (e.pointerType === 'mouse') {
+        this.hover = w;
+        var h = this.sim.board.nearest(w.x, w.y, 0.55);
+        var hit = h ? this.hitTest(w, e) : null;
+        var hid = h && hit && (hit.kind === 'hole' || hit.kind === 'end' || (hit.kind === 'body' && this.sim.occupancy()[h.id])) ? h.id : null;
+        if (!this.stickyHi && hid !== this.hiHole) { this.hiHole = hid; this.renderUi(); }
+        else if (this.wireStart) this.renderUi();
+        if (hid) this.showTip(hid, e.clientX, e.clientY); else this.hideTip();
+        this.svg.style.cursor = hit && (hit.kind === 'body' || hit.kind === 'end' || hit.kind === 'hot') ? 'grab' : (this.tool === 'wire' ? 'crosshair' : 'default');
+      }
+      return;
+    }
+    if (d.kind === 'pinch') {
+      var ids = Object.keys(this.pointers); if (ids.length < 2) return;
+      var a = this.pointers[ids[0]], b = this.pointers[ids[1]];
+      var dd = Math.hypot(a.x - b.x, a.y - b.y), m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      var v0 = d.v0, ns = Math.max(0.25, Math.min(8, v0.s * dd / d.d0));
+      var sz = this.size();
+      var wx = (d.m0.x - sz.left - v0.tx) / v0.s, wy = (d.m0.y - sz.top - v0.ty) / v0.s;
+      this.view = { s: ns, tx: m.x - sz.left - wx * ns, ty: m.y - sz.top - wy * ns };
+      this.applyView();
+      return;
+    }
+    if (e.pointerId !== d.pid) return;
+    var dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (!d.moved && Math.hypot(dx, dy) < (d.ptype === 'mouse' ? 4 : 8)) return;
+    if (!d.moved) {
+      d.moved = true;
+      if (d.hit.kind === 'hot' && d.hit.hot.kind === 'press') { // a press that turns into a drag
+        var bp = this.sim.part(d.hit.id);
+        this.releasePress();
+        if (bp && !bp.locked) { d.kind = 'body'; d.hit = { kind: 'body', id: bp.id }; d.undo = this.app.snapshot(); d.orig = JSON.parse(JSON.stringify({ x: bp.x, y: bp.y, free: bp.free })); }
+        else d.kind = 'pan';
+      }
+      if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id); } }
+      if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
+      if (d.kind === 'end') this.select(d.hit.id);
+    }
+    if (d.kind === 'pan') {
+      this.view.tx = d.v0.tx + dx; this.view.ty = d.v0.ty + dy; this.applyView();
+    } else if (d.kind === 'hot') {
+      var p = this.sim.part(d.hit.id);
+      p.props.pos = Math.max(0, Math.min(1, d.pos0 + (dx - dy) / 160));
+      this.sim.dirty(); this.app.onInteract('knob', p); this.app.refreshInspector();
+    } else if (d.kind === 'end') {
+      this.dragEnd(d, w, e);
+    } else if (d.kind === 'body') {
+      this.dragBody(d, w);
+    } else if (d.kind === 'wire') {
+      var tol = Math.max(0.9, this.tolPx(e) / this.view.s / U);
+      d.cur = w; d.snap = this.nearestPoint(w, tol);
+      this.renderUi();
+      this.showLoupe(e.clientX, e.clientY, d.snap ? this.pointPos(d.snap) : w);
+    }
+  };
+  B.dragEnd = function (d, w, e) {
+    var p = this.sim.part(d.hit.id), def = PARTS[p.type], k = d.hit.k;
+    var r = Math.max(0.75, 18 / this.view.s / U);
+    var at = this.nearestPoint(w, r, { free: true, self: p.id, k: k });
+    // keep short legs together: LED, capacitor and LDR legs cannot stretch far
+    if (def.maxSpan && p.ends.length === 2) {
+      var other = this.sim.endPos(p.ends[1 - k]);
+      var tgt = at ? this.pointPos(at) : w;
+      var dist = Math.hypot(tgt.x - other.x, tgt.y - other.y);
+      if (dist > def.maxSpan + 0.01) {
+        // pull the other leg along
+        var nx = tgt.x - (tgt.x - other.x) / dist * def.maxSpan, ny = tgt.y - (tgt.y - other.y) / dist * def.maxSpan;
+        var at2 = this.nearestPoint({ x: nx, y: ny }, 0.75, { free: true, self: p.id, k: 1 - k });
+        p.ends[1 - k] = at2 ? { at: at2 } : { x: nx, y: ny };
+      }
+    }
+    p.ends[k] = at ? { at: at } : { x: w.x, y: w.y };
+    d.snapShow = at ? this.pointPos(at) : null;
+    this.sim.dirty();
+    this.render();
+    this.showLoupe(e.clientX, e.clientY, at ? this.pointPos(at) : w, at);
+  };
+  B.dragBody = function (d, w) {
+    var p = this.sim.part(d.hit.id), def = PARTS[p.type], o = d.orig, sim = this.sim, self = this;
+    var dx = w.x - d.w0.x, dy = w.y - d.w0.y;
+    if (def.kind === 'leads') {
+      var occ = sim.occupancy(), cov = sim.covered();
+      var targets = o.ends.map(function (e, k) {
+        var pos = sim.endPos(e);
+        return { x: pos.x + dx, y: pos.y + dy, k: k };
+      });
+      // snap the whole part by one shared offset so it keeps its shape
+      var first = targets[0];
+      var h = sim.board.nearest(first.x, first.y, 0.75);
+      var ox = h ? h.x - first.x : 0, oy = h ? h.y - first.y : 0;
+      var ok = !!h;
+      var ats = targets.map(function (t) {
+        var hh = sim.board.holeAt(t.x + ox, t.y + oy);
+        if (!hh || Math.abs(hh.x - t.x - ox) > 0.05 || Math.abs(hh.y - t.y - oy) > 0.05) { ok = false; return null; }
+        var u = occ[hh.id]; if ((u && u.id !== p.id) || (cov[hh.id] && cov[hh.id] !== p.id)) { ok = false; return null; }
+        return hh.id;
+      });
+      p.ends = targets.map(function (t, k) { return ok ? { at: ats[k] } : { x: t.x, y: t.y }; });
+    } else if (def.kind === 'rigid') {
+      var nx = o.x + dx, ny = o.y + dy;
+      var best = null;
+      var occ2 = sim.occupancy(), cov2 = sim.covered();
+      var rx = Math.round(nx), ry = Math.round(ny);
+      var cands = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]];
+      for (var c = 0; c < cands.length && !best; c++) {
+        var cx = rx + cands[c][0], cy = ry + cands[c][1];
+        if (Math.hypot(cx - nx, cy - ny) > 1.2) continue;
+        var good = def.pinPos.every(function (q) {
+          var r = BB.rotate(q[0], q[1], p.rot), hh = sim.board.holeAt(cx + r[0], cy + r[1]);
+          if (!hh || Math.abs(hh.x - cx - r[0]) > 0.01 || Math.abs(hh.y - cy - r[1]) > 0.01) return false;
+          var u = occ2[hh.id]; if (u && u.id !== p.id) return false;
+          if (cov2[hh.id] && cov2[hh.id] !== p.id) return false;
+          return true;
+        });
+        if (good) best = [cx, cy];
+      }
+      if (best) { p.x = best[0]; p.y = best[1]; p.free = false; }
+      else { p.x = nx; p.y = ny; p.free = true; }
+    } else {
+      p.x = Math.round((o.x + dx) * 2) / 2; p.y = Math.round((o.y + dy) * 2) / 2;
+    }
+    sim.dirty();
+    this.render();
+  };
+  B.up = function (e) {
+    var d = this.drag;
+    delete this.pointers[e.pointerId];
+    this.hideLoupe();
+    if (!d) return;
+    if (d.kind === 'pinch') { if (Object.keys(this.pointers).length === 0) this.drag = null; return; }
+    if (e.pointerId !== d.pid) return;
+    this.drag = null;
+    if (!d.moved) { this.releasePress(); this.tap(d, e); this.renderUi(); return; }
+    if (d.kind === 'wire') {
+      if (d.snap && d.snap !== d.hit.start) this.app.addWire(d.hit.start, d.snap);
+      this.renderUi(); return;
+    }
+    if (d.kind === 'body' || d.kind === 'end') {
+      var p = this.sim.part(d.hit.id);
+      if (p && p.type === 'wire' && p.ends[0].at && p.ends[0].at === p.ends[1].at) this.app.removePart(p.id);
+      this.app.commit(d.undo);
+      if (p) this.app.onInteract('moved', p);
+    }
+    if (d.kind === 'hot' && d.undo) this.app.commit(d.undo);
+    this.renderUi();
+  };
+  B.cancel = function (e) { delete this.pointers[e.pointerId]; this.hideLoupe(); this.releasePress(); if (this.drag && this.drag.undo && this.drag.moved) this.app.commit(this.drag.undo); this.drag = null; };
+  B.releasePress = function () {
+    var self = this;
+    this.sim.state.parts.forEach(function (p) { if (p.type === 'button' && p.st.pressed && !p.st.latched) { p.st.pressed = false; self.sim.dirty(); self.app.onInteract('release', p); } });
+  };
+  B.tap = function (d, e) {
+    var hit = d.hit, sim = this.sim;
+    if (this.tool === 'wire') {
+      if (hit.kind === 'wire') {
+        if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
+        else if (this.wireStart === hit.start) this.wireStart = null;
+        else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
+      } else this.wireStart = null;
+      this.renderUi();
+      return;
+    }
+    if (hit.kind === 'hot') {
+      var p = sim.part(hit.id), h = hit.hot;
+      if (h.kind === 'jumper') { var u = this.app.snapshot(); var cyc = { '3.3': 'off', off: '5', '5': '3.3' }; p.props[h.side] = cyc[p.props[h.side]]; this.app.commit(u); this.app.onInteract('prop', p); }
+      else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
+      else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % 4]; this.app.commit(u3); this.app.onInteract('prop', p); }
+      this.select(p.id);
+      sim.dirty(); this.render();
+      return;
+    }
+    if (hit.kind === 'end' || hit.kind === 'body') {
+      this.select(hit.id);
+      var pt = sim.pinPoints(sim.part(hit.id));
+      if (hit.kind === 'end' && pt[hit.k].at && pt[hit.k].at.slice(0, 2) !== 'P:') this.app.onTapHole(pt[hit.k].at, true);
+      return;
+    }
+    if (hit.kind === 'hole') {
+      this.select(null);
+      this.hiHole = hit.hole; this.stickyHi = true;
+      this.app.onTapHole(hit.hole);
+      this.renderUi();
+      if (e.pointerType !== 'mouse') { var sc = this.toScreen(sim.board.byId[hit.hole].x, sim.board.byId[hit.hole].y), sz = this.size(); this.showTip(hit.hole, sc.x + sz.left, sc.y + sz.top); }
+      return;
+    }
+    this.select(null);
+    this.hiHole = null; this.stickyHi = false; this.hideTip();
+  };
+  B.select = function (id) {
+    if (this.sel === id) return;
+    this.sel = id;
+    if (id) { this.stickyHi = false; this.hiHole = null; this.hideTip(); }
+    this.app.onSelect(id);
+    this.render();
+  };
+
+  // ---------- tooltip & loupe ----------
+  B.showTip = function (holeId, x, y) {
+    var sim = this.sim, h = sim.board.byId[holeId];
+    var st = sim.board.strips[h.strip];
+    var v = sim.holeVoltage(holeId);
+    var occ = sim.occupancy()[holeId], what = '';
+    if (occ) { var p = sim.part(occ.id), pin = PARTS[p.type].pins[occ.k]; what = '<br>' + PARTS[p.type].name + (pin && pin.n ? ' · ' + pin.n : ''); }
+    this.tip.innerHTML = '<b>' + sim.board.label(holeId) + '</b> · ' + st.label + what + '<br>' + (v === null ? '<span class="mut">No power here</span>' : '<b class="vv">' + v.toFixed(2) + ' V</b>');
+    var sz = this.size();
+    this.tip.style.left = Math.min(sz.left + sz.w - 190, Math.max(sz.left + 4, x + 14)) + 'px';
+    this.tip.style.top = Math.max(sz.top + 4, y - 64) + 'px';
+    this.tip.hidden = false;
+  };
+  B.hideTip = function () { this.tip.hidden = true; };
+  B.showLoupe = function (cx, cy, w, at) {
+    if (!this.loupe || (this.drag && this.drag.ptype === 'mouse')) return;
+    var R = 15; // world radius in pitch units shown in the loupe... adjusted for zoom
+    R = Math.max(2.2, Math.min(5, 46 / this.view.s / U));
+    var l = this.loupe;
+    l.hidden = false;
+    var sz = 112;
+    l.style.left = (cx - sz / 2) + 'px';
+    l.style.top = Math.max(4, cy - sz - 58) + 'px';
+    var svg = l.firstElementChild;
+    svg.setAttribute('viewBox', ((w.x - R) * U) + ' ' + ((w.y - R) * U) + ' ' + (2 * R * U) + ' ' + (2 * R * U));
+    l.lastElementChild.textContent = at ? (at.slice(0, 2) === 'P:' ? this.pinLabel(at) : this.sim.board.label(at)) : 'not in a hole';
+  };
+  B.pinLabel = function (at) { var b = at.split(':'), p = this.sim.part(b[1]); var pin = PARTS[p.type].pins[+b[2]]; return 'pin ' + (pin.phys ? pin.phys + ' ' : '') + pin.n; };
+  B.hideLoupe = function () { if (this.loupe) this.loupe.hidden = true; };
+
+  BB.Bench = Bench;
+})();
