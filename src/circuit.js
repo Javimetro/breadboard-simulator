@@ -103,6 +103,7 @@
     if (def.kind === 'module' || def.kind === 'offboard') return { x0: p.x, y0: p.y, x1: p.x + def.size[0], y1: p.y + def.size[1] };
     var pts = this.pinPoints(p);
     var xs = pts.map(function (q) { return q.x; }), ys = pts.map(function (q) { return q.y; });
+    if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); xs.push(c.x - 0.6, c.x + 0.6); ys.push(c.y - 0.9, c.y + 0.9); }
     return { x0: Math.min.apply(0, xs) - 0.6, y0: Math.min.apply(0, ys) - 0.6, x1: Math.max.apply(0, xs) + 0.6, y1: Math.max.apply(0, ys) + 0.6 };
   };
 
@@ -130,16 +131,23 @@
     parts.forEach(function (p) { if (PARTS[p.type].mcu && BB.programs) BB.programs.run(p, self, ctx0); });
     var nets = this.nets();
     this._nets = nets;
-    // 2. find PWM duty (two-phase solve for PWM/tone pins)
-    var duty = null;
+    // 2. PWM and tone pins: all PWM pins switch on together and each switches off at its own
+    // duty. Solving one slice per distinct duty and weighting by slice width gives exact averages.
+    var duties = [];
     parts.forEach(function (p) {
       var io = p.st && p.st.io; if (!io || !p.st.powered) return;
-      Object.keys(io).forEach(function (k) { if (io[k].mode === 'out' && io[k].pwm !== undefined && io[k].pwm > 0 && io[k].pwm < 1 && duty === null) duty = io[k].pwm; });
+      Object.keys(io).forEach(function (k) { var d = io[k].pwm; if (io[k].mode === 'out' && d !== undefined && d > 0 && d < 1 && duties.indexOf(d) < 0) duties.push(d); });
     });
-    var phases = duty === null ? [{ phase: 'hi', w: 1 }] : [{ phase: 'hi', w: duty }, { phase: 'lo', w: 1 - duty }];
+    duties.sort(function (a, b) { return a - b; });
+    var bounds = [0].concat(duties, [1]);
+    var phases = [];
+    for (var q = 0; q < bounds.length - 1; q++) {
+      (function (lo, hi) { phases.push({ w: hi - lo, pwmHigh: function (d) { return d >= hi - 1e-9; }, phase: lo === 0 ? 'hi' : 'slice' }); })(bounds[q], bounds[q + 1]);
+    }
     var built = null, accV = null, accI = null, capV = {};
     phases.forEach(function (ph) {
-      var b = self.build(ph.phase, dt, nets);
+      if (ph.w <= 0) return;
+      var b = self.build(ph, dt, nets);
       var r = E.solve(b.circuit, { dt: dt, init: self._init && self._init.length === b.circuit.n ? self._init : null });
       if (!accV) { accV = new Float64Array(r.v.length); accI = new Float64Array(r.i.length); built = b; built.r = r; }
       for (var i = 0; i < r.v.length; i++) accV[i] += ph.w * r.v[i];
@@ -156,7 +164,7 @@
   };
 
   // Build the netlist. Returns {circuit, nodeOf(key), elements with part/pin tags}.
-  S.build = function (phase, dt, nets) {
+  S.build = function (ph, dt, nets) {
     var self = this, parts = this.state.parts;
     var nodeIdx = {}, n = 0, els = [], refHints = [];
     function nodeFor(key) { if (nodeIdx[key] === undefined) nodeIdx[key] = n++; return nodeIdx[key]; }
@@ -178,7 +186,7 @@
       C: function (a, b, c, st) { els.push({ t: 'C', a: res(a), b: res(b), c: c, v0: st.v0 || 0, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; },
       I: function (a, b, i) { els.push({ t: 'I', a: res(a), b: res(b), i: i, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; }
     };
-    var sctx = { phase: phase, dt: dt, t: this.t, sim: this };
+    var sctx = { phase: ph.phase, pwmHigh: ph.pwmHigh, dt: dt, t: this.t, sim: this };
     parts.forEach(function (p) {
       p.st = p.st || {};
       cur = p;
@@ -210,8 +218,20 @@
         var nd = b.pinNodes[p.id][k], src = islandSource[r.island[nd]] || [];
         return src.some(function (id) { return id !== p.id; });
       },
-      dirty: function () { dirtyAgain = true; }
+      dirty: function () { dirtyAgain = true; },
+      // true when no other pin (of any part) touches this pin's conductor
+      pinAlone: function (p, k) {
+        var key = nets.keys[p.id][k];
+        if (!key || key[0] === 'F') return true;
+        var root = nets.find(key);
+        if (netCount[root] === undefined) {
+          netCount = {};
+          parts.forEach(function (q) { (nets.keys[q.id] || []).forEach(function (kk) { if (kk[0] !== 'F') { var rt = nets.find(kk); netCount[rt] = (netCount[rt] || 0) + 1; } }); });
+        }
+        return (netCount[root] || 0) <= 1;
+      }
     };
+    var netCount = {};
     parts.forEach(function (p) {
       var pn = b.pinNodes[p.id];
       var rr = {

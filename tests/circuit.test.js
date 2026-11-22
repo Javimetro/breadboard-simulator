@@ -144,23 +144,23 @@ test('Meter in mA mode across the rails: the fuse blows', () => {
   assert.ok(byType(sim, 'meter')[0].st.fuse);
 });
 
-test('Arduino Nano across the gap runs Blink on D2: LED blinks at ≈12.6 mA ((5−1.93)/(25+220+...))', () => {
+test('Arduino Nano across the gap runs Blink on D13 (like the Arduino example): LED blinks at ≈12.6 mA ((5−1.93)/(25+220+...))', () => {
   const sim = bench([
-    ['nano', { x: 8, y: 5, props: { program: 'blink' } }],      // top row c8..c22, bottom row i8..i22
-    ['resistor', { props: { r: 220 }, ends: ['a18', 'a25'] }], // D2 is top row index 10 → column 18
-    ['led', { ends: ['b25', 'T-26'] }],
-    ['wire', { ends: ['a19', 'T-20'] }]                         // GND is top row index 11 → column 19
+    ['nano', { x: 8, y: 5, props: { program: 'blink' } }],      // top row c8..c22, bottom row g8..g22
+    ['resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }],   // D13 is bottom row index 0 → column 8
+    ['led', { ends: ['i3', 'B-4'] }],
+    ['wire', { ends: ['h21', 'B-20'] }]                         // GND is bottom row index 13 → column 21
   ]);
   const nano = byType(sim, 'nano')[0], led = byType(sim, 'led')[0];
   const pts = sim.pinPoints(nano);
-  assert.equal(pts[10].at, 'c18'); assert.equal(nano.type && BB.PARTS.nano.pins[10].n, 'D2');
+  assert.equal(pts[15].at, 'g8'); assert.equal(BB.PARTS.nano.pins[15].n, 'D13');
   let maxI = 0, minI = 1;
   for (let k = 0; k < 90; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); minI = Math.min(minI, led._i); }
   near(maxI, 0.012642, 'LED on');
   assert.ok(minI < 1e-6, 'LED off part of the time');
 });
 
-test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k divider gives 5 × 2.2/(0.1+1+2.2) = 3.33 V (ECHO has 100 Ω inside) and reads HIGH', () => {
+test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k divider gives 5 × 2.2/(0.01+1+2.2) = 3.43 V (ECHO has 10 Ω inside) and reads HIGH', () => {
   function make(divider) {
     const parts = [
       ['esp32', { x: 6, y: 4, props: { program: 'distance' } }],   // long row b6..b21, short row h10..h21
@@ -178,7 +178,7 @@ test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k div
   assert.ok(bad.res.issues.some(i => i.kind === 'overvolt'), 'over-voltage flagged');
   const good = make(true); run(good, 0.3);
   const esp = byType(good, 'esp32')[0];
-  near(esp.st.lastV['33'], 5 * 2.2 / 3.3, 'pin 33 voltage');
+  near(esp.st.lastV['33'], 5 * 2.2 / 3.21, 'pin 33 voltage');
   assert.ok(!good.res.issues.some(i => i.kind === 'overvolt'));
   assert.ok(esp.st.serial.some(s => s.startsWith('Distance: 30')), esp.st.serial.join('|'));
 });
@@ -187,16 +187,62 @@ test('Two supplies without a common GND: LED stays dark and a "No common GND" wa
   const sim = bench([
     ['mb102', { x: 2, y: 0 }],
     ['nano', { x: 8, y: 5, props: { program: 'blink' } }],
-    ['resistor', { props: { r: 220 }, ends: ['a18', 'a25'] }],
-    ['led', { ends: ['b25', 'T-26'] }]
+    ['resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }],
+    ['led', { ends: ['i3', 'B-4'] }]                            // LED − goes to the MB102 − rail, not to the Nano
   ]);
   const led = byType(sim, 'led')[0];
   let maxI = 0;
   for (let k = 0; k < 60; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); }
   assert.ok(maxI < 1e-6, 'no loop back to the Nano');
   assert.ok(sim.res.issues.some(i => i.kind === 'noground'));
-  sim.state.parts.push(BB.newPart('wire', { ends: ['a19', 'T-20'] })); sim.dirty();
+  sim.state.parts.push(BB.newPart('wire', { ends: ['h21', 'B-20'] })); sim.dirty();
   for (let k = 0; k < 60; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); }
   near(maxI, 0.012642, 'LED on with common GND');
   assert.ok(!sim.res.issues.some(i => i.kind === 'noground'));
+});
+
+test('PWM on two boards at once: knob 80 % and 20 % give ≈ 0.8 × 12.6 = 10.1 mA and ≈ 0.2 × 12.6 = 2.5 mA', () => {
+  const sim = bench([
+    ['nano', { x: 1, y: 5, props: { program: 'fade_knob' } }],
+    ['nano', { x: 16, y: 5, props: { program: 'fade_knob' } }]
+  ], { cols: 63 });
+  const [n1, n2] = byType(sim, 'nano');
+  // instead of real knobs, hold A0 with dividers: 5 V × 0.8 and 5 V × 0.2
+  const add = (t, i) => sim.state.parts.push(BB.newPart(t, i));
+  // Nano 1 at x=1: A0 = g4, 5V = g12, GND = g14, D9 (PWM) = c4 (top idx 3)
+  add('resistor', { props: { r: 1000 }, ends: ['h4', 'h12'] });            // 5V → A0 : 1 kΩ (top)
+  add('resistor', { props: { r: 4700 }, ends: ['i4', 'i14'] });            // A0 → GND : 4.7 kΩ  → 5 × 4.7/5.7 = 0.82
+  add('resistor', { props: { r: 220 }, ends: ['a4', 'a24'] }); add('led', { ends: ['b24', 'b25'] }); add('wire', { ends: ['a25', 'a12'] }); // D9 → 220 → LED → GND(top, x=12)
+  // Nano 2 at x=16: A0 = g19, 5V = g27, GND = g29, D9 = c19, top GND = c27
+  add('resistor', { props: { r: 4700 }, ends: ['h19', 'h27'] });          // 5V → A0 : 4.7 kΩ (top)
+  add('resistor', { props: { r: 1000 }, ends: ['i19', 'i29'] });          // A0 → GND : 1 kΩ → 5 × 1/5.7 = 0.18
+  add('resistor', { props: { r: 220 }, ends: ['a19', 'a40'] }); add('led', { ends: ['b40', 'b41'] }); add('wire', { ends: ['a41', 'a27'] });
+  for (let k = 0; k < 30; k++) sim.step(1 / 60);
+  const [l1, l2] = byType(sim, 'led');
+  const full = 0.012642;
+  const d1 = Math.round(5 * 4.7 / 5.7 / 5 * 1023) / 1023, d2 = Math.round(5 * 1 / 5.7 / 5 * 1023) / 1023;
+  near(l1._i, full * d1, 'LED 1 average current');
+  near(l2._i, full * d2, 'LED 2 average current');
+});
+
+test('MB102 short: the regulator limits at about 1 A (5 V / 5 Ω limit model), the rail falls near 0 V', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['wire', { ends: ['T+10', 'T-10'] }]]);
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  const mb = byType(sim, 'mb102')[0];
+  near(mb._i, 5 / (5 + 0.02 + 0.03), 'limited current'); // 5 V over 5 Ω limit + wire 0.02 Ω + rail links
+  assert.ok(sim.holeVoltage('T+20') < 0.05);
+  for (let k = 0; k < 60; k++) sim.step(1 / 60);
+  assert.ok(sim.res.issues.some(i => i.kind === 'short'), 'the short message stays on');
+});
+
+test('Multimeter Ω range: 1 MΩ reads 1.00 MΩ; two in series (2.2 MΩ) read OL (the DT-830B tops out at 2 MΩ)', () => {
+  const sim = bench([['resistor', { props: { r: 1000000 }, ends: ['a5', 'a8'] }], ['meter', { props: { mode: 'ohm' }, ends: ['b5', 'b8'] }]]);
+  for (let k = 0; k < 3; k++) sim.step(1 / 60);
+  const m = byType(sim, 'meter')[0];
+  near(m.st.reading.val, 1e6, '1 MΩ');
+  assert.equal(m.st.reading.text + ' ' + m.st.reading.unit, '1.00 MΩ');
+  sim.state.parts.push(BB.newPart('resistor', { props: { r: 1000000 }, ends: ['c8', 'c11'] }));
+  m.ends[1] = { at: 'b11' }; sim.state.parts.push(BB.newPart('resistor', { props: { r: 220000 }, ends: ['d11', 'd14'] })); m.ends[1] = { at: 'b14' };
+  sim.dirty(); for (let k = 0; k < 3; k++) sim.step(1 / 60);
+  assert.equal(m.st.reading.text, 'OL');
 });

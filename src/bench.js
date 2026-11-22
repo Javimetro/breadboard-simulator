@@ -280,6 +280,7 @@
         var pts = sim.pinPoints(p);
         var d = segDist(w, pts[0], pts[1]);
         var lim = p.type === 'wire' ? Math.max(0.35, tol * 0.6) : Math.max(0.8, tol * 0.7);
+        if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); d = Math.min(d, Math.max(0, Math.hypot(w.x - c.x, w.y - c.y) - 0.6)); }
         if (d < lim) { body = { kind: 'body', id: p.id }; return true; }
         return false;
       }
@@ -333,6 +334,11 @@
       this.drag.orig = JSON.parse(JSON.stringify({ x: p.x, y: p.y, ends: p.ends, free: p.free }));
     }
     if (hit.kind === 'end') this.drag.undo = this.app.snapshot();
+    // a finger covers the hole it taps: show the loupe while the finger is down
+    if (e.pointerType !== 'mouse' && (hit.kind === 'hole' || hit.kind === 'wire')) {
+      var at = hit.kind === 'hole' ? hit.hole : hit.start;
+      this.showLoupe(e.clientX, e.clientY, this.pointPos(at), at);
+    }
   };
   B.wireHit = function (w, e) {
     var tol = Math.max(0.9, this.tolPx(e) / this.view.s / U);
@@ -371,6 +377,7 @@
     if (e.pointerId !== d.pid) return;
     var dx = e.clientX - d.sx, dy = e.clientY - d.sy;
     if (!d.moved && Math.hypot(dx, dy) < (d.ptype === 'mouse' ? 4 : 8)) return;
+    if (!d.moved && d.ptype !== 'mouse' && (d.kind === 'hole' || d.kind === 'wire')) this.hideLoupe();
     if (!d.moved) {
       d.moved = true;
       if (d.hit.kind === 'hot' && d.hit.hot.kind === 'press') { // a press that turns into a drag
@@ -379,9 +386,10 @@
         if (bp && !bp.locked) { d.kind = 'body'; d.hit = { kind: 'body', id: bp.id }; d.undo = this.app.snapshot(); d.orig = JSON.parse(JSON.stringify({ x: bp.x, y: bp.y, free: bp.free })); }
         else d.kind = 'pan';
       }
-      if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id); } }
+      if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id, true); } }
       if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
-      if (d.kind === 'end') this.select(d.hit.id);
+      if (d.kind === 'end') this.select(d.hit.id, true);
+      this.hideLoupe();
     }
     if (d.kind === 'pan') {
       this.view.tx = d.v0.tx + dx; this.view.ty = d.v0.ty + dy; this.applyView();
@@ -533,11 +541,12 @@
     this.select(null);
     this.hiHole = null; this.stickyHi = false; this.hideTip();
   };
-  B.select = function (id) {
-    if (this.sel === id) return;
+  // quiet: select without opening the phone's bottom sheet (used while dragging)
+  B.select = function (id, quiet) {
+    if (this.sel === id) { if (id && !quiet) this.app.showSheet(); return; }
     this.sel = id;
     if (id) { this.stickyHi = false; this.hiHole = null; this.hideTip(); }
-    this.app.onSelect(id);
+    this.app.onSelect(id, quiet);
     this.render();
   };
 

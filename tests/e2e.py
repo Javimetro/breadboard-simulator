@@ -47,6 +47,9 @@ def solve_all_levels(page, tag):
         page.wait_for_timeout(700)
         st = page.evaluate('({done: BB.app.level.done, step: BB.app.level.step, steps: BB.app.level.def.steps.length, stars: BB.app.level.stars, mistakes: BB.app.level.mistakes, issues: BB.app.sim.res.issues.map(i => i.kind)})')
         check(st['done'] and before == 0, f'{tag}: level {i + 1} "{lid}" solved (stars {st.get("stars")}, mistakes {st["mistakes"]}, issues {st["issues"]})' + ('' if st['done'] else f' — stuck at step {st["step"]}/{st["steps"]}'))
+        if tag == 'mobile':
+            ov = page.evaluate("(() => { const w = innerWidth; const bad = []; ['#topbar', '#tb', '#stage', '#goal'].forEach(s => { const r = document.querySelector(s).getBoundingClientRect(); if (r.right > w + 0.5) bad.push(s + ' ' + Math.round(r.right)); }); if (document.documentElement.scrollWidth > w) bad.push('page ' + document.documentElement.scrollWidth); return bad; })()")
+            check(not ov, f'{tag}: level {i + 1} fits in 375 px' + (f' — overflow {ov}' if ov else ''))
         if tag == 'desktop' or i in (0, 2, 8, 11):
             page.click('#modal [data-m=stay]') if page.is_visible('#modal [data-m=stay]') else None
             page.wait_for_timeout(250)
@@ -83,6 +86,13 @@ def sandbox_every_part(page, tag):
     ok = page.evaluate("""(() => { let n = 0; BB.app.sim.state.parts.forEach(p => { BB.app.bench.select(p.id); BB.app.refreshInspector(); if (document.querySelector('#inspector h3').textContent.length) n++; }); return n; })()""")
     check(ok == cnt, f'{tag}: inspector works for every part ({ok})')
     page.evaluate("BB.app.bench.select(null)")
+    # sandbox challenge: power the Nano from the MB102 rails (USB unplugged)
+    page.evaluate("BB.app.sim.state.parts = []; BB.app.sim.dirty()")
+    page.evaluate("""(() => { const A = BB.app.actions(); A.add('mb102', {x: 2, y: 0}); const n = A.add('nano', {x: 8, y: 5, props: {usb: false}});
+      A.wire('h19', 'B+20'); A.wire('h21', 'B-21'); A.wait(0.3); })()""")
+    page.wait_for_timeout(500)
+    ch = page.evaluate("(JSON.parse(localStorage.getItem('breadboard-lab.v1')) || {}).challenges || {}")
+    check(ch.get('nanoMB'), f'{tag}: sandbox challenge "Nano from the MB102" detected')
 
 
 def ui_level3_by_pointer(page, tag):

@@ -37,7 +37,17 @@
     'voltage divider': 'Two resistors in series. The middle point gets a part of the voltage: Vout = Vin × R2 ÷ (R1 + R2).',
     'logic level': 'The voltage a chip works at: 5V (Arduino Nano) or 3.3V (ESP32, Raspberry Pi).',
     'GPIO': 'General Purpose Input/Output: a pin you can use as an input or an output.',
-    'microcontroller': 'A small computer on one chip that runs one program and controls its pins.'
+    'microcontroller': 'A small computer on one chip that runs one program and controls its pins.',
+    'wiper': 'The middle leg of a potentiometer. Inside, it slides along the resistor when you turn the knob.',
+    'pull-up resistor': 'A resistor from a pin to + (VCC). When nothing else drives the pin, it keeps the pin HIGH instead of floating.',
+    'serial monitor': 'A text window where a board can print messages, like “Distance: 30 cm”. Here it is in the board’s panel.',
+    'common cathode': 'All LED − sides (cathodes) are joined at one pin (COM), which goes to GND.',
+    'forward voltage': 'The voltage an LED “uses” when it is on: about 2 V for red, 3 V for blue or white.',
+    'multiplier': 'The third colour band of a resistor. It says how many zeros to add: red = × 100, orange = × 1000.',
+    'floating': 'A pin with nothing connected. It picks up noise and reads random values.',
+    'TRIG': 'Trigger: the HC-SR04 input. A short pulse here starts one measurement.',
+    'ECHO': 'The HC-SR04 output. It goes HIGH (5 V) for as long as the sound takes to come back.',
+    'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
   // ---------- helpers used by the checks ----------
@@ -168,12 +178,16 @@
     return s;
   };
   I.esp32 = function () {
-    var s = '<text x="80" y="24" class="itxt" text-anchor="middle">5V straight in</text><text x="240" y="24" class="itxt" text-anchor="middle">With a divider</text>';
-    s += '<rect x="40" y="90" width="80" height="50" rx="6" fill="#17181c"/><text x="80" y="120" class="itxt w s" text-anchor="middle">3.3V pin</text>';
-    s += '<path d="M80 40 V90" class="iloop hotline"/><text x="88" y="55" class="itxt">5 V</text><path d="M60 70 l40 -20 M60 50 l40 20" class="ix"/>';
-    s += '<rect x="200" y="90" width="80" height="50" rx="6" fill="#17181c"/><text x="240" y="120" class="itxt w s" text-anchor="middle">3.3V pin</text>';
-    s += '<path d="M240 38 V48 M240 68 V74 M240 74 H270 M270 74 V80 M270 100 V108 M240 74 V90" class="iloop"/><rect x="232" y="48" width="16" height="20" rx="4" class="ires"/><rect x="262" y="80" width="16" height="20" rx="4" class="ires"/>';
-    s += '<text x="200" y="45" class="itxt s">5 V</text><text x="190" y="80" class="itxt s good">3.4 V ✓</text>';
+    var s = '<text x="80" y="20" class="itxt" text-anchor="middle">5V straight in</text><text x="240" y="20" class="itxt" text-anchor="middle">With a divider</text>';
+    s += '<rect x="40" y="96" width="80" height="44" rx="6" fill="#17181c"/><text x="80" y="122" class="itxt w s" text-anchor="middle">3.3V pin</text>';
+    s += '<path d="M80 34 V96" class="iloop hotline"/><text x="88" y="48" class="itxt">5 V</text><path d="M60 72 l40 -20 M60 52 l40 20" class="ix"/>';
+    s += '<text x="200" y="40" class="itxt s">5 V</text><path d="M222 34 V44 M222 66 V80 M222 102 V118" class="iloop"/>';
+    s += '<rect x="214" y="44" width="16" height="22" rx="4" class="ires"/><text x="180" y="59" class="itxt s">1 kΩ</text>';
+    s += '<rect x="214" y="80" width="16" height="22" rx="4" class="ires"/><text x="172" y="95" class="itxt s">2.2 kΩ</text>';
+    s += '<path d="M212 118 h20 M215 122 h14 M218 126 h8" stroke="#8b96a3" stroke-width="2.4"/><text x="180" y="126" class="itxt s">GND</text>';
+    s += '<circle cx="222" cy="73" r="3.5" fill="#3ddc84"/><path d="M222 73 H285 V96" class="iloop"/>';
+    s += '<rect x="250" y="96" width="70" height="44" rx="6" fill="#17181c"/><text x="285" y="122" class="itxt w s" text-anchor="middle">3.3V pin</text>';
+    s += '<text x="240" y="66" class="itxt s good">3.4 V ✓</text>';
     s += '<text x="160" y="170" class="itxt" text-anchor="middle">Two resistors bring 5 V down to a safe 3.4 V.</text>';
     return s;
   };
@@ -297,7 +311,7 @@
       board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], tray: ['pot', 'wire'],
       setup: function (A) {
         A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
-        A.add('resistor', { props: { r: 330 }, ends: ['a14', 'a18'], locked: true });
+        A.add('resistor', { props: { r: 470 }, ends: ['a14', 'a18'], locked: true });
         A.add('led', { ends: ['b18', 'T-20'], locked: true });
       },
       steps: [
@@ -316,11 +330,11 @@
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
-        if (p && lit(l) && (L.flags.maxI || 0) > 0.012 && Math.abs(L.flags.maxI - (L.flags.minI || 1)) < 0.003) return 'The brightness does not change: you are using the two outer legs. Use one outer leg and the middle leg (W).';
+        if (p && lit(l) && (L.flags.maxI || 0) > 0.012 && Math.abs(L.flags.maxI - (L.flags.minI || 1)) < 0.003) return 'The brightness does not change: you are using the two outer legs. Use one outer leg and the middle leg ({{wiper}}, marked W).';
         return whyDark(L, l);
       },
-      hints: ['Path: + rail → knob leg 1 → knob middle leg (W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the + rail to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
-      done: 'The knob changes the resistance, so the current and the brightness change. The fixed 330 Ω keeps the LED safe when the knob is at 0 Ω.',
+      hints: ['Path: + rail → knob leg 1 → knob middle leg ({{wiper}}, W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the + rail to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
+      done: 'The knob changes the resistance, so the current and the brightness change. The fixed 470 Ω keeps the LED safe (about 15 mA) when the knob is at 0 Ω.',
       solve: function (A) { var p = A.add('pot', { x: 8, y: 5 }); A.wire('T+8', 'b8'); A.wire('b10', 'c14'); A.set(p, 'pos', 0); A.wait(0.3); A.set(p, 'pos', 1); A.wait(0.3); }
     },
     {
@@ -364,7 +378,7 @@
         { text: 'Measure the loose resistor (columns 22 and 27): put the probes in its columns, then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ.' },
         { text: 'Its bands are yellow, violet, red. What value is it?', choices: [
           { label: '4.7 kΩ', ok: true, why: 'Yes: yellow 4, violet 7, red = × 100 → 4700 Ω = 4.7 kΩ.' },
-          { label: '47 Ω', ok: false, why: 'The third band is the multiplier: red means × 100, so 47 × 100.' },
+          { label: '47 Ω', ok: false, why: 'The third band is the {{multiplier}}: red means × 100, so 47 × 100.' },
           { label: '470 kΩ', ok: false, why: 'Red means × 100 (not × 10 000): 47 × 100 = 4700 Ω.' }] }
       ],
       explain: function (L) {
@@ -390,26 +404,26 @@
       lock: ['r', 'color'],
       steps: [
         { text: 'Put the Arduino Nano across the middle gap.', check: function (L) { var n = L.of('nano')[0]; return n && !n.free; }, ok: 'Each Nano pin now has its own strip of free holes.' },
-        { text: 'Tap the Nano and choose the program “Blink”.', check: function (L) { var n = L.of('nano')[0]; return n && n.props.program === 'blink'; }, ok: 'Blink switches pin D2 on and off every half second.' },
-        { text: 'Connect pin D2 → resistor → LED → GND. Make the LED blink.', check: function (L) {
+        { text: 'Tap the Nano and choose the program “Blink”.', check: function (L) { var n = L.of('nano')[0]; return n && n.props.program === 'blink'; }, ok: 'Blink switches pin D13 on and off. Look: the small “L” LED on the Nano blinks too.' },
+        { text: 'Connect pin D13 → resistor → LED → GND. Make your LED blink.', check: function (L) {
           var n = L.of('nano')[0], f = L.flags; if (!n) return false;
-          var d2 = n.st.io && n.st.io.D2;
+          var d2 = n.st.io && n.st.io.D13;
           L.of('led').forEach(function (l) {
-            var pinI = (n.st.pinI || {}).D2 || 0;
+            var pinI = (n.st.pinI || {}).D13 || 0;
             if (d2 && d2.level === 1 && lit(l) && safe(l) && Math.abs(pinI - l._i) < 0.1 * l._i) f.on = true;
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
         }, ok: 'It blinks! The pin gives 5 V, and 220 Ω keeps the current near 13 mA.' }
       ],
-      explain: function (L) { var l = L.of('led')[0]; var n = L.of('nano')[0]; if (n && n.props.program === 'blink' && l && !lit(l) && !(n.st.io && n.st.io.D2 && n.st.io.D2.level === 0)) return whyDark(L, l); return null; },
-      hints: ['D2 is on the top row of pins (look at the white labels). Holes above it, in the same column, are joined to it.', 'Put the resistor from a hole above D2 to a free column. Put the LED long leg in that column.', 'Connect the LED short leg to GND: a wire from the GND pin’s column to the − rail, and the LED short leg into the − rail.'],
-      done: 'A pin set HIGH gives 5 V. With 220 Ω the LED gets about 13 mA, under the 20 mA a pin can give safely.',
-      solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['a18', 'a25'] }); A.add('led', { props: { color: 'green' }, ends: ['b25', 'T-26'] }); A.wire('a19', 'T-20'); A.wait(1.3); }
+      explain: function (L) { var l = L.of('led')[0]; var n = L.of('nano')[0]; if (n && n.props.program === 'blink' && l && !lit(l) && !(n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return whyDark(L, l); return null; },
+      hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it (h, i, j) are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
+      done: 'A pin set HIGH gives 5 V. With 220 Ω the LED gets about 13 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
       id: 'screen', title: 'Light meter on a screen', icon: 'oled',
-      intro: { pic: I.screen, text: 'A light sensor and a resistor make a {{voltage divider}}. The Nano reads it on an {{analog}} pin and shows it on a screen with {{I2C}}.' },
+      intro: { pic: I.screen, text: 'A light sensor changes its resistance with light. The Nano turns this into a number and shows it on a small screen.' },
       board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) {
@@ -417,8 +431,8 @@
         A.add('oled', { id: 'oled', x: 9, y: 20, locked: true });
       },
       steps: [
-        { text: 'Connect the screen: GND → GND, VCC → 5V, SDA → A4, SCL → A5.', check: function (L) { var o = L.part('oled'); return !!o.st.mcu && (o.st.vcc || 0) > 4.5; }, ok: 'The screen is on. I2C uses just SDA (data) and SCL (clock).' },
-        { text: 'Build the light sensor: LDR from 5V to A0, and 10 kΩ from A0 to GND.', check: function (L) {
+        { text: 'Connect the screen with 4 wires ({{I2C}}): GND → GND, VCC → 5V, SDA → A4, SCL → A5.', check: function (L) { var o = L.part('oled'); return !!o.st.mcu && (o.st.vcc || 0) > 4.5; }, ok: 'The screen is on. I2C uses just SDA (data) and SCL (clock).' },
+        { text: 'Build a {{voltage divider}}: LDR from 5V to A0, and 10 kΩ from A0 to GND. A0 is an {{analog}} pin.', check: function (L) {
           var n = L.part('nano'), ldr = L.of('ldr')[0], r = L.of('resistor')[0];
           if (!ldr || !r) return false;
           var a0 = mcuPinNet(L, n, 'A0'), v5 = mcuPinNet(L, n, '5V'), gnd = anyGndNet(L, n);
@@ -489,17 +503,22 @@
     },
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
-      intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V. Its pins must never get 5V. A {{voltage divider}} brings a 5V signal down to a safe level.' },
+      intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
       board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
         { text: 'Put the distance sensor on the board (in a free area). Power it: VCC → USB pin (5V), GND → GND.', check: function (L) { var s = L.of('hcsr04')[0]; return s && (s.st.vcc || 0) > 4.5; }, ok: 'The sensor has 5V from the USB pin.' },
-        { text: 'Connect TRIG to pin 21.', check: function (L) { var s = L.of('hcsr04')[0]; return s && s.st.trig; }, ok: 'The ESP32 now sends trigger pulses.' },
-        { text: 'Connect ECHO to pin 33 safely: ECHO → 1 kΩ → middle → 2.2 kΩ → GND, and the middle → pin 33.', check: function (L) {
-          var e = L.part('esp'), v = (e.st.lastV || {})['33'] || 0;
-          return v > 2.5 && v < 3.6 && !(e.st.damaged && e.st.damaged['33']) && (e.st.serial || []).some(function (s) { return /^Distance/.test(s); });
-        }, ok: 'Pin 33 gets about 3.3 V: safe, and still HIGH. The distance shows in the serial monitor.' }
+        { text: 'Connect {{TRIG}} to pin 21.', check: function (L) { var s = L.of('hcsr04')[0]; return s && s.st.trig; }, ok: 'The ESP32 now sends trigger pulses.' },
+        { text: 'Connect {{ECHO}} to pin 33 safely, with a {{voltage divider}}: ECHO → 1 kΩ → middle → 2.2 kΩ → GND, and the middle → pin 33.', check: function (L) {
+          var e = L.part('esp'), v = (e.st.lastV || {})['33'] || 0, s = L.of('hcsr04')[0];
+          if (!s || !(v > 2.5 && v < 3.6) || (e.st.damaged && e.st.damaged['33'])) return false;
+          // the real divider must be there: ECHO → 1 kΩ → pin 33 → 2.2 kΩ → GND
+          var echo = L.net(s, 2), p33 = mcuPinNet(L, e, '33'), gnds = anyGndNet(L, e).concat([L.hnet('T-2'), L.hnet('B-2')]);
+          var top = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 1000 && ((a === echo && b === p33) || (b === echo && a === p33)); });
+          var bot = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 2200 && ((a === p33 && gnds.indexOf(b) >= 0) || (b === p33 && gnds.indexOf(a) >= 0)); });
+          return top && bot && (e.st.serial || []).some(function (x) { return /^Distance/.test(x); });
+        }, ok: 'Pin 33 gets about 3.4 V: safe, and still HIGH. The distance shows in the {{serial monitor}}.' }
       ],
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastV || {})['33'] || 0;
@@ -509,7 +528,7 @@
         return null;
       },
       hints: ['USB is on the bottom row of pins. It gives 5V while the USB cable is plugged in. GND is on the top row.', 'Divider: ECHO column → 1 kΩ → a free middle column → 2.2 kΩ → − rail (joined to GND). Middle gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V.', 'Then a wire from the middle column to a hole below pin 33 (bottom row).'],
-      done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into about 3.3 V: safe and still HIGH.',
+      done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into 5 × 2.2 ÷ 3.2 ≈ 3.4 V: safe and still HIGH.',
       solve: function (A) {
         A.add('hcsr04', { x: 24, y: 3 });
         A.wire('j12', 'b24'); A.wire('a9', 'T-9'); A.wire('T-27', 'b27'); A.wire('a21', 'b25'); A.wait(0.2);

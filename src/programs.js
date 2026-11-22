@@ -7,13 +7,13 @@
 
   // Default pin for each role, per board.
   var PINS = {
-    nano: { led: 'D2', button: 'D3', knob: 'A0', light: 'A0', dht: 'D4', trig: 'D9', echo: 'D10', pir: 'D7', buzzer: 'D8', speaker: 'D8', mic: 'A0',
+    nano: { led: 'D13', fade: 'D9', button: 'D3', knob: 'A0', light: 'A0', dht: 'D4', trig: 'D9', echo: 'D10', pir: 'D7', buzzer: 'D8', speaker: 'D8', mic: 'A0',
       a: 'D2', b: 'D3', c: 'D4', d: 'D5', e: 'D6', f: 'D7', g: 'D8' },
-    esp32: { led: '13', button: '14', knob: 'A2', light: 'A2', dht: '32', trig: '21', echo: '33', pir: '15', buzzer: '27', speaker: '27', mic: 'A2',
+    esp32: { led: '13', fade: '13', button: '14', knob: 'A2', light: 'A2', dht: '32', trig: '21', echo: '33', pir: '15', buzzer: '27', speaker: '27', mic: 'A2',
       a: '13', b: '12', c: '27', d: '33', e: '15', f: '32', g: '14' },
-    pi5: { led: 'GPIO17', button: 'GPIO27', dht: 'GPIO4', trig: 'GPIO23', echo: 'GPIO24', pir: 'GPIO22', buzzer: 'GPIO18', speaker: 'GPIO18',
+    pi5: { led: 'GPIO17', fade: 'GPIO18', button: 'GPIO27', dht: 'GPIO4', trig: 'GPIO23', echo: 'GPIO24', pir: 'GPIO22', buzzer: 'GPIO18', speaker: 'GPIO18',
       a: 'GPIO5', b: 'GPIO6', c: 'GPIO13', d: 'GPIO19', e: 'GPIO26', f: 'GPIO16', g: 'GPIO20' },
-    wio: { led: 'D0/A0', button: 'D1/A1', knob: 'D2/A2', light: 'D2/A2', dht: 'D3/A3', trig: 'D4/A4', echo: 'D5/A5', pir: 'D6/A6', buzzer: 'D8/A8', speaker: 'D8/A8', mic: 'D2/A2',
+    wio: { led: 'D0/A0', fade: 'D0/A0', button: 'D1/A1', knob: 'D2/A2', light: 'D2/A2', dht: 'D3/A3', trig: 'D4/A4', echo: 'D5/A5', pir: 'D6/A6', buzzer: 'D8/A8', speaker: 'D8/A8', mic: 'D2/A2',
       a: 'D0/A0', b: 'D1/A1', c: 'D2/A2', d: 'D3/A3', e: 'D4/A4', f: 'D5/A5', g: 'D6/A6' }
   };
   var DIGITS = { 0: 'abcdef', 1: 'bc', 2: 'abdeg', 3: 'abcdg', 4: 'bcfg', 5: 'acdfg', 6: 'acdefg', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg' };
@@ -21,12 +21,12 @@
   var P = {
     none: { name: 'No program', desc: 'The board is on, but does nothing. All its pins are inputs.', roles: {}, step: function () {} },
     blink: {
-      name: 'Blink', desc: 'Turns the LED pin on for half a second, then off for half a second, again and again.',
+      name: 'Blink', desc: 'Turns the LED pin on for half a second, then off for half a second, again and again. (Like the Arduino “Blink” example: on the Nano it uses D13, which also drives the small “L” LED on the board.)',
       roles: { led: { label: 'LED', mode: 'out' } },
       step: function (io) { io.out('led', Math.floor(io.t / 0.5) % 2 === 0 ? 1 : 0); }
     },
     button_led: {
-      name: 'Button → LED', desc: 'The LED is on while the button is pressed. The button pin uses the chip’s built-in pull-up resistor, so connect the button between the pin and GND.',
+      name: 'Button → LED', desc: 'The LED is on while the button is pressed. The button pin uses the chip’s built-in {{pull-up resistor}}, so connect the button between the pin and GND.',
       roles: { button: { label: 'Button', mode: 'in', pull: 'up' }, led: { label: 'LED', mode: 'out' } },
       step: function (io) {
         var b = io.digital('button');
@@ -35,13 +35,13 @@
       }
     },
     fade_knob: {
-      name: 'Knob → LED brightness', desc: 'Reads the knob on an analog pin (0 to the top value) and sets the LED brightness with PWM (very fast on/off).',
-      roles: { knob: { label: 'Knob (middle leg)', mode: 'in', analog: true }, led: { label: 'LED', mode: 'out', pwm: true } },
+      name: 'Knob → LED brightness', desc: 'Reads the knob on an analog pin and sets the LED brightness with {{PWM}} (very fast on/off). Only some pins can do PWM: on the Nano these are D3, D5, D6, D9, D10 and D11 (marked ~).',
+      roles: { knob: { label: 'Knob (middle leg)', mode: 'in', analog: true }, fade: { label: 'LED (PWM pin)', mode: 'out', pwm: true } },
       needsAnalog: true,
       step: function (io) {
         var a = io.analog('knob');
-        if (a === null) { io.out('led', 0); return; }
-        io.pwm('led', a / io.adcMax);
+        if (a === null) { io.out('fade', 0); return; }
+        io.pwm('fade', a / io.adcMax);
         io.print('Knob: ' + a + '  LED: ' + Math.round(100 * a / io.adcMax) + ' %');
       }
     },
@@ -159,6 +159,7 @@
       tone: function (role, f) { var o = io[pinFor(p, role)]; if (!o) return; if (f > 0) { o.pwm = 0.5; o.level = 1; o.freq = f; } else { o.level = 0; delete o.pwm; delete o.freq; } },
       volts: function (role) { return lv[pinFor(p, role)] || 0; },
       digital: function (role) {
+        if (st.floating && st.floating[pinFor(p, role)]) return Math.random() < 0.5 ? 1 : 0;
         var v = lv[pinFor(p, role)] || 0;
         if (v >= cfg.hiTh) return 1;
         if (v <= cfg.loTh) return 0;
@@ -167,6 +168,7 @@
       analog: function (role) {
         var label = pinFor(p, role), pin = def.pins[pinIdx[label]];
         if (!pin || !pin.analog || !cfg.adcMax) return null;
+        if (st.floating && st.floating[label]) { st.mem._noise = Math.max(0.1, Math.min(0.9, (st.mem._noise || 0.5) + (Math.random() - 0.5) * 0.12)); return Math.round(st.mem._noise * cfg.adcMax); }
         var v = Math.max(0, Math.min(cfg.adcRef, lv[label] || 0));
         return Math.round(v / cfg.adcRef * cfg.adcMax);
       },

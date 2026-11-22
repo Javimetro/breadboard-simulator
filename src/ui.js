@@ -132,7 +132,7 @@
         '<button data-act="wire" class="tool" title="Draw jumper wires (W)">' + icon('wire') + '<span>Wire</span></button>' +
         '<button data-act="parts" class="partsbtn" title="Parts">' + icon('parts') + '<span>Parts</span></button>' +
         '<button data-act="undo" title="Undo (Ctrl+Z)">' + icon('undo') + '<span>Undo</span></button>' +
-        '<button data-act="flow" class="tg" title="Show current and voltages">' + icon('bolt') + '<span>Current</span></button>' +
+        '<button data-act="flow" class="tg" title="Show the current flow and the voltages">' + icon('bolt') + '<span>Flow</span></button>' +
         '<button data-act="xray" class="tg" title="See the metal strips inside">' + icon('xray') + '<span>X-ray</span></button>';
       $('#tb').addEventListener('click', function (e) {
         var b = e.target.closest('button'); if (!b) return;
@@ -160,6 +160,7 @@
         if (b.dataset.act === 'info') self.showIntro(self.level.def, true);
         if (b.dataset.act === 'board') self.boardMenu();
         if (b.dataset.act === 'clear') self.clearSandbox();
+        if (b.dataset.act === 'chal') self.modal('<div class="chmodal">' + $('#goal').innerHTML + '</div><div class="mbtns"><button data-m="x">Close</button></div>');
       });
       $('#tray').addEventListener('click', function (e) {
         var b = e.target.closest('.titem'); if (!b) return;
@@ -253,13 +254,13 @@
       this.onSelect(null);
       if (!store.data.tipShown) {
         store.data.tipShown = true; store.save();
-        this.toast(window.innerWidth < 900 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.', 'info');
+        this.toast(window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.', 'info');
       }
     },
     fitView: function () {
       if (this.mode === 'level' && this.level.def.view) {
         var v = this.level.def.view, b = this.sim.board, bench = this.bench;
-        var mobile = window.innerWidth < 900, g = $('#goal');
+        var mobile = window.innerWidth < 1100, g = $('#goal');
         var top = mobile && g.offsetHeight ? g.offsetHeight + 12 : 0, right = mobile ? 54 : 54;
         bench.fitRect(v[0], v[1], v[2], v[3], 8, top, right);
         var s0 = bench.view.s;
@@ -314,7 +315,7 @@
     finishLevel: function () {
       var lv = this.level, self = this;
       lv.done = true;
-      var stars = 3 - (lv.hints > 0 ? 1 : 0) - (lv.mistakes > 0 ? 1 : 0);
+      var stars = 3 - (lv.hints > 0 ? 1 : 0) - (lv.mistakes + (lv.wrong || 0) > 0 ? 1 : 0);
       stars = Math.max(1, stars);
       var prev = store.data.stars[lv.def.id] || 0;
       store.data.stars[lv.def.id] = Math.max(prev, stars); store.save();
@@ -325,10 +326,11 @@
       var why = [];
       if (lv.hints) why.push('you used ' + lv.hints + ' hint' + (lv.hints > 1 ? 's' : ''));
       if (lv.mistakes) why.push('something burned or shorted ' + lv.mistakes + ' time' + (lv.mistakes > 1 ? 's' : ''));
+      if (lv.wrong) why.push('you gave ' + lv.wrong + ' wrong answer' + (lv.wrong > 1 ? 's' : ''));
       setTimeout(function () {
         self.modal('<div class="done"><div class="bigstars">' + [1, 2, 3].map(function (k) { return '<span style="animation-delay:' + (k * 0.18) + 's">' + icon('star', k <= stars ? 'on' : '') + '</span>'; }).join('') + '</div>' +
           '<h2>Level ' + lv.def.n + ' done!</h2><p class="learned">' + rich(lv.def.done) + '</p>' +
-          (stars < 3 ? '<p class="mut small">3 stars: no hints and no burned parts. This time ' + why.join(' and ') + '.</p>' : '') +
+          (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned parts and no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
           '<div class="mbtns">' + (next ? '<button class="primary" data-m="next">Next level</button>' : '<button class="primary" data-m="sand">Open the sandbox</button>') +
           '<button data-m="stay">Stay here</button><button data-m="home">All levels</button></div></div>', function (a) {
           if (a === 'next') self.startLevel(lv.def.n);
@@ -370,7 +372,7 @@
       if (!step || !step.choices) return;
       var c = step.choices[i];
       if (c.ok) this.stepDone(c.why);
-      else { this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04); }
+      else { lv.wrong = (lv.wrong || 0) + 1; this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04); }
     },
     hint: function () {
       var lv = this.level; if (!lv || lv.done) return;
@@ -383,14 +385,14 @@
       var lv = this.level, step = lv.def.steps[lv.step];
       if (!step || !step.tap || lv.done) return;
       var r = step.tap(this.L(), h);
-      if (r.ok) this.stepDone(r.msg); else { this.toast(r.msg, 'bad'); audio.blip(220, 0.15, 'sawtooth', 0.035); }
+      if (r.ok) this.stepDone(r.msg); else { if (r.wrong !== false && !onPart) lv.wrong = (lv.wrong || 0) + (r.count ? 1 : 0); this.toast(r.msg, 'bad'); audio.blip(220, 0.15, 'sawtooth', 0.035); }
     },
     updateTop: function () {
       var t = $('#topbar');
       var title = this.mode === 'level' ? 'Level ' + this.level.def.n + ': ' + esc(this.level.def.title) : 'Sandbox';
       var html = '<button data-act="home" class="ibtn" title="All levels">' + icon('back') + '</button><div class="ttl">' + title + '</div>';
       if (this.mode === 'level') html += '<button data-act="hint" class="ibtn" title="Hint">' + icon('hint') + '</button>';
-      if (this.mode === 'sandbox') html += '<button data-act="board" class="ibtn" title="Board size">' + icon('board') + '</button><button data-act="clear" class="ibtn" title="Clear the bench">' + icon('trash') + '</button>';
+      if (this.mode === 'sandbox') html += '<button data-act="chal" class="ibtn chalbtn" title="Challenges">' + icon('star') + '</button><button data-act="board" class="ibtn" title="Board size">' + icon('board') + '</button><button data-act="clear" class="ibtn" title="Clear the bench">' + icon('trash') + '</button>';
       html += '<button data-act="sound" class="ibtn" title="Sound on/off">' + icon(audio.on ? 'sound' : 'mute') + '</button>';
       t.innerHTML = html;
     },
@@ -409,12 +411,32 @@
       this.setFlow(false); this.setXray(false); this.setTool('move');
       this.buildTray(null);
       this.updateTop();
-      $('#goal').innerHTML = '<div class="ghead"><h2>Sandbox</h2></div><p class="small">Every part is here. Build anything! Tap a part to see its values. Tap a hole to see what is connected to it.</p>';
+      this.renderChallenges();
       this.sim.step(0.001);
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
       if (!state.parts.length) this.toast('Tap “Parts” to add components. Start with a battery or the MB102 power board.', 'info');
+    },
+    renderChallenges: function () {
+      var done = store.data.challenges || {}, self = this;
+      var html = '<div class="ghead"><h2>Sandbox</h2></div><p class="small">Every part is here. Build anything! Tap a part to see its values. Tap a hole to see what is connected to it.</p>';
+      html += '<h4 class="chh">Try these</h4><ul class="chal">' + CHALLENGES.map(function (c) {
+        return '<li class="' + (done[c.id] ? 'done' : '') + '"><span class="ck">' + (done[c.id] ? '✓' : '') + '</span><span><b>' + esc(c.title) + '</b> ' + rich(c.text) + '</span></li>';
+      }).join('') + '</ul>';
+      $('#goal').innerHTML = html;
+      $('#goal').onclick = null;
+    },
+    checkChallenges: function () {
+      if (this.mode !== 'sandbox' || !this.sim.res) return;
+      var done = store.data.challenges = store.data.challenges || {}, self = this, changed = false;
+      var L = this.L.call({ sim: this.sim, level: { flags: this._chFlags = this._chFlags || {}, step: 0 }, bench: this.bench });
+      CHALLENGES.forEach(function (c) {
+        if (done[c.id]) return;
+        var ok = false; try { ok = c.check(L, self._chFlags[c.id] = self._chFlags[c.id] || {}); } catch (e) { ok = false; }
+        if (ok) { done[c.id] = true; changed = true; self.toast('✓ Challenge done: ' + c.title, 'good'); audio.blip(880, 0.12, 'sine', 0.06); }
+      });
+      if (changed) { store.save(); this.renderChallenges(); }
     },
     saveSandbox: function () {
       if (this.mode !== 'sandbox') return;
@@ -435,6 +457,12 @@
         var nb = BB.board.makeBoard(cfg);
         self.sim.state.parts.forEach(function (p) { if (p.ends) p.ends = p.ends.map(function (e) { if (e.at && e.at.slice(0, 2) !== 'P:' && !nb.byId[e.at]) { var pos = self.sim.endPos(e); return { x: pos.x, y: pos.y }; } return e; }); });
         self.sim.setBoard(cfg);
+        var lifted = 0;
+        self.sim.state.parts.forEach(function (p) {
+          if (PARTS[p.type].kind !== 'rigid' || p.free) return;
+          if (self.sim.pinPoints(p).some(function (q) { return !q.at; })) { p.free = true; lifted++; }
+        });
+        if (lifted) self.toast(lifted + ' part' + (lifted > 1 ? 's do' : ' does') + ' not fit on the smaller board. ' + (lifted > 1 ? 'They are' : 'It is') + ' lifted off: drag ' + (lifted > 1 ? 'them' : 'it') + ' back onto the board.', 'info');
         self.commit(u);
         self.bench.renderBoard(); self.bench.render(true); self.fitView();
       });
@@ -477,7 +505,7 @@
     placeNew: function (type, props) {
       var def = PARTS[type], sim = this.sim, bench = this.bench;
       var u = this.snapshot();
-      var sz = bench.size(), mobile = window.innerWidth < 900;
+      var sz = bench.size(), mobile = window.innerWidth < 1100;
       var c = bench.toWorld(sz.left + sz.w / 2, sz.top + (mobile ? sz.h * 0.4 : sz.h / 2));
       var occ = sim.occupancy(), cov = sim.covered(), b = sim.board;
       var free = function (id) { return id && b.byId[id] && !occ[id] && !cov[id]; };
@@ -545,7 +573,7 @@
     // and above the bottom sheet on phones.
     ensureVisible: function (p) {
       var r = this.sim.bodyRect(p), bench = this.bench, sz = bench.size();
-      var mobile = window.innerWidth < 900;
+      var mobile = window.innerWidth < 1100;
       var top = 8, bottom = sz.h - 8;
       if (mobile) {
         var g = $('#goal'); if (g && g.offsetParent && document.body.classList.contains('levelmode')) top = g.offsetTop + g.offsetHeight + 8;
@@ -613,12 +641,13 @@
     },
 
     // ---------- inspector ----------
-    onSelect: function (id) {
+    showSheet: function () { document.body.classList.add('hassel'); var sp = this.bench.sel && this.sim.part(this.bench.sel); if (sp && window.innerWidth < 1100) this.ensureVisible(sp); },
+    onSelect: function (id, quiet) {
       var ins = $('#inspector'), self = this;
       if (id !== this._lastSel) document.body.classList.remove('insfull');
       this._lastSel = id;
-      document.body.classList.toggle('hassel', !!id);
-      if (id && window.innerWidth < 900 && !(this.bench.drag && this.bench.drag.moved)) { var sp = this.sim.part(id); if (sp) this.ensureVisible(sp); }
+      document.body.classList.toggle('hassel', !!id && !quiet);
+      if (id && !quiet && window.innerWidth < 1100) { var sp = this.sim.part(id); if (sp) this.ensureVisible(sp); }
       if (!id) {
         ins.innerHTML = '<p class="mut small empty">' + icon('info') + ' Tap a part to see its values here. Tap a hole to see what is connected to it.</p>';
         return;
@@ -627,7 +656,8 @@
       var lock = this.mode === 'level' ? (this.level.def.lock || []) : [];
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
       html += '<div class="vals" id="vals"></div>';
-      html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More controls ▴') + '</button>';
+      html += '<div class="acts" id="acts"></div>';
+      html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴') + '</button>';
       var ctrls = '';
       (def.props || []).forEach(function (pr) {
         var locked = (p.locked && !pr.env && ['top', 'bottom', 'on', 'mode', 'pos', 'usb'].indexOf(pr.k) < 0) || lock.indexOf(pr.k) >= 0;
@@ -653,8 +683,8 @@
       if (def.mcu && p.st.damaged && Object.keys(p.st.damaged).length) acts += '<button class="primary" data-a="renew">New board</button>';
       if (p.type === 'meter' && p.st.fuse) acts += '<button class="primary" data-a="fuse">New fuse</button>';
       if (!p.locked) acts += '<button class="danger" data-a="del">' + icon('trash') + ' Delete</button>';
-      html += '<div class="acts">' + acts + '</div>';
       ins.innerHTML = html;
+      $('#acts').innerHTML = acts;
       this.refreshInspector();
       var setProp = function (k, v) { var u = self.snapshot(); p.props[k] = v; self.sim.dirty(); self.commit(u); self.bench.render(); self.onInteract('prop', p); };
       ins.onchange = function (e) {
@@ -684,7 +714,7 @@
         if (a === 'renew') { var u2 = self.snapshot(); p.st = {}; self.sim.dirty(); self.commit(u2); self.bench.render(true); self.onSelect(id); }
         if (a === 'fuse') { p.st.fuse = false; self.sim.dirty(); self.onSelect(id); }
         if (a === 'clap' || a === 'wave') self.partAction(p, a);
-        if (a === 'more') { document.body.classList.toggle('insfull'); b.textContent = document.body.classList.contains('insfull') ? 'Show less ▾' : 'More controls ▴'; }
+        if (a === 'more') { document.body.classList.toggle('insfull'); b.textContent = document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴'; }
       };
       var hold = ins.querySelector('.holdbtn');
       if (hold) {
@@ -701,7 +731,7 @@
       else s += '<select data-prog="1">' + P.ORDER.filter(function (id) { return P.available(mcu, id); }).map(function (id) { return '<option value="' + id + '"' + (id === cur ? ' selected' : '') + '>' + esc(P.P[id].name) + '</option>'; }).join('') + '</select>';
       s += '</label>';
       var prog = P.P[cur];
-      s += '<p class="small">' + esc(prog.desc) + '</p>';
+      s += '<p class="small">' + rich(prog.desc) + '</p>';
       if (mcu === 'pi5') s += '<p class="small mut">The Raspberry Pi has no analog inputs, so knob, light and sound programs are not offered.</p>';
       var roles = Object.keys(prog.roles);
       if (roles.length) {
@@ -788,7 +818,7 @@
       if (this.sim.isDynamic()) { this.sim.step(dt); this.afterStep(); }
       if (this.sim.ver !== this._drawnVer) { this._drawnVer = this.sim.ver; this.bench.render(); }
       var now = performance.now();
-      if (!this._insT || now - this._insT > 200) { this._insT = now; this.refreshInspector(); this.updateBanner(); if (this.mode === 'level') this.checkLevel(); }
+      if (!this._insT || now - this._insT > 200) { this._insT = now; this.refreshInspector(); this.updateBanner(); if (this.mode === 'level') this.checkLevel(); else this.checkChallenges(); }
     },
     afterStep: function () {
       var sim = this.sim, self = this;
@@ -852,7 +882,7 @@
       t.className = 'toast ' + (kind || 'info');
       t.innerHTML = rich(text);
       $('#toasts').appendChild(t);
-      var all = $('#toasts').children, max = window.innerWidth < 900 ? 1 : 2; while (all.length > max) all[0].remove();
+      var all = $('#toasts').children, max = window.innerWidth < 1100 ? 1 : 2; while (all.length > max) all[0].remove();
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },
@@ -878,6 +908,28 @@
       pop.style.top = (r.bottom + 8 + 120 > window.innerHeight ? r.top - 8 - pop.offsetHeight : r.bottom + 8) + 'px';
     }
   };
+
+  // Sandbox challenges: small free tasks for the boards the levels do not cover.
+  function blinkCheck(L, f, type, pin) {
+    var b = L.of(type)[0]; if (!b || b.props.program !== 'blink' || !b.st.io || !b.st.io[pin]) return false;
+    L.of('led').forEach(function (l) {
+      var on = b.st.io[pin].level === 1, pinI = (b.st.pinI || {})[pin] || 0;
+      if (on && H.lit(l) && H.safe(l) && Math.abs(pinI - l._i) < 0.15 * l._i) f.on = true;
+      if (!on && f.on && !H.lit(l)) f.off = true;
+    });
+    return f.on && f.off;
+  }
+  var CHALLENGES = [
+    { id: 'pi5', title: 'Raspberry Pi 5 blink.', text: 'The Pi does not fit on the breadboard. Connect GPIO17 (header pin 11) → 220 Ω → LED → GND (pin 6) with wires, and run “Blink”. The Pi gives 3.3 V, so the LED current is smaller.', check: function (L, f) { return blinkCheck(L, f, 'pi5', 'GPIO17'); } },
+    { id: 'wio', title: 'Wio Terminal light meter.', text: 'Build a divider (LDR + 10 kΩ) between 3V3 (pin 1) and GND, with the middle on D2/A2 (pin 16). Run “Light meter”: the Wio shows the number on its own screen.', check: function (L, f) {
+      var w = L.of('wio')[0]; if (!w || w.props.program !== 'light_meter' || !w.st.display) return false;
+      var a = +String(w.st.display[1] || '').replace(/\D/g, '');
+      if (a > 600) f.hi = true; if (a < 300 && f.hi) f.lo = true; return f.hi && f.lo;
+    } },
+    { id: 'nanoMB', title: 'Nano from the MB102.', text: 'Turn off the Nano’s USB cable (in its panel). Power it from a 5V rail: rail + → Nano 5V pin, rail − → Nano GND.', check: function (L) { return L.of('nano').some(function (n) { return n.props.usb === false && n.st.powered && n.st.extPowered; }); } },
+    { id: 'espMB', title: 'ESP32 from a 3.3V rail.', text: 'Set one MB102 side to 3.3V. Unplug the ESP32’s USB, then feed its 3V pin from that rail (and GND to −). Never feed 5V into 3V!', check: function (L) { return L.of('esp32').some(function (n) { return n.props.usb === false && n.st.powered && Math.abs(((n.st.lastV || {})['3V'] || 0) - 3.3) < 0.15 && !Object.keys(n.st.damaged || {}).length; }); } }
+  ];
+  BB.CHALLENGES = CHALLENGES;
 
   // little tray pictures: draw the real part art, scaled into a box
   function trayPic(spec) {

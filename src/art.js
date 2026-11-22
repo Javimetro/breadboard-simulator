@@ -104,27 +104,47 @@
   // ---------- parts ----------
   var DRAW = {};
   // Two-leg parts: body sits between the two leg ends.
+  // LED seen from the front at an angle: the legs go down into the holes, the long leg (+)
+  // has a kink, the rim has a flat side on the − leg, and the metal inside shows through.
+  function ledFrame(a, k) {
+    var ang = angle(a, k), flip = Math.cos(ang * Math.PI / 180) < -0.01;
+    return { ang: ang, flip: flip };
+  }
+  BB.ledBodyCenter = function (a, k) { // pitch units → centre of the drawn body
+    var f = ledFrame(a, k), m = mid(a, k), r = f.ang * Math.PI / 180, up = f.flip ? 1 : -1;
+    return { x: m.x - Math.sin(r) * up * 2.4, y: m.y + Math.cos(r) * up * 2.4 };
+  };
   DRAW.led = function (p, pts, now) {
-    var a = pt(pts[0]), k = pt(pts[1]), m = mid(a, k);
+    var a = pt(pts[0]), k = pt(pts[1]), m = mid(a, k), L = dist(a, k) / 2;
     var col = BB.engine.LED_TYPES[p.props.color].rgb, v = p.vis || {};
-    var ang = angle(a, k);
-    var s = leg(a, { x: m.x, y: m.y }, 1.15) + leg(k, m, 1.15) + tip(a) + tip(k);
-    s += '<g transform="translate(' + f1(m.x) + ' ' + f1(m.y) + ') rotate(' + f1(ang) + ')">';
-    var b = v.b || 0;
+    var f = ledFrame(a, k);
+    var tr = 'translate(' + f1(m.x) + ' ' + f1(m.y) + ') rotate(' + f1(f.ang) + ')' + (f.flip ? ' scale(1 -1)' : '');
+    var s = '<g transform="' + tr + '">';
+    var b = v.b || 0, body = v.burnt ? '#3b2b22' : col;
+    // legs: anode (left, x<0) with a kink because it is longer; cathode straight
+    s += '<path d="M' + f1(-L) + ' 0 L' + f1(-L) + ' -4 L' + f1(Math.max(-L, -7)) + ' -7 L' + f1(Math.max(-L, -7)) + ' -9 L-4 -12 L-4 -15" fill="none" stroke="#c7ccd3" stroke-width="1.3" stroke-linejoin="round"/>';
+    s += '<path d="M' + f1(L) + ' 0 L' + f1(L) + ' -6 L4 -11 L4 -15" fill="none" stroke="#c7ccd3" stroke-width="1.3" stroke-linejoin="round"/>';
+    s += '<circle cx="' + f1(-L) + '" cy="0" r="1.5" fill="#d9dde2" stroke="#6b7078" stroke-width=".4"/><circle cx="' + f1(L) + '" cy="0" r="1.5" fill="#d9dde2" stroke="#6b7078" stroke-width=".4"/>';
     if (b > 0.03 && !v.burnt) {
-      s += '<circle r="' + f1(11 + 9 * Math.min(1, b)) + '" fill="' + col + '" opacity="' + f1(Math.min(0.4, 0.15 + b * 0.25)) + '" class="glow"/>';
-      s += '<circle r="' + f1(10 + 10 * Math.min(1, b)) + '" fill="url(#gGlow)" opacity="' + f1(Math.min(1, b)) + '"/>';
+      s += '<circle cx="0" cy="-27" r="' + f1(12 + 10 * Math.min(1, b)) + '" fill="' + col + '" opacity="' + f1(Math.min(0.45, 0.15 + b * 0.3)) + '"/>';
+      s += '<circle cx="0" cy="-27" r="' + f1(7 + 7 * Math.min(1, b)) + '" fill="url(#gGlow)" opacity="' + f1(Math.min(1, b)) + '"/>';
     }
-    var body = v.burnt ? '#3b2b22' : col;
-    // flange with the flat side toward the cathode (−)
-    s += '<path d="M-8.4 -5.1 A9.8 9.8 0 1 1 -8.4 5.1 Z" transform="rotate(180)" fill="' + body + '" opacity="' + (v.burnt ? 1 : 0.55) + '" stroke="#00000040" stroke-width=".5"/>';
-    s += '<circle r="7.8" fill="' + body + '" opacity="' + (v.burnt ? 1 : (0.72 + 0.28 * Math.min(1, b))) + '"/>';
-    if (b > 0.03 && !v.burnt) s += '<circle r="' + f1(3 + 3 * Math.min(1, b)) + '" fill="#fff" opacity="' + f1(Math.min(0.95, b)) + '"/>';
-    s += '<circle r="7.8" fill="url(#gDome)"/>';
-    if (v.burnt) s += '<path d="M-4 -3 L0 0 L-2 4 M0 0 L4 -2" stroke="#120c08" stroke-width=".9" fill="none"/>';
-    s += '<text x="-11.5" y="1.6" class="pol">+</text>';
+    // rim (flange) with the flat cut on the cathode (right) side
+    s += '<path d="M-11 -13 L8.6 -13 L8.6 -17 L-11 -17 Z" fill="' + body + '" opacity="' + (v.burnt ? 1 : 0.8) + '" stroke="#00000055" stroke-width=".5"/>';
+    // dome
+    s += '<path d="M-9.6 -17 L-9.6 -30 A9.6 9.6 0 0 1 9.6 -30 L9.6 -17 Z" fill="' + body + '" opacity="' + (v.burnt ? 1 : 0.62 + 0.3 * Math.min(1, b)) + '" stroke="#00000040" stroke-width=".5"/>';
+    // the metal inside: thin post (anode) and the wide anvil (cathode)
+    if (!v.burnt) s += '<path d="M-4 -17 V-24 L-1.5 -25.5 M4 -17 V-22 L7 -22 L6 -26 L1 -26 Z" fill="#9aa0a8" fill-opacity=".55" stroke="#6b7078" stroke-opacity=".6" stroke-width=".6"/>';
+    if (b > 0.03 && !v.burnt) s += '<circle cx="0" cy="-26" r="' + f1(2.5 + 3 * Math.min(1, b)) + '" fill="#fff" opacity="' + f1(Math.min(0.95, b)) + '"/>';
+    s += '<path d="M-7 -19 L-7 -30 A7 7 0 0 1 -3 -36" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1.6" stroke-linecap="round"/>';
+    if (v.burnt) s += '<path d="M-5 -30 L0 -25 L-3 -20 M0 -25 L5 -28" stroke="#120c08" stroke-width="1" fill="none"/>';
     s += '</g>';
-    s += smoke(m.x, m.y, p.st.smoke, now);
+    // + and − marks in screen space (never mirrored)
+    var r = f.ang * Math.PI / 180, nx = Math.cos(r), ny = Math.sin(r);
+    s += '<text x="' + f1(a.x - nx * 5 - 2) + '" y="' + f1(a.y - ny * 5 + 2) + '" class="pol">+</text>';
+    s += '<text x="' + f1(k.x + nx * 5 - 2) + '" y="' + f1(k.y + ny * 5 + 2) + '" class="pol">−</text>';
+    var c = BB.ledBodyCenter({ x: m.x / U, y: m.y / U }, { x: m.x / U + nx, y: m.y / U + ny });
+    s += smoke(c.x * U, c.y * U, p.st.smoke, now);
     return s;
   };
   DRAW.resistor = function (p, pts) {
@@ -256,7 +276,9 @@
     for (var i = 0; i < n; i++) {
       var cy = 10 + i * ((h - 20) / n), ch = (h - 20) / n - 4;
       s += '<rect x="25" y="' + f1(cy) + '" width="186" height="' + f1(ch) + '" rx="' + f1(ch / 2) + '" fill="#2f9b46"/>';
-      s += '<rect x="25" y="' + f1(cy) + '" width="70" height="' + f1(ch) + '" rx="' + f1(ch / 2) + '" fill="#1f1f1f"/>';
+      // cells in series point opposite ways: the black (−) end alternates
+      s += '<rect x="' + (i % 2 ? 141 : 25) + '" y="' + f1(cy) + '" width="70" height="' + f1(ch) + '" rx="' + f1(ch / 2) + '" fill="#1f1f1f"/>';
+      s += '<text x="' + (i % 2 ? 30 : 204) + '" y="' + f1(cy + ch / 2 + 4) + '" class="aatxt">+</text>';
       s += '<rect x="' + (i % 2 ? 209 : 18) + '" y="' + f1(cy + ch * 0.3) + '" width="8" height="' + f1(ch * 0.4) + '" rx="2" fill="url(#gMetal)"/>';
       s += txt(120, cy + ch / 2 + 4, 'AA 1.5V', 'aatxt');
     }
@@ -323,22 +345,22 @@
     s += '<rect x="-46" y="80" width="6" height="8" rx="1" fill="' + (on ? '#59ff6a' : '#245a2c') + '"/>' + (on ? '<circle cx="-43" cy="84" r="8" fill="#59ff6a" opacity=".35"/>' : '');
     s += txt(-36, 87, 'ON', 'mbs');
     // regulators (AMS1117)
-    s += '<rect x="-48" y="34" width="20" height="14" rx="1" fill="#1a1a1a" stroke="#444"/><rect x="-48" y="124" width="20" height="14" rx="1" fill="#1a1a1a" stroke="#444"/>';
-    s += '<rect x="-26" y="105" width="12" height="18" rx="5" fill="#1f2b63"/><rect x="-26" y="50" width="12" height="18" rx="5" fill="#1f2b63"/>';
+    s += '<rect x="-56" y="34" width="20" height="14" rx="1" fill="#1a1a1a" stroke="#444"/><rect x="-56" y="124" width="20" height="14" rx="1" fill="#1a1a1a" stroke="#444"/>';
+    s += txt(-56, 31, 'AMS1117', 'mbs') + '<rect x="-26" y="100" width="12" height="18" rx="5" fill="#1f2b63"/><rect x="-26" y="52" width="12" height="18" rx="5" fill="#1f2b63"/>';
     // jumpers
     [['top', 26], ['bottom', 144]].forEach(function (j) {
       var sel = p.props[j[0]];
       var y0 = j[1] - 6;
-      for (var k = 0; k < 3; k++) s += '<rect x="' + (-24 + k * 7 - 1.4) + '" y="' + (y0 - 1.4) + '" width="2.8" height="2.8" fill="url(#gGold)"/>';
+      for (var k = 0; k < 3; k++) s += '<rect x="' + (-38 + k * 7 - 1.4) + '" y="' + (y0 - 1.4) + '" width="2.8" height="2.8" fill="url(#gGold)"/>';
       if (sel !== 'off') {
-        var jx = sel === '3.3' ? -24 : -10;
-        s += '<rect x="' + (jx - 3) + '" y="' + (y0 - 5) + '" width="20" height="10" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6"/>';
-      } else s += '<rect x="-31" y="' + (y0 + 9) + '" width="16" height="8" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6" opacity=".9"/>';
-      s += txt(-30, y0 - 6, '3.3V', 'mbs') + txt(-10, y0 - 6, 'OFF', 'mbs') + txt(4, y0 - 6, '5V', 'mbs');
-      s += txt(16, y0 + 3, sel === 'off' ? '—' : sel + 'V', 'mbv');
+        var jx = sel === '3.3' ? -38 : -24;
+        s += '<rect x="' + (jx - 3) + '" y="' + (y0 - 5) + '" width="13" height="10" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6"/>';
+      } else s += '<rect x="-45" y="' + (y0 + 9) + '" width="13" height="8" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6" opacity=".9"/>';
+      s += txt(-44, y0 - 6, '3.3V', 'mbs') + txt(-35, y0 + 12, 'OFF', 'mbs') + txt(-26, y0 - 6, '5V', 'mbs');
+      s += txt(-18, y0 + 3, sel === 'off' ? 'off' : sel + 'V', 'mbv');
     });
     s += txt(-84, 186 - 8, 'MB102', 'mbs') + txt(-60, -4, 'Breadboard power', 'mbs');
-    s += txt(8, 5, '+', 'mbp') + txt(8, 15, '−', 'mbp') + txt(8, 165, '+', 'mbp') + txt(8, 175, '−', 'mbp');
+    s += txt(15, 3, '+', 'mbp') + txt(15, 13, '−', 'mbp') + txt(15, 163, '+', 'mbp') + txt(15, 173, '−', 'mbp');
     return group(p, s);
   };
 
@@ -354,15 +376,19 @@
       var q = def.pinPos[i];
       s += '<text x="' + (q[0] * U) + '" y="' + (q[1] === 0 ? 9.8 : 52.6) + '" class="pinlbl" text-anchor="middle">' + pin.n + '</text>';
     });
-    s += '<g transform="translate(68 30) rotate(45)"><rect x="-13" y="-13" width="26" height="26" fill="#1a1a1a"/><circle cx="-9" cy="-9" r="1.5" fill="#333"/></g>';
-    s += txt(68, 31, 'ATMEGA', 'chip', ' text-anchor="middle" transform="rotate(45 68 30)"');
-    s += '<rect x="96" y="22" width="14" height="14" rx="1" fill="#f1efe8"/><circle cx="103" cy="29" r="4" fill="#d9d4c6" stroke="#aaa" stroke-width=".4"/>';
-    s += '<rect x="30" y="20" width="16" height="7" rx="3.5" fill="url(#gMetal)" stroke="#888" stroke-width=".4"/>' + txt(38, 25.3, '16.000', 'tiny', ' text-anchor="middle"');
-    var led = function (x, y, on, col) { return '<rect x="' + x + '" y="' + y + '" width="4" height="2.6" fill="' + (on ? col : '#d9d2c0') + '"/>' + (on ? '<circle cx="' + (x + 2) + '" cy="' + (y + 1.3) + '" r="5" fill="' + col + '" opacity=".45"/>' : ''); };
+    // reset button in the middle, chip toward the far end, crystal and LEDs near the USB plug
+    s += '<rect x="56" y="22" width="15" height="15" rx="1" fill="#f1efe8"/><circle cx="63.5" cy="29.5" r="4.2" fill="#d9d4c6" stroke="#aaa" stroke-width=".4"/>' + txt(63.5, 43, 'RESET', 'tiny', ' text-anchor="middle"');
+    s += '<g transform="translate(98 30) rotate(45)"><rect x="-12" y="-12" width="24" height="24" fill="#1a1a1a"/><circle cx="-8" cy="-8" r="1.5" fill="#333"/></g>';
+    s += txt(98, 31, 'ATMEGA328P', 'chip', ' text-anchor="middle" transform="rotate(45 98 30)"');
+    s += '<rect x="30" y="20" width="16" height="7" rx="3.5" fill="url(#gMetal)" stroke="#888" stroke-width=".4"/>' + txt(38, 25.3, '16.000', 'tiny dark', ' text-anchor="middle"');
+    var led = function (x, y, on, col, lb) { return '<rect x="' + x + '" y="' + y + '" width="4" height="2.6" fill="' + (on ? col : '#d9d2c0') + '"/>' + (on ? '<circle cx="' + (x + 2) + '" cy="' + (y + 1.3) + '" r="5" fill="' + col + '" opacity=".45"/>' : '') + txt(x + 5.5, y + 2.4, lb, 'tiny'); };
     var pinL = st.io && st.io.D13 ? st.io.D13.level : 0;
-    s += led(6, 36, st.powered, '#56ff6d') + led(6, 29, st.powered && pinL, '#ffb12a') + led(12, 36, false, '#ffd52a') + led(12, 29, false, '#ffd52a');
-    s += txt(4, 46, 'PWR L', 'tiny') + txt(118, 33, 'Nano V3', 'brand');
-    if (st.damaged && Object.keys(st.damaged).length) s += '<text x="68" y="12" class="dmg" text-anchor="middle">damaged</text>';
+    s += led(4, 30, st.powered, '#56ff6d', 'PWR') + led(4, 36, st.powered && pinL, '#ffb12a', 'L') + led(4, 42, false, '#ffd52a', 'TX') + led(20, 42, false, '#ffd52a', 'RX');
+    s += txt(30, 49, 'Nano V3', 'brand');
+    // ICSP header pads (2 × 3) at the far end
+    for (var ix = 0; ix < 3; ix++) for (var iy = 0; iy < 2; iy++) s += '<circle cx="' + (126 + ix * 7) + '" cy="' + (24 + iy * 9) + '" r="2.4" fill="url(#gGold)" stroke="#7a5a10" stroke-width=".4"/>';
+    s += txt(126, 43, 'ICSP', 'tiny');
+    if (st.damaged && Object.keys(st.damaged).length) s += '<text x="98" y="16" class="dmg" text-anchor="middle">damaged</text>';
     return group(p, s) + smoke(p.x * U + 60, p.y * U + 20, st.smoke, now);
   };
   DRAW.esp32 = function (p, pts, now) {
@@ -397,19 +423,25 @@
     [[12, 12], [12, 208], [244, 12], [244, 208]].forEach(function (h) { s += '<circle cx="' + h[0] + '" cy="' + h[1] + '" r="7" fill="#e9e2c8"/><circle cx="' + h[0] + '" cy="' + h[1] + '" r="4" fill="#3b3b3b"/>'; });
     s += '<rect x="68" y="-0.5" width="202" height="24" fill="#111"/>';
     s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0], q[1]]; }));
-    s += '<rect x="96" y="70" width="64" height="64" rx="4" fill="url(#gMetal)" stroke="#888"/>' + txt(128, 104, 'RASPBERRY PI', 'chip dark', ' text-anchor="middle"') + txt(128, 114, 'BCM2712', 'tiny dark', ' text-anchor="middle"');
-    s += '<rect x="176" y="80" width="30" height="30" rx="2" fill="#1c1c1c"/>' + txt(191, 98, 'RP1', 'tiny', ' text-anchor="middle"');
-    s += '<rect x="40" y="62" width="40" height="44" rx="2" fill="#1c1c1c"/>';
-    s += '<rect x="270" y="10" width="72" height="58" rx="2" fill="url(#gMetal)" stroke="#777"/>' + txt(300, 44, 'ETH', 'tiny dark');
-    s += '<rect x="276" y="80" width="66" height="56" rx="2" fill="url(#gMetal)" stroke="#777"/><rect x="284" y="88" width="50" height="14" fill="#2b66d9"/><rect x="284" y="114" width="50" height="14" fill="#2b66d9"/>';
-    s += '<rect x="276" y="146" width="66" height="56" rx="2" fill="url(#gMetal)" stroke="#777"/><rect x="284" y="154" width="50" height="14" fill="#1a1a1a"/><rect x="284" y="180" width="50" height="14" fill="#1a1a1a"/>';
-    s += '<rect x="40" y="206" width="30" height="18" rx="4" fill="url(#gMetal)"/><rect x="100" y="208" width="22" height="14" rx="3" fill="url(#gMetal)"/><rect x="148" y="208" width="22" height="14" rx="3" fill="url(#gMetal)"/>';
-    s += txt(40, 200, 'USB-C power', 'tiny') + txt(104, 200, 'micro HDMI ×2', 'tiny');
-    s += '<circle cx="20" cy="190" r="5" fill="' + (st.powered ? '#ff3b2a' : '#5a1e1a') + '"/>';
+    s += '<rect x="280" y="6" width="22" height="9" rx="1" fill="#f1efe8"/>' + txt(281, 24, 'FAN', 'tiny');
+    s += '<rect x="96" y="66" width="64" height="64" rx="4" fill="url(#gMetal)" stroke="#888"/>' + txt(128, 100, 'RASPBERRY PI', 'chip dark', ' text-anchor="middle"') + txt(128, 110, 'BCM2712', 'tiny dark', ' text-anchor="middle"');
+    s += '<rect x="182" y="74" width="30" height="30" rx="2" fill="#1c1c1c"/>' + txt(197, 92, 'RP1', 'tiny', ' text-anchor="middle"');
+    s += '<rect x="40" y="58" width="44" height="48" rx="2" fill="#1c1c1c"/>' + txt(62, 85, 'RAM', 'tiny', ' text-anchor="middle"');
+    // right edge: USB 2.0 (black), USB 3.0 (blue), Ethernet at the bottom
+    s += '<rect x="274" y="18" width="68" height="54" rx="2" fill="url(#gMetal)" stroke="#777"/><rect x="282" y="26" width="52" height="13" fill="#1a1a1a"/><rect x="282" y="51" width="52" height="13" fill="#1a1a1a"/>';
+    s += '<rect x="274" y="80" width="68" height="54" rx="2" fill="url(#gMetal)" stroke="#777"/><rect x="282" y="88" width="52" height="13" fill="#2b66d9"/><rect x="282" y="113" width="52" height="13" fill="#2b66d9"/>';
+    s += '<rect x="270" y="144" width="72" height="62" rx="2" fill="url(#gMetal)" stroke="#777"/><rect x="282" y="156" width="48" height="38" rx="2" fill="#2a2a2a"/>' + txt(290, 202, 'ETH', 'tiny dark');
+    // bottom edge: USB-C power, two micro HDMI, two camera/display connectors
+    s += '<rect x="34" y="204" width="32" height="18" rx="5" fill="url(#gMetal)"/><rect x="92" y="207" width="24" height="14" rx="3" fill="url(#gMetal)"/><rect x="136" y="207" width="24" height="14" rx="3" fill="url(#gMetal)"/>';
+    s += '<rect x="178" y="176" width="10" height="34" rx="1" fill="#f1efe8"/><rect x="200" y="176" width="10" height="34" rx="1" fill="#f1efe8"/>' + txt(176, 172, 'CAM/DISP', 'tiny');
+    s += txt(30, 198, 'USB-C', 'tiny') + txt(94, 198, 'micro HDMI ×2', 'tiny');
+    // left edge: PCIe connector and the power button
+    s += '<rect x="-2" y="70" width="10" height="44" rx="1" fill="#f1efe8"/>' + txt(12, 96, 'PCIe', 'tiny');
+    s += '<rect x="-3" y="166" width="8" height="12" rx="2" fill="#1c1c1c" stroke="#777" stroke-width=".6"/>' + txt(9, 175, 'power', 'tiny');
+    s += '<circle cx="24" cy="150" r="4" fill="' + (st.powered ? '#ff3b2a' : '#5a1e1a') + '"/>' + (st.powered ? '<circle cx="24" cy="150" r="8" fill="#ff3b2a" opacity=".35"/>' : '');
     s += txt(20, 40, 'Raspberry Pi 5', 'brand');
-    s += '<g class="note"><rect x="20" y="146" width="186" height="34" rx="5" fill="#000" opacity=".45"/>' + txt(28, 160, 'Too big for the breadboard:', 'note') + txt(28, 173, 'connect GPIO pins with wires', 'note') + '</g>';
     s += '</g>';
-    // pin labels near header (small)
+    s += '<text x="' + (x + 4) + '" y="' + (y + 236) + '" class="caption">Too big for the breadboard: connect its GPIO pins with jumper wires.</text>';
     def.pins.forEach(function (pin, i) {
       var q = def.pinPos[i];
       s += '<text x="' + f1(x + q[0] * U) + '" y="' + f1(y + q[1] * U + (q[1] < 1.5 ? -5 : 7.6)) + '" class="hdr" text-anchor="middle">' + pin.phys + '</text>';
@@ -422,7 +454,7 @@
     var shell = p.props.shell === 'white' ? '#eef0f2' : '#2f6fb7';
     var s = '<g transform="translate(' + x + ' ' + y + ')">';
     // back header strip (shown below the case)
-    s += '<rect x="34" y="270" width="210" height="28" rx="4" fill="' + shell + '" opacity=".85"/>' + txt(36, 266, '40-pin header (on the back)', 'tiny' + (p.props.shell === 'white' ? ' dark' : ''));
+    s += '<rect x="34" y="270" width="210" height="28" rx="4" fill="#1d1f22" stroke="#555" stroke-dasharray="3 2"/>' + txt(36, 266, '40-pin header on the back (shown here)', 'tiny');
     s += '<rect x="0" y="0" width="285" height="224" rx="26" fill="' + shell + '" filter="url(#fShadow)"/>';
     s += '<rect x="30" y="-6" width="26" height="8" rx="3" fill="' + shell + '" stroke="#00000044"/><rect x="76" y="-6" width="26" height="8" rx="3" fill="' + shell + '" stroke="#00000044"/><rect x="122" y="-6" width="26" height="8" rx="3" fill="' + shell + '" stroke="#00000044"/>';
     s += '<rect x="22" y="18" width="200" height="160" rx="8" fill="#0b0b0d"/>';
@@ -434,6 +466,9 @@
     s += '<circle cx="252" cy="160" r="16" fill="#1d1d1d"/><circle cx="252" cy="160" r="6" fill="#444"/>';
     for (var k = 0; k < 4; k++) s += '<rect x="236" y="' + (40 + k * 10) + '" width="30" height="3" rx="1.5" fill="#00000055"/>';
     s += txt(26, 205, 'Wio Terminal', 'brand' + (p.props.shell === 'white' ? ' dark' : ''));
+    // two Grove ports and the USB-C plug on the bottom edge
+    s += '<rect x="40" y="218" width="34" height="12" rx="2" fill="#f1efe8" stroke="#999"/><rect x="211" y="218" width="34" height="12" rx="2" fill="#f1efe8" stroke="#999"/><rect x="128" y="219" width="28" height="9" rx="4" fill="url(#gMetal)"/>';
+    s += txt(46, 240, 'Grove', 'tiny' + (p.props.shell === 'white' ? ' dark' : '')) + txt(217, 240, 'Grove', 'tiny' + (p.props.shell === 'white' ? ' dark' : ''));
     s += '</g>';
     s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0] + p.x, q[1] + p.y]; }));
     def.pins.forEach(function (pin, i) {
