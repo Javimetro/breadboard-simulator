@@ -261,9 +261,7 @@
     });
     if (bestEnd) return bestEnd;
     // 2. hot spots (button, knob, jumpers, switch, dial)
-    for (var i = order.length - 1; i >= 0; i--) { /* checked below in layer order */ }
     var hot = null;
-    order.slice().reverse();
     parts.slice().sort(function (a, b) { return self.layerOf(b) - self.layerOf(a); }).some(function (p) {
       var def = PARTS[p.type];
       if (!def.hot) return false;

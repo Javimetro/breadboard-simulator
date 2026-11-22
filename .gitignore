@@ -21,3 +21,4 @@ dist/
 build/
 .DS_Store
 shots/
+.deploy/

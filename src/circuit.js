@@ -222,6 +222,26 @@
       };
       PARTS[p.type].after(p, rr, ctx);
     });
+    // Two power sources joined by parts but with separate GNDs: a classic beginner mistake.
+    var supplies = [];
+    parts.forEach(function (p) {
+      var def = PARTS[p.type], gk = [];
+      if (def.mcu && p.st.powered) def.pins.forEach(function (q, k) { if (q.kind === 'gnd') gk.push(k); });
+      else if (p.type === 'mb102' && p.props.on) gk = [2, 3, 6, 7];
+      else if (p.type === 'battery9' || p.type === 'aa') gk = [1];
+      if (!gk.length) return;
+      var keys = nets.keys[p.id];
+      var gnets = gk.map(function (k) { return keys[k][0] === 'F' ? null : nets.find(keys[k]); }).filter(function (x) { return x !== null; });
+      if (!gnets.length) return;
+      supplies.push({ p: p, gnets: gnets, island: r.island[b.pinNodes[p.id][gk[0]]] });
+    });
+    for (var i1 = 0; i1 < supplies.length; i1++) for (var i2 = i1 + 1; i2 < supplies.length; i2++) {
+      var A = supplies[i1], Bs = supplies[i2];
+      if (A.island !== Bs.island) continue;
+      var shared = A.gnets.some(function (g) { return Bs.gnets.indexOf(g) >= 0; });
+      if (!shared) issues.push({ part: Bs.p.id, kind: 'noground', level: 'warn', title: 'No common GND',
+        text: 'The ' + PARTS[A.p.type].name + ' and the ' + PARTS[Bs.p.type].name + ' are both power sources, but their GND (−) sides are not joined. Current must flow back to the source it came from. Join the two GNDs with a wire.' });
+    }
     // current into each pin from the hole it sits in
     var pinIn = {};
     parts.forEach(function (p) { pinIn[p.id] = b.pinNodes[p.id].map(function () { return 0; }); });

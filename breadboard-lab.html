@@ -1790,6 +1790,26 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       };
       PARTS[p.type].after(p, rr, ctx);
     });
+    // Two power sources joined by parts but with separate GNDs: a classic beginner mistake.
+    var supplies = [];
+    parts.forEach(function (p) {
+      var def = PARTS[p.type], gk = [];
+      if (def.mcu && p.st.powered) def.pins.forEach(function (q, k) { if (q.kind === 'gnd') gk.push(k); });
+      else if (p.type === 'mb102' && p.props.on) gk = [2, 3, 6, 7];
+      else if (p.type === 'battery9' || p.type === 'aa') gk = [1];
+      if (!gk.length) return;
+      var keys = nets.keys[p.id];
+      var gnets = gk.map(function (k) { return keys[k][0] === 'F' ? null : nets.find(keys[k]); }).filter(function (x) { return x !== null; });
+      if (!gnets.length) return;
+      supplies.push({ p: p, gnets: gnets, island: r.island[b.pinNodes[p.id][gk[0]]] });
+    });
+    for (var i1 = 0; i1 < supplies.length; i1++) for (var i2 = i1 + 1; i2 < supplies.length; i2++) {
+      var A = supplies[i1], Bs = supplies[i2];
+      if (A.island !== Bs.island) continue;
+      var shared = A.gnets.some(function (g) { return Bs.gnets.indexOf(g) >= 0; });
+      if (!shared) issues.push({ part: Bs.p.id, kind: 'noground', level: 'warn', title: 'No common GND',
+        text: 'The ' + PARTS[A.p.type].name + ' and the ' + PARTS[Bs.p.type].name + ' are both power sources, but their GND (−) sides are not joined. Current must flow back to the source it came from. Join the two GNDs with a wire.' });
+    }
     // current into each pin from the hole it sits in
     var pinIn = {};
     parts.forEach(function (p) { pinIn[p.id] = b.pinNodes[p.id].map(function () { return 0; }); });
@@ -2931,9 +2951,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     });
     if (bestEnd) return bestEnd;
     // 2. hot spots (button, knob, jumpers, switch, dial)
-    for (var i = order.length - 1; i >= 0; i--) { /* checked below in layer order */ }
     var hot = null;
-    order.slice().reverse();
     parts.slice().sort(function (a, b) { return self.layerOf(b) - self.layerOf(a); }).some(function (p) {
       var def = PARTS[p.type];
       if (!def.hot) return false;
@@ -3553,9 +3571,13 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         { text: 'Add the knob so the current goes: + rail → knob → resistor (column 14) → LED.', check: function (L) { var p = L.of('pot')[0], l = L.of('led')[0]; return p && lit(l) && inSeries(p, l); }, ok: 'The knob is in the loop.' },
         { text: 'Turn the knob all the way one way, then the other. Watch the LED.', check: function (L) {
           var p = L.of('pot')[0], l = L.of('led')[0], f = L.flags;
-          if (p && l && inSeries(p, l)) { f.maxI = Math.max(f.maxI || 0, l._i); }
-          if (p && l && L.connected && (l._i || 0) < (f.minI === undefined ? 1 : f.minI) && (f.maxI || 0) > 0) f.minI = l._i;
-          return (f.maxI || 0) > 0.012 && f.minI !== undefined && f.minI < 0.002 && !l.st.burnt;
+          if (!p || !l || l.st.burnt) return false;
+          // only count readings while the knob really is in the LED's path
+          if (inSeries(p, l)) {
+            f.maxI = Math.max(f.maxI || 0, l._i || 0);
+            f.minI = Math.min(f.minI === undefined ? 1 : f.minI, l._i || 0);
+          }
+          return f.maxI > 0.012 && f.minI < 0.002;
         }, ok: 'Bright and dim: the knob controls the current.' }
       ],
       explain: function (L) {
@@ -4022,6 +4044,10 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
+      if (!store.data.tipShown) {
+        store.data.tipShown = true; store.save();
+        this.toast(window.innerWidth < 900 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.', 'info');
+      }
     },
     fitView: function () {
       if (this.mode === 'level' && this.level.def.view) {

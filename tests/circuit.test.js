@@ -182,3 +182,21 @@ test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k div
   assert.ok(!good.res.issues.some(i => i.kind === 'overvolt'));
   assert.ok(esp.st.serial.some(s => s.startsWith('Distance: 30')), esp.st.serial.join('|'));
 });
+
+test('Two supplies without a common GND: LED stays dark and a "No common GND" warning shows; joining GNDs fixes it', () => {
+  const sim = bench([
+    ['mb102', { x: 2, y: 0 }],
+    ['nano', { x: 8, y: 5, props: { program: 'blink' } }],
+    ['resistor', { props: { r: 220 }, ends: ['a18', 'a25'] }],
+    ['led', { ends: ['b25', 'T-26'] }]
+  ]);
+  const led = byType(sim, 'led')[0];
+  let maxI = 0;
+  for (let k = 0; k < 60; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); }
+  assert.ok(maxI < 1e-6, 'no loop back to the Nano');
+  assert.ok(sim.res.issues.some(i => i.kind === 'noground'));
+  sim.state.parts.push(BB.newPart('wire', { ends: ['a19', 'T-20'] })); sim.dirty();
+  for (let k = 0; k < 60; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); }
+  near(maxI, 0.012642, 'LED on with common GND');
+  assert.ok(!sim.res.issues.some(i => i.kind === 'noground'));
+});

@@ -251,6 +251,10 @@
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
+      if (!store.data.tipShown) {
+        store.data.tipShown = true; store.save();
+        this.toast(window.innerWidth < 900 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.', 'info');
+      }
     },
     fitView: function () {
       if (this.mode === 'level' && this.level.def.view) {
