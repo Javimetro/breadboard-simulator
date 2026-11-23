@@ -35,7 +35,7 @@
       }
     },
     fade_knob: {
-      name: 'Knob → LED brightness', desc: 'Reads the knob on an analog pin and sets the LED brightness with {{PWM}} (very fast on/off). Only some pins can do PWM: on the Nano these are D3, D5, D6, D9, D10 and D11 (marked ~).',
+      name: 'Knob → LED brightness', desc: 'Reads the knob on an {{analog}} pin and sets the LED brightness with {{PWM}} (very fast on/off). Only some pins can do PWM: on the Nano these are D3, D5, D6, D9, D10 and D11 (marked ~).',
       roles: { knob: { label: 'Knob (middle leg)', mode: 'in', analog: true }, fade: { label: 'LED (PWM pin)', mode: 'out', pwm: true } },
       needsAnalog: true,
       step: function (io) {
@@ -95,7 +95,7 @@
       }
     },
     clap_beep: {
-      name: 'Clap → beep', desc: 'Listens to the microphone (AO) on an analog pin. A loud sound starts a 1 kHz tone on the speaker pin for half a second.',
+      name: 'Clap → beep', desc: 'Listens to the microphone (AO) on an analog pin. A loud sound starts a {{kHz|1 kHz}} tone on the speaker pin for half a second.',
       roles: { mic: { label: 'Microphone AO', mode: 'in', analog: true }, speaker: { label: 'Speaker', mode: 'out', tone: true } },
       needsAnalog: true,
       step: function (io) {

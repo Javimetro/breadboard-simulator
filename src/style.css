@@ -181,11 +181,19 @@ body.notray #tb .partsbtn { display: none; }
 #left, #right { display: contents; }
 #goal { position: absolute; left: 8px; right: 60px; top: 8px; z-index: 5; max-height: 34%; overflow: auto; box-shadow: 0 6px 24px #0007; padding: 8px 10px; }
 #goal .goodtxt { display: none; }
-#goal { font-size: 15px; } #goal .ghead h2 { font-size: 16px; } #goal .ibtn { width: 44px; height: 44px; }
+#goal { font-size: 15px; }
+.gstep { display: none; font-size: 12px; color: var(--amber); font-weight: 700; white-space: nowrap; }
+.ibtn.fold { display: grid; } .ibtn.fold .ico { transition: transform .2s; }
+body.goalmin #goal > :not(.ghead) { display: none !important; }
+body.goalmin #goal .gstep { display: inline; } body.goalmin .ibtn.fold .ico { transform: rotate(180deg); }
+body.goalmin #goal .ghead h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#zoom { top: auto; bottom: 8px; transform: none; }
+#stage .banner { bottom: auto; top: 8px; right: 60px; } #goal .ghead h2 { font-size: 16px; } #goal .ibtn { width: 44px; height: 44px; }
 #goal .steps { list-style: none; padding-left: 0; margin: 4px 0; } #goal .steps .sn { display: block; }
 #goal .choices button { min-height: 44px; } .hintbtn { min-height: 44px; }
 #toasts { top: auto; bottom: calc(74px + var(--safe-b)); }
 body:not(.insfull) #inspector .desc { display: none; }
+body.hassel #toasts { bottom: auto; top: 128px; }
 body.sandmode #goal { display: none; }
 #goal .steps li.todo, #goal .steps li.done { display: none; }
 body.goalopen #goal .steps li.todo, body.goalopen #goal .steps li.done { display: list-item; }
@@ -204,6 +212,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #goal { position: static; max-height: none; box-shadow: none; background: var(--panel2); flex: none; }
   #tray, #inspector { flex: none; }
   #toasts { top: 64px; bottom: auto; }
+  body.hassel #toasts { top: 64px; }
   body:not(.insfull) #inspector .desc { display: block; }
   body.sandmode #goal { display: block; }
   #goal .steps li.todo, #goal .steps li.done { display: list-item; }
@@ -214,6 +223,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #tb .partsbtn { display: none; }
   #tb { justify-content: center; gap: 8px; }
   .banner { left: 12px; right: 64px; }
+  #stage .banner { top: auto; bottom: 8px; }
+  #zoom { top: 50%; bottom: auto; transform: translateY(-50%); }
+  .ibtn.fold { display: none; } .gstep { display: none !important; }
 }
 
 /* ---------- SVG: board and parts ---------- */
@@ -247,7 +259,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .hi rect { fill: #ffd54a; stroke: #b98b00; stroke-width: .5; }
 .hi circle { fill: none; stroke: #ffd54a; stroke-width: 1.6; }
 .hi .me { stroke: #fff; stroke-width: 1.4; }
-.issue { fill: none; stroke-width: 2; animation: pulse 1.1s ease-in-out infinite; }
+.issue { fill: none; stroke-width: 1.4; stroke-dasharray: 5 3; animation: pulse 1.1s ease-in-out infinite; }
 .issue.danger { stroke: var(--bad); } .issue.warn { stroke: var(--warn); } .issue.info { stroke: var(--cyan); }
 @keyframes pulse { 50% { opacity: .25; } }
 .flow path { fill: none; stroke: #ffd23f; stroke-linecap: round; stroke-dasharray: 1.6 6.6; animation: flow 1s linear infinite; opacity: .95; }

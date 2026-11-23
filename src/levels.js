@@ -47,6 +47,15 @@
     'floating': 'A pin with nothing connected. It picks up noise and reads random values.',
     'TRIG': 'Trigger: the HC-SR04 input. A short pulse here starts one measurement.',
     'ECHO': 'The HC-SR04 output. It goes HIGH (5 V) for as long as the sound takes to come back.',
+    'VCC': 'The + power pin of a module. Connect it to + (for example 5V or 3.3V). GND is the − pin.',
+    'COM': 'Common: the one pin that all the LEDs inside a display share.',
+    'I2C backpack': 'A small board soldered on the back of an LCD. It changes 16 wires into just 4 (GND, VCC, SDA, SCL).',
+    'kHz': 'Kilohertz: thousands of times per second. A 1 kHz tone vibrates 1000 times per second.',
+    'electrolytic': 'A kind of capacitor that stores a lot of charge. It has + and − legs and must not go in backwards.',
+    'header pin': 'One metal pin in a row of pins (a “header”). You plug jumper wires onto them.',
+    'BCM': 'The chip’s own number for a Raspberry Pi pin, like BCM17 (= GPIO17). It is not the same as the header pin number.',
+    'DCV': 'DC volts: the meter setting for steady voltages, like a battery or a rail.',
+    'DCA': 'DC amps: the meter setting for current. On this meter it shows mA.',
     'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
@@ -203,8 +212,9 @@
         { text: 'Tap 🔍 X-ray to see the metal strips inside.', check: function (L) { return L.xray; }, ok: 'Each strip joins 5 holes in a column.' },
         { text: 'Tap a hole that is connected to c8.', tap: function (L, h) {
           if (h === 'c8') return { ok: false, msg: 'That is c8 itself. Tap another hole on the same strip.' };
+          if (!/^[a-j]/.test(h)) return { ok: false, count: true, msg: h + ' is in a power rail, not in column 8. Strips go up and down: a8 to e8.' };
           if (['a8', 'b8', 'd8', 'e8'].indexOf(h) >= 0) return { ok: true, msg: 'Yes! ' + h + ' and c8 share the strip of column 8 (a–e).' };
-          return { ok: false, msg: h + ' is not connected to c8. Strips go up and down: a8 to e8.' };
+          return { ok: false, count: true, msg: h + ' is not connected to c8. Strips go up and down: a8 to e8.' };
         } },
         { text: 'Are e8 and f8 connected? Tap them to check, then answer.', choices: [
           { label: 'Yes', ok: false, why: 'Look again: tap e8, then f8. They light up different groups.' },
@@ -216,7 +226,7 @@
     },
     {
       id: 'rails', title: 'Power rails', icon: 'rails',
-      intro: { pic: I.rails, text: 'The long rows at the top and bottom are power {{rail}}s: red + and blue −. On some long boards they stop in the middle.' },
+      intro: { pic: I.rails, text: 'The long rows at the top and bottom are power {{rail}}s: red + and blue −. Tap them to find out how far they go.' },
       board: { cols: 63, split: true }, view: [17, -1.6, 46, 18.6], tray: ['wire'], tools: ['xray', 'wire'],
       steps: [
         { text: 'Tap a hole in the top red + row.', tap: function (L, h) { if (h.slice(0, 2) === 'T+') return { ok: true, msg: 'The whole row lights up… but only to the middle!' }; return { ok: false, msg: 'Tap a hole in the top row, next to the red line.' }; } },
@@ -352,8 +362,8 @@
       ],
       explain: function (L) {
         var l = L.of('led')[0], r = L.of('resistor').find(function (q) { return l && inSeries(l, q); });
-        if (l && r && r.props.r === 10000) return 'The LED is very dim: (5 V − 1.7 V) ÷ 10 000 Ω = 0.3 mA. Far too small. Use a smaller resistor.';
-        if (l && l.st.burnt) return '22 Ω is too small: (5 V − 2 V) ÷ 22 Ω = 136 mA! For 15 mA you need 3 V ÷ 0.015 A = 200 Ω. Use 220 Ω.';
+        if (l && r && r.props.r === 10000) return 'The LED only glows a little: (5 V − 2 V) ÷ 10 000 Ω = 0.3 mA. It needs about 15 mA. Use a smaller resistor.';
+        if (l && l.st.burnt) return 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω.';
         return whyDark(L, l);
       },
       hints: ['Ohm’s law: R = V ÷ I. The resistor gets 5 V − 2 V = 3 V. For 15 mA: 3 ÷ 0.015 = 200 Ω.', 'The closest one is 220 Ω (red, red, brown bands).', 'Resistor from the top + rail to a hole (like a12). LED long leg in that column, short leg in the top − rail.'],
@@ -369,32 +379,33 @@
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
         A.add('resistor', { props: { r: 220 }, ends: ['T+8', 'a8'], locked: true });
         A.add('led', { ends: ['a12', 'T-14'], locked: true });
-        A.add('resistor', { id: 'mystery', props: { r: 4700 }, ends: ['f22', 'f27'], locked: true });
+        var mys = A.add('resistor', { id: 'mystery', props: { r: 4700 }, ends: ['f22', 'f27'], locked: true });
+        mys.hideValue = true; // the player reads the colour bands, then checks with the meter
         A.add('meter', { id: 'm', x: 8, y: 20.5, props: { mode: 'off' }, ends: [{ x: 12, y: 49 }, { x: 16, y: 49 }] });
       },
       steps: [
-        { text: 'Measure the top + rail: set the dial to V, put the red probe in the + rail and the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
-        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to mA.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
-        { text: 'Measure the loose resistor (columns 22 and 27): put the probes in its columns, then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ.' },
-        { text: 'Its bands are yellow, violet, red. What value is it?', choices: [
-          { label: '4.7 kΩ', ok: true, why: 'Yes: yellow 4, violet 7, red = × 100 → 4700 Ω = 4.7 kΩ.' },
-          { label: '47 Ω', ok: false, why: 'The third band is the {{multiplier}}: red means × 100, so 47 × 100.' },
-          { label: '470 kΩ', ok: false, why: 'Red means × 100 (not × 10 000): 47 × 100 = 4700 Ω.' }] }
+        { text: 'Measure the top + rail: set the dial to {{DCV}} (volts), put the red probe in the + rail and the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
+        { text: 'Look at the loose resistor (columns 22–27). Its bands are yellow (4), violet (7), red. The 3rd band is the {{multiplier}}: red = × 100. What value is it?', choices: [
+          { label: '47 Ω', ok: false, why: 'Not quite: the 3rd band says how many zeros. Red = × 100, so 47 × 100.' },
+          { label: '4.7 kΩ', ok: true, why: 'Yes: 47 × 100 = 4700 Ω = 4.7 kΩ. Now check it with the meter.' },
+          { label: '470 kΩ', ok: false, why: 'Red means × 100 (not × 10 000): 47 × 100 = 4700 Ω.' }] },
+        { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
       explain: function (L) {
         var m = L.part('m'), r = (m && m.st.reading) || {};
         if (r.m === 'A' && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20')) return 'Never put the meter in mA mode across the rails: it is like a wire there.';
         if (r.m === 'V' && (L.connectedTo(m, 0, 'T-20') && L.connectedTo(m, 1, 'T+20'))) return 'The reading is negative: the probes are swapped. Red goes to +.';
-        if (L.stepIndex === 1 && r.m === 'V' && (L.connectedTo(m, 0, 'a8') && L.connectedTo(m, 1, 'a12'))) return 'Good place! Now turn the dial to mA to measure the current.';
+        if (L.stepIndex === 1 && r.m === 'V' && (L.connectedTo(m, 0, 'a8') && L.connectedTo(m, 1, 'a12'))) return 'Good place! Now turn the dial to DCA (mA) to measure the current.';
         return null;
       },
-      hints: ['Volts: the probes go on two points (across). Current: the meter must be IN the path, so all the current goes through it.', 'For current: red probe in column 8 (like c8), black probe in column 12 (like c12). Then set the dial to mA.', 'For ohms: probes in g22 and g27, then set the dial to Ω. Move the probes first, then turn the dial.'],
+      hints: ['Volts: the probes go on two points (across). Current: the meter must be IN the path, so all the current goes through it.', 'For current: red probe in column 8 (like c8), black probe in column 12 (like c12). Then set the dial to DCA (mA).', 'For ohms: probes in g22 and g27, then set the dial to Ω. Move the probes first, then turn the dial.'],
       done: 'Volts: measure across. Current: break the loop and put the meter in the gap. Ohms: only on a part with no power.',
       solve: function (A) {
         A.set('m', 'mode', 'V'); A.moveEnd('m', 0, 'T+20'); A.moveEnd('m', 1, 'T-20'); A.wait(0.2);
         A.moveEnd('m', 0, 'c8'); A.moveEnd('m', 1, 'c12'); A.set('m', 'mode', 'A'); A.wait(0.2);
+        A.choose(1);
         A.moveEnd('m', 0, 'h22'); A.moveEnd('m', 1, 'h27'); A.set('m', 'mode', 'ohm'); A.wait(0.2);
-        A.choose(0);
       }
     },
     {
@@ -414,11 +425,11 @@
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! The pin gives 5 V, and 220 Ω keeps the current near 13 mA.' }
+        }, ok: 'It blinks! The pin gives 5 V, and 220 Ω keeps the current near 12 mA.' }
       ],
       explain: function (L) { var l = L.of('led')[0]; var n = L.of('nano')[0]; if (n && n.props.program === 'blink' && l && !lit(l) && !(n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return whyDark(L, l); return null; },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it (h, i, j) are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives 5 V. With 220 Ω the LED gets about 13 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'A pin set HIGH gives 5 V. With 220 Ω the LED gets about 12 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -431,7 +442,7 @@
         A.add('oled', { id: 'oled', x: 9, y: 20, locked: true });
       },
       steps: [
-        { text: 'Connect the screen with 4 wires ({{I2C}}): GND → GND, VCC → 5V, SDA → A4, SCL → A5.', check: function (L) { var o = L.part('oled'); return !!o.st.mcu && (o.st.vcc || 0) > 4.5; }, ok: 'The screen is on. I2C uses just SDA (data) and SCL (clock).' },
+        { text: 'Connect the screen with 4 wires ({{I2C}}): GND → GND, {{VCC}} → 5V, SDA → A4, SCL → A5.', check: function (L) { var o = L.part('oled'); return !!o.st.mcu && (o.st.vcc || 0) > 4.5; }, ok: 'The screen is on. I2C uses just SDA (data) and SCL (clock).' },
         { text: 'Build a {{voltage divider}}: LDR from 5V to A0, and 10 kΩ from A0 to GND. A0 is an {{analog}} pin.', check: function (L) {
           var n = L.part('nano'), ldr = L.of('ldr')[0], r = L.of('resistor')[0];
           if (!ldr || !r) return false;

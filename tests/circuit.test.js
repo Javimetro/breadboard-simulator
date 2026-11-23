@@ -246,3 +246,58 @@ test('Multimeter Ω range: 1 MΩ reads 1.00 MΩ; two in series (2.2 MΩ) read OL
   sim.dirty(); for (let k = 0; k < 3; k++) sim.step(1 / 60);
   assert.equal(m.st.reading.text, 'OL');
 });
+
+test('OLED on 9 V: no crash, an over-voltage warning, blank screen', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['oled', { x: 10, y: 20 }]]);
+  const o = byType(sim, 'oled')[0];
+  sim.state.parts.push(BB.newPart('wire', { ends: ['P:' + o.id + ':1', 'T+10'] }), BB.newPart('wire', { ends: ['P:' + o.id + ':0', 'T-10'] }));
+  sim.dirty();
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  assert.ok(sim.res.issues.some(i => i.kind === 'overvolt'));
+  assert.ok(!o.vis.lines);
+});
+
+test('5 V into the ESP32 3V pin (USB off) destroys the board; 3.3 V there powers it', () => {
+  const make = (v) => {
+    const sim = bench([['mb102', { x: 2, y: 0, props: { top: v, bottom: v } }], ['esp32', { x: 6, y: 4, props: { usb: false } }],
+      ['wire', { ends: ['a7', 'T+8'] }], ['wire', { ends: ['a9', 'T-9'] }]]);   // 3V pin is long-row index 1 → column 7; GND index 3 → column 9
+    for (let k = 0; k < 60; k++) sim.step(1 / 60);
+    return [sim, byType(sim, 'esp32')[0]];
+  };
+  const [s5, e5] = make('5');
+  assert.ok(e5.st.dead, 'dead at 5 V'); assert.ok(s5.res.issues.some(i => i.kind === 'dead'));
+  const [, e3] = make('3.3');
+  assert.ok(e3.st.powered && !e3.st.dead, 'runs at 3.3 V');
+});
+
+test('Nano: 9 V into the 5V pin kills it; 9 V into VIN gives 5.00 V on the 5V pin (its regulator)', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['nano', { x: 8, y: 5, props: { usb: false } }],
+    ['wire', { ends: ['h22', 'T+22'] }], ['wire', { ends: ['h21', 'T-21'] }]]);  // VIN = bottom index 14 → column 22; GND index 13 → column 21
+  for (let k = 0; k < 30; k++) sim.step(1 / 60);
+  const n = byType(sim, 'nano')[0];
+  assert.ok(n.st.powered && !n.st.dead);
+  near(n.st.lastV['5V'], 5.0, '5V pin from the regulator', 0.01);
+  const sim2 = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['nano', { x: 8, y: 5, props: { usb: false } }],
+    ['wire', { ends: ['h19', 'T+20'] }], ['wire', { ends: ['h21', 'T-21'] }]]); // 5V pin = bottom index 11 → column 19
+  for (let k = 0; k < 60; k++) sim2.step(1 / 60);
+  assert.ok(byType(sim2, 'nano')[0].st.dead, '9 V on the 5V pin kills it');
+});
+
+test('Input with an open button and no pull-up is floating; with the button pressed to GND it is not', () => {
+  const sim = bench([['nano', { x: 8, y: 5, props: { program: 'motion_alarm' } }], ['button', { x: 24, y: 7 }],
+    ['wire', { ends: ['a15', 'a24'] }], ['wire', { ends: ['j26', 'h21'] }]]); // PIR input D7 = top index 5 → column 13? (D7 is index 5 → x 13)
+  sim.state.parts[2].ends = [{ at: 'a13' }, { at: 'a24' }]; sim.dirty();
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  assert.ok(sim.res.issues.some(i => i.kind === 'floating'), 'floating while open');
+  byType(sim, 'button')[0].st.pressed = true; sim.dirty();
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  assert.ok(!sim.res.issues.some(i => i.kind === 'floating'), 'not floating when pressed to GND');
+});
+
+test('Meter diode mode on a red LED: about 1 mA test current, reads 1627 mV (hand: Vf = 1.8 + 0.0517·ln(0.62/20) + 0.006)', () => {
+  const sim = bench([['led', { ends: ['a5', 'a6'] }], ['meter', { props: { mode: 'diode' }, ends: ['b5', 'b6'] }]]);
+  for (let k = 0; k < 3; k++) sim.step(1 / 60);
+  near(byType(sim, 'meter')[0].st.reading.val, 1.627, 'LED forward voltage');
+  byType(sim, 'meter')[0].ends.reverse(); sim.dirty(); sim.step(1 / 60);
+  assert.equal(byType(sim, 'meter')[0].st.reading.text, 'OL', 'backwards: OL');
+});

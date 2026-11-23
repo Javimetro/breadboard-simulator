@@ -128,12 +128,22 @@
       }
     }
     var issues = sim.res ? sim.res.issues : [];
-    var marked = {};
+    var marked = {}, lvl = this.app.mode === 'level';
     issues.forEach(function (is) {
-      if (marked[is.part]) return; marked[is.part] = 1;
+      if (lvl && is.kind === 'floating') return;
+      var key = is.part + ':' + (is.pin === undefined ? '' : is.pin);
+      if (marked[key]) return; marked[key] = 1;
       var p = sim.part(is.part); if (!p) return;
+      if (is.pin !== undefined && is.pin >= 0) { // mark just the pin
+        var q = sim.pinPoints(p)[is.pin];
+        if (q) { s += '<circle cx="' + q.x * U + '" cy="' + q.y * U + '" r="6" class="issue ' + is.level + '"/>'; return; }
+      }
       var r = sim.bodyRect(p);
-      var cx = (r.x0 + r.x1) / 2 * U, cy = (r.y0 + r.y1) / 2 * U, rad = Math.max(14, Math.min(60, Math.max(r.x1 - r.x0, r.y1 - r.y0) * U / 2 + 6));
+      if (r.x1 - r.x0 > 4 || r.y1 - r.y0 > 4) { // big parts: a thin outline, so pin labels stay readable
+        s += '<rect x="' + (r.x0 * U - 4) + '" y="' + (r.y0 * U - 4) + '" width="' + ((r.x1 - r.x0) * U + 8) + '" height="' + ((r.y1 - r.y0) * U + 8) + '" rx="6" class="issue ' + is.level + '"/>';
+        return;
+      }
+      var cx = (r.x0 + r.x1) / 2 * U, cy = (r.y0 + r.y1) / 2 * U, rad = Math.max(14, Math.max(r.x1 - r.x0, r.y1 - r.y0) * U / 2 + 6);
       s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + rad + '" class="issue ' + is.level + '"/>';
     });
     if (this.wireStart) {
@@ -206,7 +216,7 @@
       }).join('');
     }
     // voltage tags: one per powered net, at its first used hole
-    var tags = {}, out = '';
+    var tags = {}, out = '', boxes = [];
     sim.state.parts.forEach(function (p) {
       sim.pinPoints(p).forEach(function (q, k) {
         var key2 = sim.keyOf(q, p, k);
@@ -215,7 +225,11 @@
         if (tags[net]) return;
         tags[net] = 1;
         var v = res.keyV[key2];
-        out += '<g transform="translate(' + (q.x * U + 4) + ' ' + (q.y * U - 6) + ')"><rect x="0" y="-7" width="' + (v < 0 ? 30 : 26) + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
+        // move the tag down until it does not cover another tag
+        var tx = q.x * U + 4, ty = q.y * U - 6, w = v < 0 ? 30 : 26;
+        for (var tries = 0; tries < 6 && boxes.some(function (bx) { return tx < bx.x + bx.w && tx + w > bx.x && ty - 7 < bx.y + 3 && ty + 3 > bx.y - 7; }); tries++) ty += 11;
+        boxes.push({ x: tx, y: ty, w: w });
+        out += '<g transform="translate(' + tx + ' ' + ty + ')"><rect x="0" y="-7" width="' + w + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
       });
     });
     if (out !== this.lastLabels) { this.gLabels.innerHTML = out; this.lastLabels = out; }
@@ -519,7 +533,7 @@
       var p = sim.part(hit.id), h = hit.hot;
       if (h.kind === 'jumper') { var u = this.app.snapshot(); var cyc = { '3.3': 'off', off: '5', '5': '3.3' }; p.props[h.side] = cyc[p.props[h.side]]; this.app.commit(u); this.app.onInteract('prop', p); }
       else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
-      else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % 4]; this.app.commit(u3); this.app.onInteract('prop', p); }
+      else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
       this.select(p.id);
       sim.dirty(); this.render();
       return;

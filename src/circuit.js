@@ -144,19 +144,20 @@
     for (var q = 0; q < bounds.length - 1; q++) {
       (function (lo, hi) { phases.push({ w: hi - lo, pwmHigh: function (d) { return d >= hi - 1e-9; }, phase: lo === 0 ? 'hi' : 'slice' }); })(bounds[q], bounds[q + 1]);
     }
-    var built = null, accV = null, accI = null, capV = {};
+    var built = null, accV = null, accI = null, capV = {}, peakI = null;
     phases.forEach(function (ph) {
       if (ph.w <= 0) return;
       var b = self.build(ph, dt, nets);
       var r = E.solve(b.circuit, { dt: dt, init: self._init && self._init.length === b.circuit.n ? self._init : null });
-      if (!accV) { accV = new Float64Array(r.v.length); accI = new Float64Array(r.i.length); built = b; built.r = r; }
+      if (!accV) { accV = new Float64Array(r.v.length); accI = new Float64Array(r.i.length); peakI = new Float64Array(r.i.length); built = b; built.r = r; }
+      for (var pk = 0; pk < r.i.length; pk++) peakI[pk] = Math.max(peakI[pk], Math.abs(r.i[pk]));
       for (var i = 0; i < r.v.length; i++) accV[i] += ph.w * r.v[i];
       for (var j = 0; j < r.i.length; j++) accI[j] += ph.w * r.i[j];
       Object.keys(r.capV).forEach(function (k) { capV[k] = (capV[k] || 0) + ph.w * r.capV[k]; });
       if (ph.phase === 'hi') self._init = r.v;
     });
     var r = built.r;
-    var res = { v: accV, i: accI, island: r.island, refOf: r.refOf, converged: r.converged, capV: capV };
+    var res = { v: accV, i: accI, iPeak: peakI, island: r.island, refOf: r.refOf, converged: r.converged, capV: capV };
     this.interpret(built, res, dt, nets);
     this._dirty = false;
     this.ver = (this.ver || 0) + 1;
@@ -184,7 +185,8 @@
       V: function (pp, m, v) { els.push({ t: 'V', p: res(pp), n: res(m), v: v, part: cur.id, pa: pinTag(pp), pb: pinTag(m) }); return els.length - 1; },
       D: function (a, k, is, nvt) { els.push({ t: 'D', a: res(a), k: res(k), is: is, nvt: nvt, part: cur.id, pa: pinTag(a), pb: pinTag(k) }); return els.length - 1; },
       C: function (a, b, c, st) { els.push({ t: 'C', a: res(a), b: res(b), c: c, v0: st.v0 || 0, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; },
-      I: function (a, b, i) { els.push({ t: 'I', a: res(a), b: res(b), i: i, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; }
+      I: function (a, b, i) { els.push({ t: 'I', a: res(a), b: res(b), i: i, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; },
+      mark: function (el) { els[el].supply = true; } // a power source (battery, regulator, USB)
     };
     var sctx = { phase: ph.phase, pwmHigh: ph.pwmHigh, dt: dt, t: this.t, sim: this };
     parts.forEach(function (p) {
@@ -205,7 +207,14 @@
     var dirtyAgain = false;
     var ctx = {
       t: this.t, dt: dt, parts: parts, sim: this,
-      issue: function (p, kind, level, title, text) { issues.push({ part: p.id, kind: kind, level: level, title: title, text: text }); },
+      issue: function (p, kind, level, title, text, pin) { issues.push({ part: p.id, kind: kind, level: level, title: title, text: text, pin: pin }); },
+      // is a power source in this node's circuit being pushed backwards? (two supplies fighting)
+      fight: function (node) { return !!backfed[r.island[node]]; },
+      // an input pin with no path through resistors/wires/parts to any source or GND
+      pinFloating: function (p, k) {
+        if (!anchored) anchored = anchorMap();
+        return !anchored[findN(b.pinNodes[p.id][k])];
+      },
       event: function (p, type, data) { events.push({ part: p.id, type: type, data: data, t: self.t }); },
       netOfPin: function (p, k) {
         var ks = nets.keys[p.id]; if (!ks) return null;
@@ -232,15 +241,30 @@
       }
     };
     var netCount = {};
+    var backfed = {};
+    els.forEach(function (e, j) { if (e.supply && r.i[j] < -0.02) backfed[r.island[e.n]] = true; });
+    // groups of nodes joined by real conductors (not the 100 MΩ input leaks, not capacitors)
+    var par = null, anchored = null;
+    function findN(x) { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; }
+    function anchorMap() {
+      par = new Int32Array(b.circuit.n); for (var q = 0; q < par.length; q++) par[q] = q;
+      var join = function (x, y) { x = findN(x); y = findN(y); if (x !== y) par[x] = y; };
+      els.forEach(function (e) { if (e.t === 'R' && e.r < 1e7) join(e.a, e.b); else if (e.t === 'V') join(e.p, e.n); else if (e.t === 'D') join(e.a, e.k); });
+      var out = {};
+      els.forEach(function (e) { if (e.t === 'V') out[findN(e.p)] = true; });
+      (b.circuit.refHints || []).forEach(function (h) { out[findN(h)] = true; });
+      return out;
+    }
     parts.forEach(function (p) {
       var pn = b.pinNodes[p.id];
       var rr = {
         i: function (el) { return el === null || el === undefined ? 0 : r.i[el]; },
         v: function (node) { return r.v[node]; },
         pinV: function (k) { return r.v[pn[k]]; },
-        capV: function (el) { return r.capV[el] || 0; }
+        capV: function (el) { return r.capV[el] || 0; },
+        iPeak: function (el) { return el === null || el === undefined ? 0 : (r.iPeak ? r.iPeak[el] : r.i[el]); }
       };
-      PARTS[p.type].after(p, rr, ctx);
+      try { PARTS[p.type].after(p, rr, ctx); } catch (err) { if (!self._errLogged) { self._errLogged = true; if (typeof console !== 'undefined') console.warn('part ' + p.type + ': ' + err.message); } }
     });
     // Two power sources joined by parts but with separate GNDs: a classic beginner mistake.
     var supplies = [];

@@ -341,7 +341,7 @@
     },
     renderGoal: function () {
       var lv = this.level, def = lv.def, self = this;
-      var html = '<div class="ghead"><span class="gnum">Level ' + def.n + '</span><h2>' + esc(def.title) + '</h2><button class="ibtn" data-act="info" title="Watch the intro again">' + icon('info') + '</button></div>';
+      var html = '<div class="ghead" data-act="fold"><span class="gnum">Level ' + def.n + '</span><h2>' + esc(def.title) + '</h2><span class="gstep">' + (lv.done ? 'Done' : 'Step ' + (lv.step + 1) + '/' + def.steps.length) + '</span><button class="ibtn fold" data-act="fold" title="Show / hide">' + '<svg class="ico" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>' + '</button><button class="ibtn" data-act="info" title="Watch the intro again">' + icon('info') + '</button></div>';
       html += '<ol class="steps">' + def.steps.map(function (s, i) {
         var cls = i < lv.step ? 'done' : i === lv.step && !lv.done ? 'cur' : 'todo';
         return '<li class="' + cls + '"><span class="sn">Step ' + (i + 1) + ' of ' + def.steps.length + '</span>' + rich(s.text) + '</li>';
@@ -358,13 +358,15 @@
       } else html += '<p class="goodtxt">' + icon('star', 'on') + ' Level complete! ' + rich(def.done) + '</p><button class="primary" data-act="next">' + (LEVELS[def.n] ? 'Next level' : 'Open the sandbox') + '</button>';
       $('#goal').innerHTML = html;
       $('#goal').onclick = function (e) {
-        var b = e.target.closest('button'); if (!b || b.classList.contains('term')) return;
+        var b = e.target.closest('button');
+        if (window.innerWidth < 1100 && ((!b && e.target.closest('.ghead')) || (b && b.dataset.act === 'fold'))) { document.body.classList.toggle('goalmin'); self.bench.renderUi(); return; }
+        if (!b || b.classList.contains('term')) return;
         if (b.dataset.c !== undefined) self.choose(+b.dataset.c);
         if (b.dataset.act === 'hint') self.hint();
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
-      $('#goal').classList.remove('collapsed');
+      document.body.classList.remove('goalmin');
       this.updateTop();
     },
     choose: function (i) {
@@ -412,7 +414,11 @@
       this.buildTray(null);
       this.updateTop();
       this.renderChallenges();
-      this.sim.step(0.001);
+      try { this.sim.step(0.001); } catch (err) {
+        // a saved bench that cannot load must never lock the player out
+        this.sim = new BB.Sim({ board: { cols: 30 }, parts: [] }); this.bench.setSim(this.sim); this.sim.step(0.001);
+        this.toast('Your saved sandbox could not be loaded, so it starts empty.', 'bad');
+      }
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
@@ -508,15 +514,25 @@
       var sz = bench.size(), mobile = window.innerWidth < 1100;
       var c = bench.toWorld(sz.left + sz.w / 2, sz.top + (mobile ? sz.h * 0.4 : sz.h / 2));
       var occ = sim.occupancy(), cov = sim.covered(), b = sim.board;
-      var free = function (id) { return id && b.byId[id] && !occ[id] && !cov[id]; };
+      // a new part must not touch a strip that is already used (that would wire it into
+      // another part) and must not sit on top of another part's body
+      var usedStrip = {};
+      Object.keys(occ).forEach(function (id) { var h = b.byId[id]; if (h) usedStrip[h.strip] = true; });
+      var free = function (id) { return id && b.byId[id] && !occ[id] && !cov[id] && !usedStrip[b.byId[id].strip]; };
+      var bodies = sim.state.parts.filter(function (q) { return PARTS[q.type].kind !== 'leads'; }).map(function (q) { return sim.bodyRect(q); });
+      var overlaps = function (r) { return bodies.some(function (o) { return r.x0 < o.x1 - 0.2 && r.x1 > o.x0 + 0.2 && r.y0 < o.y1 - 0.2 && r.y1 > o.y0 + 0.2; }); };
       var p = null;
       var byDist = b.holes.filter(function (h) { return h.kind === 'term'; }).sort(function (a, d) { return Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(d.x - c.x, d.y - c.y); });
       if (def.kind === 'leads') {
         var span = { led: 1, resistor: 4, capacitor: 1, ldr: 2 }[type] || 2;
         for (var i = 0; i < byDist.length && !p; i++) {
           var h = byDist[i], h2 = b.byId[h.row + (h.col + span)];
-          if (free(h.id) && free(h2 && h2.id)) p = BB.newPart(type, { props: props, ends: [h.id, h2.id] });
+          if (free(h.id) && free(h2 && h2.id)) {
+            var cand = BB.newPart(type, { props: props, ends: [h.id, h2.id] });
+            if (!overlaps(sim.bodyRect(cand))) p = cand;
+          }
         }
+        if (!p) p = BB.newPart(type, { props: props, ends: [{ x: c.x, y: b.y1 + 2 }, { x: c.x + span, y: b.y1 + 2 }] });
       } else if (def.kind === 'rigid') {
         var pref = { button: [7], nano: [5, 4, 6, 7], esp32: [4, 5, 6], seg7: [5, 4, 6, 7], mb102: [0] }[type] || [3, 10, 4, 11];
         var cands = [];
@@ -527,7 +543,7 @@
           var cd = cands[k];
           var test = BB.newPart(type, { props: props, x: cd.x, y: cd.y });
           var pts = sim.pinPoints(test);
-          if (pts.every(function (q) { return free(q.at); })) p = test;
+          if (pts.every(function (q) { return free(q.at); }) && (type === 'mb102' || !overlaps(sim.bodyRect(test)))) p = test;
         }
         if (!p) p = BB.newPart(type, { props: props, x: b.x1 + 4, y: 2, free: true });
       } else {
@@ -552,7 +568,7 @@
       bench.select(p.id);
       bench.render();
       this.ensureVisible(p);
-      if (!this._addedTip) { this._addedTip = true; this.toast('Added. Drag it into place. Drag a leg end to move just that leg.', 'info'); }
+      if (!this._addedTip) { this._addedTip = true; this.toast(def.kind === 'leads' ? 'Added. Drag it into place. Drag the end of a leg to move just that leg.' : 'Added. Drag it into place.', 'info'); }
       return p;
     },
     freeSpot: function (def) {
@@ -641,13 +657,28 @@
     },
 
     // ---------- inspector ----------
-    showSheet: function () { document.body.classList.add('hassel'); var sp = this.bench.sel && this.sim.part(this.bench.sel); if (sp && window.innerWidth < 1100) this.ensureVisible(sp); },
+    showSheet: function () { document.body.classList.add('hassel'); var sp = this.bench.sel && this.sim.part(this.bench.sel); if (sp && window.innerWidth < 1100) this.focusPart(sp); },
+    // phones: make the selected part big enough to work on, and keep it above the sheet
+    focusPart: function (p) {
+      var bench = this.bench;
+      if (this.mode === 'level') document.body.classList.add('goalmin');
+      if (bench.view.s * 10 < 19) bench.view.s = 2.2;
+      // centre the part's pins (where the player works) in the free area between the goal card and the sheet
+      var pts = this.sim.pinPoints(p), r = this.sim.bodyRect(p);
+      var cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+      if (pts.length) { cx = 0; cy = 0; pts.forEach(function (q) { cx += q.x; cy += q.y; }); cx /= pts.length; cy /= pts.length; }
+      var sz = bench.size(), g = $('#goal');
+      var top = this.mode === 'level' && g.offsetParent ? g.offsetTop + g.offsetHeight + 8 : 8, bottom = sz.h * 0.6;
+      bench.view.tx = sz.w / 2 - cx * 10 * bench.view.s;
+      bench.view.ty = (top + bottom) / 2 - cy * 10 * bench.view.s;
+      bench.applyView(); bench.renderUi();
+    },
     onSelect: function (id, quiet) {
       var ins = $('#inspector'), self = this;
       if (id !== this._lastSel) document.body.classList.remove('insfull');
       this._lastSel = id;
       document.body.classList.toggle('hassel', !!id && !quiet);
-      if (id && !quiet && window.innerWidth < 1100) { var sp = this.sim.part(id); if (sp) this.ensureVisible(sp); }
+      if (id && !quiet && window.innerWidth < 1100) { var sp = this.sim.part(id); if (sp) this.focusPart(sp); }
       if (!id) {
         ins.innerHTML = '<p class="mut small empty">' + icon('info') + ' Tap a part to see its values here. Tap a hole to see what is connected to it.</p>';
         return;
@@ -660,6 +691,7 @@
       html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴') + '</button>';
       var ctrls = '';
       (def.props || []).forEach(function (pr) {
+        if (p.hideValue && pr.k === 'r') return;
         var locked = (p.locked && !pr.env && ['top', 'bottom', 'on', 'mode', 'pos', 'usb'].indexOf(pr.k) < 0) || lock.indexOf(pr.k) >= 0;
         if (pr.k === 'pcb' || pr.k === 'shell') locked = false;
         var v = p.props[pr.k];
@@ -680,7 +712,7 @@
       if ((def.kind === 'leads' || def.kind === 'module') && p.ends.length === 2 && !p.locked && p.type !== 'wire') acts += '<button data-a="flip">' + icon('flip') + ' Flip</button>';
       if (def.kind === 'rigid' && !def.noRotate && !p.locked) acts += '<button data-a="rotate">' + icon('rotate') + ' Rotate</button>';
       if (p.st.burnt || (p.st.burntSeg && Object.keys(p.st.burntSeg).length)) acts += '<button class="primary" data-a="renew">New ' + (p.type === 'led' ? 'LED' : 'part') + '</button>';
-      if (def.mcu && p.st.damaged && Object.keys(p.st.damaged).length) acts += '<button class="primary" data-a="renew">New board</button>';
+      if (def.mcu && (p.st.dead || (p.st.damaged && Object.keys(p.st.damaged).length))) acts += '<button class="primary" data-a="renew">New board</button>';
       if (p.type === 'meter' && p.st.fuse) acts += '<button class="primary" data-a="fuse">New fuse</button>';
       if (!p.locked) acts += '<button class="danger" data-a="del">' + icon('trash') + ' Delete</button>';
       ins.innerHTML = html;
@@ -712,7 +744,7 @@
         if (a === 'flip') { var u = self.snapshot(); p.ends.reverse(); self.sim.dirty(); self.commit(u); self.bench.render(); self.onInteract('moved', p); }
         if (a === 'rotate') { self.rotatePart(p); }
         if (a === 'renew') { var u2 = self.snapshot(); p.st = {}; self.sim.dirty(); self.commit(u2); self.bench.render(true); self.onSelect(id); }
-        if (a === 'fuse') { p.st.fuse = false; self.sim.dirty(); self.onSelect(id); }
+        if (a === 'fuse') { var u3 = self.snapshot(); p.st.fuse = false; self.sim.dirty(); self.commit(u3); self.onSelect(id); }
         if (a === 'clap' || a === 'wave') self.partAction(p, a);
         if (a === 'more') { document.body.classList.toggle('insfull'); b.textContent = document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴'; }
       };
@@ -854,7 +886,8 @@
     // The banner above the bench explains the most important problem.
     updateBanner: function () {
       var sim = this.sim, ban = $('#banner'); if (!sim || !sim.res) return;
-      var iss = sim.res.issues.slice().sort(function (a, b) { return (a.level === 'danger' ? 0 : 1) - (b.level === 'danger' ? 0 : 1); });
+      var lvl = this.mode === 'level';
+      var iss = sim.res.issues.filter(function (i) { return !(lvl && i.kind === 'floating'); }).sort(function (a, b) { return (a.level === 'danger' ? 0 : 1) - (b.level === 'danger' ? 0 : 1); });
       var msg = null;
       if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
       else if (this.mode === 'level' && this.level && !this.level.done && this.level.def.explain) {
@@ -872,10 +905,18 @@
       if (!msg) { ban.hidden = true; return; }
       ban.hidden = false;
       ban.className = 'banner ' + msg.level;
+      this.placeBanner();
       ban.innerHTML = '<b>' + esc(msg.title) + '</b><span>' + rich(msg.text) + '</span>';
       this.bench.renderUi();
     },
 
+    placeBanner: function () {
+      var ban = $('#banner'), g = $('#goal');
+      if (window.innerWidth >= 1100) { ban.style.top = ''; return; }
+      var top = 8;
+      if (this.mode === 'level' && g.offsetParent) top = g.offsetTop + g.offsetHeight + 6;
+      ban.style.top = top + 'px';
+    },
     // ---------- small UI pieces ----------
     toast: function (text, kind) {
       var t = document.createElement('div');
@@ -927,6 +968,9 @@
       if (a > 600) f.hi = true; if (a < 300 && f.hi) f.lo = true; return f.hi && f.lo;
     } },
     { id: 'nanoMB', title: 'Nano from the MB102.', text: 'Turn off the Nano’s USB cable (in its panel). Power it from a 5V rail: rail + → Nano 5V pin, rail − → Nano GND.', check: function (L) { return L.of('nano').some(function (n) { return n.props.usb === false && n.st.powered && n.st.extPowered; }); } },
+    { id: 'cap', title: 'Charge a capacitor.', text: 'Put a 1000 µF capacitor (+ leg to +) in series with a 1 kΩ resistor on a 5V rail. Tap the capacitor and watch its voltage rise: after 1 second (1 kΩ × 1000 µF) it has about 63 % of 5 V.', check: function (L, f) {
+      return L.of('capacitor').some(function (c) { var v = (c.vis && c.vis.v) || 0; if (v < 1 && c.props.c >= 1000e-6) f.low = true; return f.low && v > 4.5; });
+    } },
     { id: 'espMB', title: 'ESP32 from a 3.3V rail.', text: 'Set one MB102 side to 3.3V. Unplug the ESP32’s USB, then feed its 3V pin from that rail (and GND to −). Never feed 5V into 3V!', check: function (L) { return L.of('esp32').some(function (n) { return n.props.usb === false && n.st.powered && Math.abs(((n.st.lastV || {})['3V'] || 0) - 3.3) < 0.15 && !Object.keys(n.st.damaged || {}).length; }); } }
   ];
   BB.CHALLENGES = CHALLENGES;
