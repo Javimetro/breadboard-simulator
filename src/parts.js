@@ -367,7 +367,9 @@
           'An LED can take about 20 mA. With no resistor (or one that is too small) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED”.');
       } else if (i > 0.0305) {
-        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes about 20 mA at most. It is getting hot and will burn out. Use a bigger resistor.');
+        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. It is getting hot and will burn out. Use a bigger resistor.');
+      } else if (i > 0.0205) {
+        ctx.issue(p, 'overI', 'warn', 'A bit too much current: ' + fmtI(i), 'An LED takes 20 mA at most (10–15 mA is best). Above that it gets hot and wears out fast. Use a slightly bigger resistor.');
       } else if (sameNet && ctx.nodeSupplied(p, 0)) {
         ctx.issue(p, 'samerow', 'warn', 'Both LED legs are connected together',
           'Both legs are in the same strip (or joined by a wire). The current goes around the LED, not through it. Put the legs in two different strips.');
@@ -378,7 +380,7 @@
     },
     info: function (p, r) {
       var i = p._i || 0;
-      var s = p.st.burnt ? 'Burned out' : i > 0.0305 ? 'Too much current!' : i > 0.002 ? 'On' : i > 0.00005 ? 'Dim (it glows a little)' : 'Off';
+      var s = p.st.burnt ? 'Burned out' : i > 0.0205 ? 'Too much current!' : i > 0.002 ? 'On' : i > 0.00005 ? 'Dim (it glows a little)' : 'Off';
       return [['State', s]].concat(twoTermInfo(p, r)).concat([['LED voltage at 20 mA', E.LED_TYPES[p.props.color].vf20.toFixed(2) + ' V'], ['Safe current', 'up to 20 mA']]);
     }
   };
@@ -396,7 +398,8 @@
     after: function (p, r, ctx) {
       var i = r.i(p._e); p._i = i;
       var pw = i * i * (p.st.burnt ? 1e9 : p.props.r);
-      if (!p.st.burnt && heat(p.st, pw, 1.0, ctx.dt, 2, 4)) { p.st.burnt = true; p.st.smoke = ctx.t; ctx.event(p, 'burn'); }
+      // a 0.25 W resistor survives a little overload; at 2× it burns in a few seconds, at 16× at once
+      if (!p.st.burnt && heat(p.st, pw, 0.5, ctx.dt, 3, 8)) { p.st.burnt = true; p.st.smoke = ctx.t; ctx.event(p, 'burn'); }
       p.vis = { hot: Math.min(1, pw / 0.5), burnt: !!p.st.burnt };
       if (p.st.burnt) ctx.issue(p, 'burnt', 'danger', 'The resistor burned', 'It had too much power. A small resistor can take 0.25 W (250 mW). Tap it and press “New part”.');
       else if (pw > 0.25) ctx.issue(p, 'hot', 'warn', 'The resistor is hot: ' + fmtP(pw), 'A small resistor can take 0.25 W. Power = voltage × current. Use a bigger resistor, or check for a short circuit.');
@@ -409,29 +412,34 @@
 
   PARTS.capacitor = {
     name: 'Capacitor', cat: 'basic', kind: 'leads', maxSpan: 3,
-    desc: 'A capacitor stores a little charge, like a tiny fast battery. This kind ({{electrolytic}}) has + and − legs: the stripe marks −.',
+    desc: 'A capacitor stores a little charge, like a tiny fast battery. This kind ({{electrolytic}}) has + and − legs: the stripe marks −. Its size is in {{µF}}.',
     pins: [{ n: '+', d: 'Long leg (+)' }, { n: '−', d: 'Short leg (−), stripe side' }],
     defaults: { c: 100e-6 },
     props: [{ k: 'c', label: 'Capacity', type: 'select', options: [10e-6, 100e-6, 470e-6, 1000e-6], labels: ['10 µF', '100 µF', '470 µF', '1000 µF'] }],
-    stamp: function (p, n) { p._e = n.C('p0', 'p1', p.props.c, p.st); },
+    stamp: function (p, n) {
+      if (p.st.burnt) { p._e = null; n.R('p0', 'p1', 1e9); return; } // a popped capacitor is open
+      p._e = n.C('p0', 'p1', p.props.c, p.st);
+    },
     after: function (p, r, ctx) {
       var v = r.pinV(0) - r.pinV(1);
-      p._i = r.i(p._e);
-      p.st.v0 = r.capV(p._e);
-      p.vis = { v: v };
-      if (v < -1) ctx.issue(p, 'reversed', 'warn', 'The capacitor is in backwards', 'Its − leg (stripe side) must go to the lower voltage. Backwards, it can get hot and even pop.');
+      p._i = p._e === null ? 0 : r.i(p._e);
+      p.st.v0 = p._e === null ? 0 : r.capV(p._e);
+      if (!p.st.burnt && v < -1.5) { p.st.rev = (p.st.rev || 0) + ctx.dt * (-v / 3); if (p.st.rev > 1) { p.st.burnt = true; p.st.smoke = ctx.t; ctx.event(p, 'burn'); } }
+      p.vis = { v: v, burnt: !!p.st.burnt };
+      if (p.st.burnt) ctx.issue(p, 'burnt', 'danger', 'The capacitor popped', 'It was in backwards: an electrolytic capacitor heats up and its top bursts open when − gets the higher voltage. Tap it and press “New part”, and put the stripe (−) toward −.');
+      else if (v < -1) ctx.issue(p, 'reversed', 'warn', 'The capacitor is in backwards', 'Its − leg (stripe side) must go to the lower voltage. Backwards, it gets hot and pops after a few seconds.');
       if (Math.abs(v) > 16) ctx.issue(p, 'overvolt', 'danger', 'Too much voltage for this capacitor', 'It is made for 16 V at most.');
     },
     dynamic: function (p) { return Math.abs(p._i || 0) > 1e-6; },
     info: function (p, r) {
       var c = p.props.c;
-      return [['Value', (c * 1e6) + ' µF, 16 V'], ['Charge voltage', fmtV(r.pinV(0) - r.pinV(1))], ['Current now', fmtI(p._i || 0)]];
+      return [['Value', (c * 1e6) + ' µF, made for 16 V at most'], ['Charge voltage', fmtV(r.pinV(0) - r.pinV(1))], ['Current now', fmtI(p._i || 0)]];
     }
   };
 
   PARTS.button = {
     name: 'Push button', cat: 'basic', kind: 'rigid',
-    desc: 'Pressing the button joins its left and right legs. The two legs facing each other across the middle gap are always joined inside.',
+    desc: 'Inside, legs 1 and 3 are always joined, and legs 2 and 4 are always joined. Pressing the button joins the two pairs. Put it across the middle gap, so 1 and 3 face each other across the gap.',
     pins: [{ n: '1' }, { n: '2' }, { n: '3' }, { n: '4' }],
     pinPos: [[0, 0], [2, 0], [0, 3], [2, 3]],
     body: [-0.45, 0.25, 2.45, 2.75],
@@ -500,7 +508,7 @@
     name: '9V battery', cat: 'power', kind: 'module',
     desc: 'A 9 volt battery with a snap clip. The red wire is +, the black wire is −.',
     pins: [{ n: '+', d: 'Red wire (+)' }, { n: '−', d: 'Black wire (−)' }],
-    size: [19.5, 10.5], leadFrom: [[0, 3.4], [0, 7.1]],
+    size: [19.5, 10.5], leadFrom: [[0, 3.4], [0, 7.1]], leadOut: [0, 1], spot: 'above',
     defaults: {}, props: [],
     stamp: function (p, n) { battStamp(p, n, 9, 2); },
     after: function (p, r, ctx) { battAfter(p, r, ctx, 1, '9V battery'); },
@@ -510,7 +518,7 @@
     name: 'AA battery holder', cat: 'power', kind: 'module',
     desc: 'A holder for AA batteries in series. Each AA cell gives 1.5 V, so 2 cells give 3 V and 4 cells give 6 V.',
     pins: [{ n: '+', d: 'Red wire (+)' }, { n: '−', d: 'Black wire (−)' }],
-    size: [22.5, 13], leadFrom: [[0, 4.5], [0, 8.5]],
+    size: [22.5, 13], leadFrom: [[0, 4.5], [0, 8.5]], leadOut: [0, 1], spot: 'above',
     defaults: { cells: 2 },
     props: [{ k: 'cells', label: 'Cells', type: 'select', options: [2, 4], labels: ['2 × AA (3 V)', '4 × AA (6 V)'] }],
     stamp: function (p, n) { battStamp(p, n, 1.5 * p.props.cells, 0.15 * p.props.cells); },
@@ -638,7 +646,7 @@
     hot: [{ id: 'dial', x: 7.7, y: 15.05, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
-      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power.', diode: 'Diode test: shows the voltage an LED or diode needs, in mV. Red probe on the long leg (+). OL = no current flows (backwards, or more than 2 V).', off: 'The meter is off.' }[p.props.mode];
+      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows the voltage an LED or diode needs, in mV. Red probe on the long leg (+). OL (over limit) = no current flows: backwards, or more than 2 V.', off: 'The meter is off.' }[p.props.mode];
       return [['Reading', (rd.text || '—') + ' ' + (rd.unit || '')], ['Mode', help], ['Range', 'This meter picks the range for you. On a real DT-830B you turn the dial to a range, like 20 V or 200 mA.']];
     }
   };
@@ -647,7 +655,7 @@
   var np = nanoPins();
   PARTS.nano = {
     name: 'Arduino Nano', cat: 'boards', kind: 'rigid', mcu: 'nano',
-    desc: 'A small Arduino board (ATmega328P chip). It works at 5V. Put it across the middle gap so each pin has its own strip.',
+    desc: 'A small Arduino board (ATmega328P chip). It works at 5V. Put it across the middle gap so each pin has its own strip. Power: USB, 5V on the 5V pin, or 7–12 V on {{VIN}}.',
     pins: np.pins, pinPos: np.pos,
     body: [-2.0, -0.6, 15.0, 6.6], covers: true,
     defaults: { usb: true, program: 'none' },
@@ -659,7 +667,7 @@
   var fp = featherPins();
   PARTS.esp32 = {
     name: 'ESP32 Feather (HUZZAH32)', cat: 'boards', kind: 'rigid', mcu: 'esp32',
-    desc: 'An Adafruit board with an ESP32 chip (Wi-Fi + Bluetooth). It works at 3.3V: its pins must never get 5V.',
+    desc: 'An Adafruit board with an ESP32 chip (Wi-Fi + Bluetooth). It works at 3.3V: its pins must never get 5V. Power: USB, or a LiPo on {{BAT}}. {{EN}} and {{RST}} are control pins.',
     pins: fp.pins, pinPos: fp.pos,
     body: [-2.6, -0.55, 17.4, 8.55], covers: true,
     defaults: { usb: true, program: 'none' },
@@ -949,12 +957,14 @@
     pins: [{ n: '+', d: 'Red wire' }, { n: '−', d: 'Black wire' }],
     size: [11.5, 11.5], leadFrom: [[11.0, 4.6], [11.0, 7.0]],
     defaults: {}, props: [],
-    stamp: function (p, n) { p._e = n.R('p0', 'p1', 8); },
+    stamp: function (p, n) { p._e = p.st.burnt ? n.R('p0', 'p1', 1e9) : n.R('p0', 'p1', 8); },
     after: function (p, r, ctx) {
       var i = r.i(p._e); p._i = i;
-      var pw = i * i * 8;
-      p.vis = { vib: Math.min(1, Math.abs(i) / 0.02) };
-      if (pw > 0.5) {
+      var pw = p.st.burnt ? 0 : i * i * 8;
+      if (!p.st.burnt && heat(p.st, pw, 0.5, ctx.dt, 3, 8)) { p.st.burnt = true; p.st.smoke = ctx.t; ctx.event(p, 'burn'); }
+      p.vis = { vib: p.st.burnt ? 0 : Math.min(1, Math.abs(i) / 0.02) };
+      if (p.st.burnt) ctx.issue(p, 'burnt', 'danger', 'The speaker coil burned', 'It got ' + 'more than its 0.5 W for too long. Steady current only heats the coil. Tap it and press “New part”, and play tones through a resistor.');
+      else if (pw > 0.5) {
         ctx.issue(p, 'hot', 'warn', 'The speaker coil is getting hot', 'A steady current makes no sound. It only heats the coil. Play a tone from a board, through a resistor.');
       }
     },

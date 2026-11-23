@@ -173,12 +173,37 @@ def ui_misc(page, tag):
     tap_hole('d8')
     page.wait_for_timeout(150)
     shot(page, f'{tag}-level01-highlight')
+    check(page.evaluate("document.querySelectorAll('#goal .choices button').length") == 0, f'{tag}: level 1 answers stay locked until e8 and f8 are tapped')
+    tap_hole('e8'); tap_hole('f8')
+    page.wait_for_timeout(150)
     page.click('#goal .choices button:nth-child(2)')
     page.wait_for_timeout(600)
     check(page.evaluate('BB.app.level.done'), f'{tag}: level 1 finished by tapping')
     if page.is_visible('#modal'):
         shot(page, f'{tag}-level01-done-modal')
         page.click('#modal [data-m=stay]')
+    # level 9: choose the program with the real menu in the inspector
+    page.evaluate("BB.app.startLevel(8)"); page.click('#introGo'); page.wait_for_timeout(200)
+    page.evaluate("BB.app.actions().add('nano', {x: 8, y: 5}); BB.app.actions().wait(0.1)")
+    page.evaluate("BB.app.bench.select(BB.app.sim.state.parts[0].id)")
+    page.wait_for_timeout(200)
+    if tag == 'mobile':
+        page.click('#inspector .insmore'); page.wait_for_timeout(250)
+    page.select_option('#inspector select[data-prog]', 'blink')
+    page.wait_for_timeout(300)
+    check(page.evaluate("BB.app.sim.state.parts[0].props.program") == 'blink' and page.evaluate("BB.app.level.step") == 2, f'{tag}: program chosen with the real menu (level 9 step 2 done)')
+    page.evaluate("BB.app.bench.select(null)")
+    # level 8: the colour-band picker with real menus
+    page.evaluate("BB.app.startLevel(7)"); page.click('#introGo'); page.wait_for_timeout(200)
+    page.evaluate("const A = BB.app.actions(); A.set('m', 'mode', 'V'); A.moveEnd('m', 0, 'T+20'); A.moveEnd('m', 1, 'T-20'); A.wait(0.2); A.moveEnd('m', 0, 'c8'); A.moveEnd('m', 1, 'c12'); A.set('m', 'mode', 'A'); A.wait(0.3)")
+    page.wait_for_timeout(400)
+    if tag == 'mobile':
+        page.evaluate("document.body.classList.remove('goalmin')")
+    for k, col in enumerate(['yellow', 'violet', 'red']):
+        page.select_option(f'#goal select[data-band="{k}"]', col)
+    page.click('#goal .bands .primary')
+    page.wait_for_timeout(300)
+    check(page.evaluate("BB.app.level.step") == 3, f'{tag}: colour bands read with the picker (level 8)')
     # wire tool: tap-tap on screen makes a wire
     page.evaluate("BB.app.startLevel(1)")
     page.click('#introGo')

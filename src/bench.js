@@ -507,6 +507,15 @@
     if (d.kind === 'body' || d.kind === 'end') {
       var p = this.sim.part(d.hit.id);
       if (p && p.type === 'wire' && p.ends[0].at && p.ends[0].at === p.ends[1].at) this.app.removePart(p.id);
+      // a leg let go over the board but not in a hole: say why
+      if (p && d.kind === 'end' && p.ends[d.hit.k] && !p.ends[d.hit.k].at) {
+        var e = p.ends[d.hit.k], b = this.sim.board;
+        if (e.x > b.x0 && e.x < b.x1 && e.y > b.y0 && e.y < b.y1) {
+          var h = b.nearest(e.x, e.y, 1), cov = this.sim.covered(), occ = this.sim.occupancy();
+          var why = h && cov[h.id] ? 'That hole is under the ' + PARTS[this.sim.part(cov[h.id]).type].name + ', so nothing can reach it.' : h && occ[h.id] ? 'That hole already has a leg in it.' : 'It is not in a hole.';
+          this.app.toast('This leg is loose. ' + why + ' Drop it on a free hole.', 'info');
+        }
+      }
       this.app.commit(d.undo);
       if (p) this.app.onInteract('moved', p);
     }

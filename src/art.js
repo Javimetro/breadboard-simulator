@@ -197,8 +197,9 @@
     s += txt(r * 0.7, 1.4, '−', 'capm');
     s += '<circle r="' + f1(r * 0.62) + '" fill="url(#gMetal)" stroke="#8a9099" stroke-width=".4"/>';
     s += '<path d="M' + f1(-r * 0.35) + ' 0 H' + f1(r * 0.35) + ' M0 ' + f1(-r * 0.35) + ' V' + f1(r * 0.35) + '" stroke="#7d838c" stroke-width=".7"/>';
+    if (p.vis && p.vis.burnt) s += '<circle r="' + f1(r * 0.62) + '" fill="#3a2a1e" opacity=".85"/><path d="M' + f1(-r * 0.4) + ' ' + f1(-r * 0.1) + ' L0 ' + f1(-r * 0.45) + ' L' + f1(r * 0.4) + ' ' + f1(-r * 0.1) + ' M0 ' + f1(-r * 0.45) + ' L0 ' + f1(r * 0.4) + '" stroke="#c9cfdb" stroke-width="1" fill="none"/>';
     s += '</g>';
-    return s;
+    return s + smoke(m.x, m.y, p.st.smoke, arguments[2]);
   };
   DRAW.ldr = function (p, pts) {
     var a = pt(pts[0]), b = pt(pts[1]), m = mid(a, b), ang = angle(a, b);
@@ -232,6 +233,8 @@
     s += '<circle cx="2" cy="7.6" r="1.1" fill="#666"/><circle cx="18" cy="7.6" r="1.1" fill="#666"/><circle cx="2" cy="22.4" r="1.1" fill="#666"/><circle cx="18" cy="22.4" r="1.1" fill="#666"/>';
     s += '<circle cx="10" cy="15" r="' + (pr ? 6.4 : 7.2) + '" fill="' + (pr ? '#111' : '#242424') + '" stroke="#000" stroke-width=".6"/>';
     if (!pr) s += '<circle cx="8.4" cy="13.2" r="2.4" fill="#fff" opacity=".12"/>';
+    // leg numbers (legs 1–3 and 2–4 are joined inside)
+    s += txt(-5.5, -1.5, '1', 'pinlbl dark') + txt(23, -1.5, '2', 'pinlbl dark') + txt(-5.5, 33.5, '3', 'pinlbl dark') + txt(23, 33.5, '4', 'pinlbl dark');
     return group(p, s);
   };
   DRAW.pot = function (p) {
@@ -291,9 +294,11 @@
     var def = BB.PARTS[p.type], s = '';
     pts.forEach(function (q, k) {
       var a = { x: (p.x + def.leadFrom[k][0]) * U, y: (p.y + def.leadFrom[k][1]) * U }, b = pt(q);
-      var lf = def.leadFrom[k], dir = lf[0] <= 0.5 ? -1 : 1;
-      var c1 = { x: a.x + (probe ? 0 : 30 * dir), y: a.y + (probe ? 40 : 0) };
-      var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 60 : 30)) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 18 : 0));
+      // the lead leaves the body in its own direction, and arrives at its end from the body's side
+      var out = def.leadOut || [def.leadFrom[k][0] <= 0.5 ? -1 : 1, 0];
+      var c1 = probe ? { x: a.x, y: a.y + 40 } : { x: a.x + out[0] * 30, y: a.y + out[1] * 30 };
+      var c2 = probe ? { x: b.x, y: b.y + 60 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
+      var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 18 : 0));
       s += '<path d="' + d + '" fill="none" stroke="#00000044" stroke-width="4.4" transform="translate(0 1.5)"/>';
       s += '<path d="' + d + '" fill="none" stroke="' + cols[k] + '" stroke-width="' + (probe ? 3.6 : 3) + '" stroke-linecap="round"/>';
       if (probe) {

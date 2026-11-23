@@ -11,7 +11,7 @@
     'strip': 'A metal clip inside the breadboard. It joins 5 holes in a column (a–e or f–j).',
     'rail': 'A long row of holes at the top or bottom of the breadboard, used for power (+) and ground (−).',
     'circuit': 'A closed loop that current can flow around: from + through parts and back to −.',
-    'current': 'How much electricity flows, measured in amps (A). 1 mA = 0.001 A. An LED wants about 15 mA.',
+    'current': 'How much electricity flows, measured in amps (A). 1 mA = 0.001 A. A small LED is happy with 10–15 mA; 20 mA is its limit.',
     'voltage': 'The “push” that makes current flow, measured in volts (V). A 9V battery pushes harder than a 3V one.',
     'resistance': 'How much a part slows the current, measured in ohms (Ω). More ohms = less current.',
     'resistor': 'A part that limits current. Its colour bands show its value in ohms (Ω).',
@@ -56,12 +56,21 @@
     'BCM': 'The chip’s own number for a Raspberry Pi pin, like BCM17 (= GPIO17). It is not the same as the header pin number.',
     'DCV': 'DC volts: the meter setting for steady voltages, like a battery or a rail.',
     'DCA': 'DC amps: the meter setting for current. On this meter it shows mA.',
+    'µF': 'Microfarad: the unit of a capacitor’s size. 1000 µF stores much more charge than 10 µF.',
+    'kΩ': 'Kilo-ohm: 1000 ohms. 4.7 kΩ = 4700 Ω. MΩ (mega-ohm) = 1 000 000 Ω.',
+    'VIN': 'Voltage in: the Nano pin for a 7–12 V supply (like a 9V battery). The board’s regulator turns it into 5 V.',
+    'BAT': 'On the ESP32 Feather: the pin for one LiPo battery cell (3.7–4.2 V).',
+    'EN': 'Enable: pull this pin to GND and the ESP32 Feather turns off.',
+    'RST': 'Reset: pull this pin to GND and the board restarts its program.',
+    'OL': 'Over limit: the meter cannot measure it. For Ω it means the resistance is too big (or nothing is connected).',
+    'time constant': 'R × C: how fast a capacitor charges. After one time constant it has about 63 % of the voltage. 1 kΩ × 1000 µF = 1 second.',
+    'voltage rating': 'The highest voltage a part can take, printed on it (like 16 V on a capacitor).',
     'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
   // ---------- helpers used by the checks ----------
   function lit(p) { return p && !p.st.burnt && (p._i || 0) > 0.002; }
-  function safe(p) { return p && !p.st.burnt && (p._i || 0) <= 0.0255; }
+  function safe(p) { return p && !p.st.burnt && (p._i || 0) <= 0.0205; } // 20 mA is the LED limit used everywhere
   function inSeries(a, b) { var ia = Math.abs(a._i || 0), ib = Math.abs(b._i || 0); return ia > 0.0005 && Math.abs(ia - ib) < 0.08 * Math.max(ia, ib); }
   function mcuPinNet(L, mcu, label) { var def = BB.PARTS[mcu.type]; var k = def.pins.findIndex(function (q) { return q.n === label; }); return L.net(mcu, k); }
   function anyGndNet(L, mcu) { var def = BB.PARTS[mcu.type], out = []; def.pins.forEach(function (q, k) { if (q.kind === 'gnd') out.push(L.net(mcu, k)); }); return out; }
@@ -206,7 +215,7 @@
     {
       id: 'inside', title: 'Inside the breadboard', icon: 'holes',
       intro: { pic: I.inside, text: 'A {{breadboard}} has metal strips hidden inside. Holes on the same {{strip}} are connected.' },
-      board: { cols: 30 }, view: [-0.6, -1.6, 17, 18.6], tray: [], tools: ['xray'],
+      board: { cols: 30 }, view: [-0.6, -1.6, 17, 18.6], phone: [-0.6, -1.6, 15, 18.6], tray: [], tools: ['xray'],
       steps: [
         { text: 'Tap any hole in the middle area (rows a–j).', tap: function (L, h) { var o = L.sim.board.byId[h]; if (o.kind === 'term') return { ok: true, msg: 'See the 5 holes that light up? They share one metal strip.' }; return { ok: false, msg: 'That is a power rail. Tap a hole in rows a–j.' }; } },
         { text: 'Tap 🔍 X-ray to see the metal strips inside.', check: function (L) { return L.xray; }, ok: 'Each strip joins 5 holes in a column.' },
@@ -216,21 +225,21 @@
           if (['a8', 'b8', 'd8', 'e8'].indexOf(h) >= 0) return { ok: true, msg: 'Yes! ' + h + ' and c8 share the strip of column 8 (a–e).' };
           return { ok: false, count: true, msg: h + ' is not connected to c8. Strips go up and down: a8 to e8.' };
         } },
-        { text: 'Are e8 and f8 connected? Tap them to check, then answer.', choices: [
+        { text: 'Are e8 and f8 connected? Tap them to check, then answer.', ready: function (t) { return t.e8 && t.f8; }, readyText: 'First tap e8, then tap f8, and look at which holes light up.', choices: [
           { label: 'Yes', ok: false, why: 'Look again: tap e8, then f8. They light up different groups.' },
           { label: 'No', ok: true, why: 'Right! The gap in the middle splits each column into two strips.' }] }
       ],
       hints: ['Holes in the same column, on the same side of the middle gap, are connected.', 'c8 is in column 8, top half. Its strip is a8, b8, c8, d8, e8.', 'The middle gap has no metal under it.'],
       done: 'Holes a–e of a column are joined, and holes f–j are joined. The middle gap keeps them apart.',
-      solve: function (A) { A.tap('c3'); A.xray(true); A.tap('b8'); A.choose(1); }
+      solve: function (A) { A.tap('c3'); A.xray(true); A.tap('b8'); A.tap('e8'); A.tap('f8'); A.choose(1); }
     },
     {
       id: 'rails', title: 'Power rails', icon: 'rails',
       intro: { pic: I.rails, text: 'The long rows at the top and bottom are power {{rail}}s: red + and blue −. Tap them to find out how far they go.' },
-      board: { cols: 63, split: true }, view: [17, -1.6, 46, 18.6], tray: ['wire'], tools: ['xray', 'wire'],
+      board: { cols: 63, split: true }, view: [17, -1.6, 46, 18.6], phone: [22, -1.6, 42, 18.6], tray: ['wire'], tools: ['xray', 'wire'],
       steps: [
         { text: 'Tap a hole in the top red + row.', tap: function (L, h) { if (h.slice(0, 2) === 'T+') return { ok: true, msg: 'The whole row lights up… but only to the middle!' }; return { ok: false, msg: 'Tap a hole in the top row, next to the red line.' }; } },
-        { text: 'Is the + hole at column 26 connected to the + hole at column 38?', choices: [
+        { text: 'Is the + hole at column 26 connected to the + hole at column 38?', ready: function (t) { return t['T+26'] && t['T+38']; }, readyText: 'Tap the top + hole at column 26, then the one at column 38, and watch the light.', choices: [
           { label: 'Yes', ok: false, why: 'Tap them both. The light stops at the gap in the red line.' },
           { label: 'No', ok: true, why: 'Right. On this board each rail is cut in the middle. Look for the gap in the red and blue lines.' }] },
         { text: 'Tap ✏️ Wire, then tap a + hole on the left and a + hole on the right of the gap.', check: function (L) { return L.connected('T+26', 'T+38') && !L.connected('T+26', 'T-26'); }, ok: 'The two halves of the + rail are joined now.' },
@@ -239,12 +248,12 @@
       explain: function (L) { if (L.connected('T+26', 'T-26')) return 'A wire now joins the + rail to the − rail. With power on, that is a {{short circuit}}! Tap that wire and press Delete.'; return null; },
       hints: ['The gap is between column 30 and column 32. Look at the red line.', 'Tap ✏️ Wire. Tap the + hole at column 30, then the + hole at column 32.', 'Do the same in the blue − row: column 30 to column 32.'],
       done: 'Rails carry power along the board. If a long board splits them, two short wires join the halves.',
-      solve: function (A) { A.tap('T+20'); A.choose(1); A.wire('T+30', 'T+32'); A.wire('T-30', 'T-32'); }
+      solve: function (A) { A.tap('T+20'); A.tap('T+26'); A.tap('T+38'); A.choose(1); A.wire('T+30', 'T+32'); A.wire('T-30', 'T-32'); }
     },
     {
       id: 'first', title: 'First light', icon: 'led',
       intro: { pic: I.first, text: 'An {{LED}} needs a {{resistor}} to limit the {{current}}. Without one, it burns out.' },
-      board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 470 } }, 'wire'],
+      board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], phone: [0, -15.5, 19, 18.6], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 470 } }, 'wire'],
       setup: function (A) { A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true }); },
       steps: [
         { text: 'Light the LED. Put the resistor in the loop so the LED does not burn.', check: function (L) {
@@ -263,7 +272,7 @@
     {
       id: 'mistakes', title: 'Fix three mistakes', icon: 'bug',
       intro: { pic: I.mistakes, text: 'This {{circuit}} has three common mistakes. Find them and fix them.' },
-      board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], tray: ['wire'],
+      board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], phone: [1, -4, 29, 18.6], tray: ['wire'],
       setup: function (A) {
         A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['T+8', 'a8'], locked: true });
@@ -290,7 +299,7 @@
     {
       id: 'button', title: 'Push button', icon: 'button',
       intro: { pic: I.button, text: 'A push button closes a gap while you press it. Put it across the middle gap of the board.' },
-      board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], tray: ['button', 'wire'],
+      board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], phone: [0, -15.5, 19, 18.6], tray: ['button', 'wire'],
       setup: function (A) {
         A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['T+8', 'a8'], locked: true });
@@ -318,7 +327,7 @@
     {
       id: 'dimmer', title: 'Dimmer knob', icon: 'knob',
       intro: { pic: I.dimmer, text: 'A {{potentiometer}} is a knob that changes its {{resistance}}. Use it to make an LED brighter or dimmer.' },
-      board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], tray: ['pot', 'wire'],
+      board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], phone: [1, -9, 24, 18.6], tray: ['pot', 'wire'],
       setup: function (A) {
         A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['a14', 'a18'], locked: true });
@@ -350,7 +359,7 @@
     {
       id: 'mb102', title: 'Power supply & Ohm’s law', icon: 'mb102',
       intro: { pic: I.mb102, text: 'The MB102 power board gives 3.3V or 5V to each pair of rails. Pick the right resistor with {{Ohm’s law}}: R = V ÷ I.' },
-      board: { cols: 30 }, view: [-9, -2.5, 22, 19.5], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 22 } }, { type: 'resistor', props: { r: 220 } }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
+      board: { cols: 30 }, view: [-9, -2.5, 22, 19.5], phone: [-6, -2.5, 18, 19.5], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 22 } }, { type: 'resistor', props: { r: 220 } }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'color'],
       setup: function (A) { A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: 'off', bottom: 'off', on: false }, locked: true }); },
       steps: [
@@ -373,7 +382,7 @@
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
       intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part, and current in the path of the current ({{series}}).' },
-      board: { cols: 30 }, view: [-9, -2.5, 31.5, 50], tray: [],
+      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 34], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
@@ -381,15 +390,15 @@
         A.add('led', { ends: ['a12', 'T-14'], locked: true });
         var mys = A.add('resistor', { id: 'mystery', props: { r: 4700 }, ends: ['f22', 'f27'], locked: true });
         mys.hideValue = true; // the player reads the colour bands, then checks with the meter
-        A.add('meter', { id: 'm', x: 8, y: 20.5, props: { mode: 'off' }, ends: [{ x: 12, y: 49 }, { x: 16, y: 49 }] });
+        // phones (portrait): meter under the board; wide screens: meter beside it
+        var narrow = typeof window !== 'undefined' && window.innerWidth < 1100;
+        A.add('meter', narrow ? { id: 'm', x: 9, y: 21.5, props: { mode: 'off' }, ends: [{ x: 15, y: 19.6 }, { x: 18, y: 19.6 }] }
+          : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
         { text: 'Measure the top + rail: set the dial to {{DCV}} (volts), put the red probe in the + rail and the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
-        { text: 'Look at the loose resistor (columns 22–27). Its bands are yellow (4), violet (7), red. The 3rd band is the {{multiplier}}: red = × 100. What value is it?', choices: [
-          { label: '47 Ω', ok: false, why: 'Not quite: the 3rd band says how many zeros. Red = × 100, so 47 × 100.' },
-          { label: '4.7 kΩ', ok: true, why: 'Yes: 47 × 100 = 4700 Ω = 4.7 kΩ. Now check it with the meter.' },
-          { label: '470 kΩ', ok: false, why: 'Red means × 100 (not × 10 000): 47 × 100 = 4700 Ω.' }] },
+        { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band (tolerance) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
       explain: function (L) {
@@ -404,14 +413,14 @@
       solve: function (A) {
         A.set('m', 'mode', 'V'); A.moveEnd('m', 0, 'T+20'); A.moveEnd('m', 1, 'T-20'); A.wait(0.2);
         A.moveEnd('m', 0, 'c8'); A.moveEnd('m', 1, 'c12'); A.set('m', 'mode', 'A'); A.wait(0.2);
-        A.choose(1);
+        A.bands(['yellow', 'violet', 'red']);
         A.moveEnd('m', 0, 'h22'); A.moveEnd('m', 1, 'h27'); A.set('m', 'mode', 'ohm'); A.wait(0.2);
       }
     },
     {
       id: 'nano', title: 'Arduino Nano: blink', icon: 'nano',
       intro: { pic: I.nano, text: 'The Arduino Nano is a {{microcontroller}} board. Put it across the middle gap, then let a {{pin}} blink an LED.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'green' } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 24, 18.6], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'green' } }, 'wire'],
       lock: ['r', 'color'],
       steps: [
         { text: 'Put the Arduino Nano across the middle gap.', check: function (L) { var n = L.of('nano')[0]; return n && !n.free; }, ok: 'Each Nano pin now has its own strip of free holes.' },
@@ -429,13 +438,13 @@
       ],
       explain: function (L) { var l = L.of('led')[0]; var n = L.of('nano')[0]; if (n && n.props.program === 'blink' && l && !lit(l) && !(n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return whyDark(L, l); return null; },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it (h, i, j) are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives 5 V. With 220 Ω the LED gets about 12 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'A pin set HIGH gives 5 V. With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 12 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
       id: 'screen', title: 'Light meter on a screen', icon: 'oled',
       intro: { pic: I.screen, text: 'A light sensor changes its resistance with light. The Nano turns this into a number and shows it on a small screen.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], phone: [3, -1.6, 25, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) {
         A.add('nano', { id: 'nano', x: 8, y: 5, props: { program: 'light_meter' }, locked: true });
@@ -475,7 +484,7 @@
     {
       id: 'sound', title: 'Clap → beep', icon: 'sound',
       intro: { pic: I.sound, text: 'A microphone module hears a clap. The Nano answers with a tone on a speaker. The speaker needs a resistor.' },
-      board: { cols: 30 }, view: [-0.8, -16, 46, 18.6], tray: ['mic', 'speaker', { type: 'resistor', props: { r: 220 } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -16, 46, 18.6], phone: [-0.8, -4, 24, 18.6], tray: ['mic', 'speaker', { type: 'resistor', props: { r: 220 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [
@@ -503,7 +512,7 @@
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: red wire → a column with the resistor; resistor → a column joined to D8; black wire → GND (or the − rail joined to GND).', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. With 220 Ω the pin current stays near 20 mA: 5 V ÷ (220 + 8) Ω.',
+      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. While the tone is HIGH, the pin gives 5 V ÷ (220 Ω + 8 Ω speaker + about 25 Ω inside the pin) ≈ 20 mA: just at the safe limit.',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');
@@ -515,16 +524,24 @@
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [4, -6, 28, 18.6], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
         { text: 'Put the distance sensor on the board (in a free area). Power it: VCC → USB pin (5V), GND → GND.', check: function (L) { var s = L.of('hcsr04')[0]; return s && (s.st.vcc || 0) > 4.5; }, ok: 'The sensor has 5V from the USB pin.' },
         { text: 'Connect {{TRIG}} to pin 21.', check: function (L) { var s = L.of('hcsr04')[0]; return s && s.st.trig; }, ok: 'The ESP32 now sends trigger pulses.' },
-        { text: 'Connect {{ECHO}} to pin 33 safely, with a {{voltage divider}}: ECHO → 1 kΩ → middle → 2.2 kΩ → GND, and the middle → pin 33.', check: function (L) {
+        { text: 'Build a {{voltage divider}} for {{ECHO}}: ECHO → 1 kΩ → a free middle column → 2.2 kΩ → GND (the − rail joined to GND).', check: function (L) {
+          var s = L.of('hcsr04')[0], e = L.part('esp'); if (!s) return false;
+          var echo = L.net(s, 2), gnds = anyGndNet(L, e).concat([L.hnet('T-2'), L.hnet('B-2')]);
+          return L.of('resistor').some(function (r1) {
+            var a = L.net(r1, 0), b = L.net(r1, 1); if (r1.props.r !== 1000 || (a !== echo && b !== echo)) return false;
+            var mid = a === echo ? b : a;
+            return mid !== null && L.of('resistor').some(function (r2) { var c = L.net(r2, 0), d = L.net(r2, 1); return r2.props.r === 2200 && ((c === mid && gnds.indexOf(d) >= 0) || (d === mid && gnds.indexOf(c) >= 0)); });
+          });
+        }, ok: 'The middle column now gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V while ECHO is HIGH.' },
+        { text: 'Connect the middle column to pin 33 with a wire.', check: function (L) {
           var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0, s = L.of('hcsr04')[0];
           if (!s || !(v > 2.5 && v < 3.6) || (e.st.damaged && e.st.damaged['33'])) return false;
-          // the real divider must be there: ECHO → 1 kΩ → pin 33 → 2.2 kΩ → GND
           var echo = L.net(s, 2), p33 = mcuPinNet(L, e, '33'), gnds = anyGndNet(L, e).concat([L.hnet('T-2'), L.hnet('B-2')]);
           var top = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 1000 && ((a === echo && b === p33) || (b === echo && a === p33)); });
           var bot = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 2200 && ((a === p33 && gnds.indexOf(b) >= 0) || (b === p33 && gnds.indexOf(a) >= 0)); });

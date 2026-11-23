@@ -187,6 +187,7 @@
     showHome: function () {
       var self = this;
       audio.tones({});
+      this.clearToasts();
       this.mode = null; this.level = null; this.sim = null;
       this.show('home');
       var stars = store.data.stars, unlocked = 1;
@@ -228,7 +229,9 @@
 
     // ---------- levels ----------
     startLevel: function (i) { this.showIntro(LEVELS[i]); },
+    clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; },
     beginLevel: function (def) {
+      this.clearToasts();
       this.mode = 'level';
       this.level = { def: def, step: 0, flags: {}, hints: 0, mistakes: 0, done: false, msgs: {}, stepFlags: {}, issueSeen: {} };
       var state = { board: Object.assign({}, def.board), parts: [] };
@@ -261,8 +264,11 @@
       if (this.mode === 'level' && this.level.def.view) {
         var v = this.level.def.view, b = this.sim.board, bench = this.bench;
         var mobile = window.innerWidth < 1100, g = $('#goal');
-        var top = mobile && g.offsetHeight ? g.offsetHeight + 12 : 0, right = mobile ? 54 : 54;
+        var top = mobile && g.offsetHeight ? g.offsetHeight + 12 : 0, right = mobile ? 0 : 54;
+        // phones: a tighter view (where the work happens) so holes are big enough for a finger
+        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top, right); return; }
         bench.fitRect(v[0], v[1], v[2], v[3], 8, top, right);
+        if (mobile) return;
         var s0 = bench.view.s;
         // on wide screens show the whole board too, if that does not shrink things much
         var u = [Math.min(v[0], b.x0 - 1), Math.min(v[1], b.y0 - 1), Math.max(v[2], b.x1 + 1), Math.max(v[3], b.y1 + 1)];
@@ -347,8 +353,18 @@
         return '<li class="' + cls + '"><span class="sn">Step ' + (i + 1) + ' of ' + def.steps.length + '</span>' + rich(s.text) + '</li>';
       }).join('') + '</ol>';
       var step = def.steps[lv.step];
+      // answers unlock only after the player has looked (tapped the holes the question is about)
+      var ready = !step || !step.ready || step.ready(lv.tapped || {});
       if (step && step.choices && !lv.done) {
-        html += '<div class="choices">' + step.choices.map(function (c, i) { return '<button data-c="' + i + '">' + esc(c.label) + '</button>'; }).join('') + '</div>';
+        if (ready) html += '<div class="choices">' + step.choices.map(function (c, i) { return '<button data-c="' + i + '">' + esc(c.label) + '</button>'; }).join('') + '</div>';
+        else html += '<p class="lockq">' + rich(step.readyText) + '</p>';
+      }
+      if (step && step.bands && !lv.done) {
+        var digit = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'blue', 'violet', 'grey', 'white'];
+        var sel = function (n, opts, lab) { return '<label class="bsel"><span>' + lab + '</span><select data-band="' + n + '"><option value="">?</option>' + opts.map(function (o) { return '<option value="' + o[0] + '">' + esc(o[1]) + '</option>'; }).join('') + '</select></label>'; };
+        html += '<div class="bands">' + sel(0, digit.map(function (c, k) { return [c, c + ' = ' + k]; }), '1st band') + sel(1, digit.map(function (c, k) { return [c, c + ' = ' + k]; }), '2nd band') +
+          sel(2, [['black', 'black = × 1'], ['brown', 'brown = × 10'], ['red', 'red = × 100'], ['orange', 'orange = × 1000'], ['yellow', 'yellow = × 10 000']], '3rd band') +
+          '<button class="primary" data-act="bands">Check</button></div>';
       }
       html += '<div id="why" class="why" hidden></div>';
       if (!lv.done) {
@@ -363,6 +379,7 @@
         if (!b || b.classList.contains('term')) return;
         if (b.dataset.c !== undefined) self.choose(+b.dataset.c);
         if (b.dataset.act === 'hint') self.hint();
+        if (b.dataset.act === 'bands') self.checkBands();
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
@@ -376,6 +393,18 @@
       if (c.ok) this.stepDone(c.why);
       else { lv.wrong = (lv.wrong || 0) + 1; this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04); }
     },
+    // colour-band picker: the player reads the bands and picks each colour
+    checkBands: function (picked) {
+      var lv = this.level, step = lv.def.steps[lv.step]; if (!step || !step.bands) return;
+      picked = picked || [0, 1, 2].map(function (k) { var s = document.querySelector('#goal select[data-band="' + k + '"]'); return s ? s.value : ''; });
+      if (picked.some(function (x) { return !x; })) { this.toast('Pick a colour for each of the 3 bands.', 'info'); return; }
+      var want = step.bands.want, bad = [];
+      for (var k = 0; k < 3; k++) if (picked[k] !== want[k]) bad.push(['1st', '2nd', '3rd'][k]);
+      if (!bad.length) { this.stepDone(step.bands.ok); return; }
+      lv.wrong = (lv.wrong || 0) + 1;
+      this.toast('The ' + bad.join(' and the ') + ' band ' + (bad.length > 1 ? 'are' : 'is') + ' not right. Zoom in on the resistor and look again: ' + step.bands.tip, 'bad');
+      audio.blip(220, 0.18, 'sawtooth', 0.04);
+    },
     hint: function () {
       var lv = this.level; if (!lv || lv.done) return;
       if (lv.hints < lv.def.hints.length) lv.hints++;
@@ -385,6 +414,10 @@
     onTapHole: function (h, onPart) {
       if (this.mode !== 'level') return;
       var lv = this.level, step = lv.def.steps[lv.step];
+      lv.tapped = lv.tapped || {};
+      var wasReady = step && step.ready ? step.ready(lv.tapped) : true;
+      lv.tapped[h] = true;
+      if (step && step.ready && !wasReady && step.ready(lv.tapped)) this.renderGoal();
       if (!step || !step.tap || lv.done) return;
       var r = step.tap(this.L(), h);
       if (r.ok) this.stepDone(r.msg); else { if (r.wrong !== false && !onPart) lv.wrong = (lv.wrong || 0) + (r.count ? 1 : 0); this.toast(r.msg, 'bad'); audio.blip(220, 0.15, 'sawtooth', 0.035); }
@@ -461,14 +494,15 @@
         var u = self.snapshot();
         var cfg = a === '30' ? { cols: 30 } : { cols: 63, split: a === '63s' };
         var nb = BB.board.makeBoard(cfg);
-        self.sim.state.parts.forEach(function (p) { if (p.ends) p.ends = p.ends.map(function (e) { if (e.at && e.at.slice(0, 2) !== 'P:' && !nb.byId[e.at]) { var pos = self.sim.endPos(e); return { x: pos.x, y: pos.y }; } return e; }); });
+        var loose = 0;
+        self.sim.state.parts.forEach(function (p) { if (p.ends) p.ends = p.ends.map(function (e) { if (e.at && e.at.slice(0, 2) !== 'P:' && !nb.byId[e.at]) { loose++; var pos = self.sim.endPos(e); return { x: pos.x, y: pos.y }; } return e; }); });
         self.sim.setBoard(cfg);
         var lifted = 0;
         self.sim.state.parts.forEach(function (p) {
           if (PARTS[p.type].kind !== 'rigid' || p.free) return;
           if (self.sim.pinPoints(p).some(function (q) { return !q.at; })) { p.free = true; lifted++; }
         });
-        if (lifted) self.toast(lifted + ' part' + (lifted > 1 ? 's do' : ' does') + ' not fit on the smaller board. ' + (lifted > 1 ? 'They are' : 'It is') + ' lifted off: drag ' + (lifted > 1 ? 'them' : 'it') + ' back onto the board.', 'info');
+        if (lifted || loose) self.toast((lifted ? lifted + ' part' + (lifted > 1 ? 's' : '') + ' did not fit and ' + (lifted > 1 ? 'are' : 'is') + ' lifted off. ' : '') + (loose ? loose + ' leg' + (loose > 1 ? 's are' : ' is') + ' now loose. ' : '') + 'Drag them back onto the board.', 'info');
         self.commit(u);
         self.bench.renderBoard(); self.bench.render(true); self.fitView();
       });
@@ -519,7 +553,7 @@
       var usedStrip = {};
       Object.keys(occ).forEach(function (id) { var h = b.byId[id]; if (h) usedStrip[h.strip] = true; });
       var free = function (id) { return id && b.byId[id] && !occ[id] && !cov[id] && !usedStrip[b.byId[id].strip]; };
-      var bodies = sim.state.parts.filter(function (q) { return PARTS[q.type].kind !== 'leads'; }).map(function (q) { return sim.bodyRect(q); });
+      var bodies = sim.state.parts.filter(function (q) { return q.type !== 'wire'; }).map(function (q) { return sim.bodyRect(q); });
       var overlaps = function (r) { return bodies.some(function (o) { return r.x0 < o.x1 - 0.2 && r.x1 > o.x0 + 0.2 && r.y0 < o.y1 - 0.2 && r.y1 > o.y0 + 0.2; }); };
       var p = null;
       var byDist = b.holes.filter(function (h) { return h.kind === 'term'; }).sort(function (a, d) { return Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(d.x - c.x, d.y - c.y); });
@@ -552,7 +586,7 @@
         p = BB.newPart(type, { props: props, x: spot.x, y: spot.y });
         if (def.kind === 'module') {
           var lf = def.leadFrom;
-          p.ends = lf.map(function (q, k2) { return { x: spot.x + q[0] + 3, y: spot.y + q[1] + (type === 'meter' ? 6 + k2 * 0 : 0) }; });
+          p.ends = lf.map(function (q, k2) { return def.leadOut ? { x: spot.x + q[0] + 2 + k2 * 2, y: spot.y + def.size[1] + 2 } : { x: spot.x + q[0] + 3, y: spot.y + q[1] }; });
           if (type === 'meter') p.ends = [{ x: spot.x + 5, y: spot.y + 30 }, { x: spot.x + 10, y: spot.y + 30 }];
           var railsUsed = b.holes.some(function (h) { return h.kind === 'rail' && occ[h.id]; });
           if ((type === 'battery9' || type === 'aa') && !railsUsed) {
@@ -576,6 +610,8 @@
       rects.push({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
       var w = def.size[0], h = def.size[1];
       var tries = [];
+      // batteries sit above the board, so their leads go straight down into the rails
+      if (def.spot === 'above') for (var a = 0; a < 4; a++) tries.push({ x: b.x0 + 3 + a * (w + 2), y: b.y0 - h - 3 });
       for (var k = 0; k < 12; k++) { tries.push({ x: b.x0 + k * (w + 2), y: b.y1 + 3 }); }
       for (var k2 = 0; k2 < 6; k2++) { tries.push({ x: b.x0 - w - 3, y: b.y0 + k2 * (h + 2) }); tries.push({ x: b.x1 + 3, y: b.y0 + k2 * (h + 2) }); }
       for (var j = 0; j < tries.length; j++) {
@@ -720,15 +756,18 @@
       this.refreshInspector();
       var setProp = function (k, v) { var u = self.snapshot(); p.props[k] = v; self.sim.dirty(); self.commit(u); self.bench.render(); self.onInteract('prop', p); };
       ins.onchange = function (e) {
-        var t = e.target, k = t.dataset.k; if (!k) return;
+        var t = e.target, k = t.dataset.k;
+        if (t.type === 'range') { if (self._rangeUndo) self.commit(self._rangeUndo); self._rangeUndo = null; return; }
+        if (t.dataset.prog) { setProp('program', t.value); self.onSelect(id); return; }
+        if (t.dataset.role) { var u = self.snapshot(); p.props.pins = Object.assign({}, p.props.pins || {}); p.props.pins[t.dataset.role] = t.value; self.commit(u); self.sim.dirty(); return; }
+        if (!k) return;
         var pr = (def.props || []).find(function (q) { return q.k === k; });
         if (t.tagName === 'SELECT' && pr) { setProp(k, pr.options[+t.value]); self.onSelect(id); }
-        if (t.dataset.prog) { setProp('program', t.value); self.onSelect(id); }
-        if (t.dataset.role) { var u = self.snapshot(); p.props.pins = Object.assign({}, p.props.pins || {}); p.props.pins[t.dataset.role] = t.value; self.commit(u); self.sim.dirty(); }
       };
       ins.oninput = function (e) {
         var t = e.target, k = t.dataset.k; if (!k || t.type !== 'range') return;
         var pr = def.props.find(function (q) { return q.k === k; });
+        if (!self._rangeUndo) self._rangeUndo = self.snapshot(); // one undo step per slider move
         p.props[k] = +t.value; self.sim.dirty(); self.bench.render(); self.onInteract('prop', p);
         var out = ins.querySelector('[data-out="' + k + '"]'); if (out) out.textContent = pr.fmt ? pr.fmt(+t.value) : t.value;
       };
@@ -838,6 +877,7 @@
         tap: function (h) { self.bench.hiHole = h; self.onTapHole(h); },
         xray: function (on) { self.setXray(on); self.checkLevel(); },
         choose: function (i) { self.choose(i); },
+        bands: function (arr) { self.checkBands(arr); },
         wait: function (sec) { for (var t = 0; t < sec; t += 1 / 60) { self.sim.step(1 / 60); self.afterStep(); } },
         find: function (t) { return self.sim.state.parts.filter(function (p) { return p.type === t; }); }
       };
@@ -968,7 +1008,7 @@
       if (a > 600) f.hi = true; if (a < 300 && f.hi) f.lo = true; return f.hi && f.lo;
     } },
     { id: 'nanoMB', title: 'Nano from the MB102.', text: 'Turn off the Nano’s USB cable (in its panel). Power it from a 5V rail: rail + → Nano 5V pin, rail − → Nano GND.', check: function (L) { return L.of('nano').some(function (n) { return n.props.usb === false && n.st.powered && n.st.extPowered; }); } },
-    { id: 'cap', title: 'Charge a capacitor.', text: 'Put a 1000 µF capacitor (+ leg to +) in series with a 1 kΩ resistor on a 5V rail. Tap the capacitor and watch its voltage rise: after 1 second (1 kΩ × 1000 µF) it has about 63 % of 5 V.', check: function (L, f) {
+    { id: 'cap', title: 'Charge a capacitor.', text: 'Put a 1000 µF capacitor (+ leg to +) in series with a 1 kΩ resistor on a 5V rail. Tap the capacitor and watch its voltage rise: after one {{time constant}} (1 kΩ × 1000 µF = 1 second) it has about 63 % of 5 V.', check: function (L, f) {
       return L.of('capacitor').some(function (c) { var v = (c.vis && c.vis.v) || 0; if (v < 1 && c.props.c >= 1000e-6) f.low = true; return f.low && v > 4.5; });
     } },
     { id: 'espMB', title: 'ESP32 from a 3.3V rail.', text: 'Set one MB102 side to 3.3V. Unplug the ESP32’s USB, then feed its 3V pin from that rail (and GND to −). Never feed 5V into 3V!', check: function (L) { return L.of('esp32').some(function (n) { return n.props.usb === false && n.st.powered && Math.abs(((n.st.lastV || {})['3V'] || 0) - 3.3) < 0.15 && !Object.keys(n.st.damaged || {}).length; }); } }

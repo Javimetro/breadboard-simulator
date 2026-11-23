@@ -129,7 +129,7 @@ body.notray #tb .partsbtn { display: none; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel2); padding: 0 14px 0 6px; }
 .toggle i { width: 30px; height: 30px; border-radius: 50%; background: #4a5563; transition: background .15s; }
 .toggle.on i { background: var(--good); }
-.sw { display: flex; gap: 6px; flex-wrap: wrap; } .sw button { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #0006; } .sw button.on { outline: 3px solid var(--cyan); }
+.sw { display: flex; gap: 6px; flex-wrap: wrap; } .sw button { width: 44px; height: 44px; border-radius: 50%; border: 2px solid #0006; } .sw button.on { outline: 3px solid var(--cyan); }
 .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .acts button { display: inline-flex; align-items: center; gap: 6px; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); }
 .acts button .ico { width: 18px; height: 18px; }
@@ -150,7 +150,7 @@ body.notray #tb .partsbtn { display: none; }
 .banner.warn { background: #3a2c0c; border: 1px solid #8a6a17; }
 .banner.info { background: #12323d; border: 1px solid #2f6f82; }
 #toasts { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(94vw, 460px); pointer-events: none; }
-.toast { padding: 10px 14px; border-radius: 12px; font-size: 15px; box-shadow: 0 8px 28px #000a; animation: rise .25s ease-out; transition: opacity .35s, transform .35s; pointer-events: auto; }
+.toast { padding: 10px 14px; border-radius: 12px; font-size: 15px; box-shadow: 0 8px 28px #000a; animation: rise .25s ease-out; transition: opacity .35s, transform .35s; pointer-events: none; }
 .toast.out { opacity: 0; transform: translateY(-8px); }
 .toast.good { background: #133d27; border: 1px solid #2f8d57; }
 .toast.bad { background: #3d1513; border: 1px solid #9a3530; }
@@ -193,7 +193,12 @@ body.goalmin #goal .ghead h2 { white-space: nowrap; overflow: hidden; text-overf
 #goal .choices button { min-height: 44px; } .hintbtn { min-height: 44px; }
 #toasts { top: auto; bottom: calc(74px + var(--safe-b)); }
 body:not(.insfull) #inspector .desc { display: none; }
-body.hassel #toasts { bottom: auto; top: 128px; }
+body.hassel #toasts, body.trayopen #toasts { bottom: auto; top: 128px; }
+/* phones: the problem banner is a small chip; tap it to read why */
+#stage .banner { padding: 8px 12px; min-height: 44px; }
+#stage .banner:not(.open) span { display: none; }
+#stage .banner:not(.open) b::after { content: '  ▸ why?'; font-weight: 600; opacity: .7; }
+body.hassel #stage .banner, body.trayopen #stage .banner { display: none; }
 body.sandmode #goal { display: none; }
 #goal .steps li.todo, #goal .steps li.done { display: none; }
 body.goalopen #goal .steps li.todo, body.goalopen #goal .steps li.done { display: list-item; }
@@ -224,6 +229,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #tb { justify-content: center; gap: 8px; }
   .banner { left: 12px; right: 64px; }
   #stage .banner { top: auto; bottom: 8px; }
+  #stage .banner:not(.open) span { display: block; } #stage .banner:not(.open) b::after { content: none; }
+  body.hassel #stage .banner { display: block; }
   #zoom { top: 50%; bottom: auto; transform: translateY(-50%); }
   .ibtn.fold { display: none; } .gstep { display: none !important; }
 }
@@ -336,3 +343,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .chal li.done .ck { border-color: var(--good); }
 .chmodal { text-align: left; max-height: 60vh; overflow: auto; }
 @media (min-width: 1100px) { .chalbtn { display: none !important; } }
+.lockq { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px dashed #3c6c80; color: #bfe6f5; font-size: 15px; }
+.bands { display: grid; gap: 6px; margin: 8px 0; }
+.bsel { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14.5px; color: var(--mut); }
+.bsel select { min-height: 44px; flex: 1; max-width: 70%; border-radius: 10px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 0 8px; font-size: 15px; }
+.bands .primary { min-height: 46px; border-radius: 12px; border: 0; }
