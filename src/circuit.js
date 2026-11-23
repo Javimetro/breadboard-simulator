@@ -134,9 +134,11 @@
     // 2. PWM and tone pins: all PWM pins switch on together and each switches off at its own
     // duty. Solving one slice per distinct duty and weighting by slice width gives exact averages.
     var duties = [];
+    var addDuty = function (d) { if (d !== undefined && d > 0 && d < 1 && duties.indexOf(d) < 0) duties.push(d); };
     parts.forEach(function (p) {
-      var io = p.st && p.st.io; if (!io || !p.st.powered) return;
-      Object.keys(io).forEach(function (k) { var d = io[k].pwm; if (io[k].mode === 'out' && d !== undefined && d > 0 && d < 1 && duties.indexOf(d) < 0) duties.push(d); });
+      var io = p.st && p.st.io;
+      if (io && p.st.powered) Object.keys(io).forEach(function (k) { if (io[k].mode === 'out') addDuty(io[k].pwm); });
+      if (p.st && p.st.duty) addDuty(p.st.duty); // pulse outputs of parts (HC-SR04 ECHO)
     });
     duties.sort(function (a, b) { return a - b; });
     var bounds = [0].concat(duties, [1]);
@@ -144,20 +146,29 @@
     for (var q = 0; q < bounds.length - 1; q++) {
       (function (lo, hi) { phases.push({ w: hi - lo, pwmHigh: function (d) { return d >= hi - 1e-9; }, phase: lo === 0 ? 'hi' : 'slice' }); })(bounds[q], bounds[q + 1]);
     }
-    var built = null, accV = null, accI = null, capV = {}, peakI = null;
-    phases.forEach(function (ph) {
-      if (ph.w <= 0) return;
-      var b = self.build(ph, dt, nets);
-      var r = E.solve(b.circuit, { dt: dt, init: self._init && self._init.length === b.circuit.n ? self._init : null });
-      if (!accV) { accV = new Float64Array(r.v.length); accI = new Float64Array(r.i.length); peakI = new Float64Array(r.i.length); built = b; built.r = r; }
-      for (var pk = 0; pk < r.i.length; pk++) peakI[pk] = Math.max(peakI[pk], Math.abs(r.i[pk]));
-      for (var i = 0; i < r.v.length; i++) accV[i] += ph.w * r.v[i];
-      for (var j = 0; j < r.i.length; j++) accI[j] += ph.w * r.i[j];
-      Object.keys(r.capV).forEach(function (k) { capV[k] = (capV[k] || 0) + ph.w * r.capV[k]; });
-      if (ph.phase === 'hi') self._init = r.v;
-    });
+    var built, accV, accI, capV, peakI, peakV;
+    // Solve; then let power sources pick their mode (normal / current limit / let go) and solve
+    // again until nothing changes. A few rounds are enough.
+    for (var round = 0; round < 6; round++) {
+      built = null; accV = null; accI = null; capV = {}; peakI = null; peakV = null;
+      phases.forEach(function (ph) {
+        if (ph.w <= 0) return;
+        var b = self.build(ph, dt, nets);
+        var r = E.solve(b.circuit, { dt: dt, init: self._init && self._init.length === b.circuit.n ? self._init : null });
+        if (!accV) { accV = new Float64Array(r.v.length); accI = new Float64Array(r.i.length); peakI = new Float64Array(r.i.length); peakV = new Float64Array(r.v.length).fill(-1e9); built = b; built.r = r; }
+        for (var pk = 0; pk < r.i.length; pk++) peakI[pk] = Math.max(peakI[pk], Math.abs(r.i[pk]));
+        for (var i = 0; i < r.v.length; i++) { accV[i] += ph.w * r.v[i]; peakV[i] = Math.max(peakV[i], r.v[i] - r.v[r.refOf[r.island[i]]]); }
+        for (var j = 0; j < r.i.length; j++) accI[j] += ph.w * r.i[j];
+        Object.keys(r.capV).forEach(function (k) { capV[k] = (capV[k] || 0) + ph.w * r.capV[k]; });
+        if (ph.phase === 'hi') self._init = r.v;
+      });
+      var rrm = { v: function (nd) { return accV[nd]; }, i: function (el) { return el === null || el === undefined ? 0 : accI[el]; } };
+      var changed = false;
+      parts.forEach(function (p) { if (BB.updateSrcModes && BB.updateSrcModes(p, rrm)) changed = true; });
+      if (!changed) break;
+    }
     var r = built.r;
-    var res = { v: accV, i: accI, iPeak: peakI, island: r.island, refOf: r.refOf, converged: r.converged, capV: capV };
+    var res = { v: accV, i: accI, iPeak: peakI, vPeak: peakV, island: r.island, refOf: r.refOf, converged: r.converged, capV: capV };
     this.interpret(built, res, dt, nets);
     this._dirty = false;
     this.ver = (this.ver || 0) + 1;
@@ -186,7 +197,8 @@
       D: function (a, k, is, nvt) { els.push({ t: 'D', a: res(a), k: res(k), is: is, nvt: nvt, part: cur.id, pa: pinTag(a), pb: pinTag(k) }); return els.length - 1; },
       C: function (a, b, c, st) { els.push({ t: 'C', a: res(a), b: res(b), c: c, v0: st.v0 || 0, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; },
       I: function (a, b, i) { els.push({ t: 'I', a: res(a), b: res(b), i: i, part: cur.id, pa: pinTag(a), pb: pinTag(b) }); return els.length - 1; },
-      mark: function (el) { els[el].supply = true; } // a power source (battery, regulator, USB)
+      mark: function (el) { els[el].supply = true; }, // a power source (battery, regulator, USB)
+      flag: function (el, f) { els[el][f] = true; }
     };
     var sctx = { phase: ph.phase, pwmHigh: ph.pwmHigh, dt: dt, t: this.t, sim: this };
     parts.forEach(function (p) {
@@ -249,7 +261,7 @@
     function anchorMap() {
       par = new Int32Array(b.circuit.n); for (var q = 0; q < par.length; q++) par[q] = q;
       var join = function (x, y) { x = findN(x); y = findN(y); if (x !== y) par[x] = y; };
-      els.forEach(function (e) { if (e.t === 'R' && e.r < 1e7) join(e.a, e.b); else if (e.t === 'V') join(e.p, e.n); else if (e.t === 'D') join(e.a, e.k); });
+      els.forEach(function (e) { if (e.t === 'R' && e.r < 1e7) join(e.a, e.b); else if (e.t === 'V') join(e.p, e.n); else if (e.t === 'D' && !e.clamp) join(e.a, e.k); else if (e.t === 'I') join(e.a, e.b); });
       var out = {};
       els.forEach(function (e) { if (e.t === 'V') out[findN(e.p)] = true; });
       (b.circuit.refHints || []).forEach(function (h) { out[findN(h)] = true; });
@@ -261,6 +273,7 @@
         i: function (el) { return el === null || el === undefined ? 0 : r.i[el]; },
         v: function (node) { return r.v[node]; },
         pinV: function (k) { return r.v[pn[k]]; },
+        pinVpeak: function (k) { return r.vPeak ? r.vPeak[pn[k]] : r.v[pn[k]]; },
         capV: function (el) { return r.capV[el] || 0; },
         iPeak: function (el) { return el === null || el === undefined ? 0 : (r.iPeak ? r.iPeak[el] : r.i[el]); }
       };
@@ -269,21 +282,23 @@
     // Two power sources joined by parts but with separate GNDs: a classic beginner mistake.
     var supplies = [];
     parts.forEach(function (p) {
-      var def = PARTS[p.type], gk = [];
-      if (def.mcu && p.st.powered) def.pins.forEach(function (q, k) { if (q.kind === 'gnd') gk.push(k); });
-      else if (p.type === 'mb102' && p.props.on) gk = [2, 3, 6, 7];
-      else if (p.type === 'battery9' || p.type === 'aa') gk = [1];
+      var def = PARTS[p.type], gk = [], pk = [];
+      if (def.mcu && p.st.powered) def.pins.forEach(function (q, k) { if (q.kind === 'gnd') gk.push(k); else if (q.kind === 'v5' || q.kind === 'v33') pk.push(k); });
+      else if (p.type === 'mb102' && p.props.on) { gk = [2, 3, 6, 7]; pk = [0, 1, 4, 5]; }
+      else if (p.type === 'battery9' || p.type === 'aa') { gk = [1]; pk = [0]; }
       if (!gk.length) return;
       var keys = nets.keys[p.id];
-      var gnets = gk.map(function (k) { return keys[k][0] === 'F' ? null : nets.find(keys[k]); }).filter(function (x) { return x !== null; });
+      var netsOf = function (ks) { return ks.map(function (k) { return keys[k][0] === 'F' ? null : nets.find(keys[k]); }).filter(function (x) { return x !== null; }); };
+      var gnets = netsOf(gk);
       if (!gnets.length) return;
-      supplies.push({ p: p, gnets: gnets, island: r.island[b.pinNodes[p.id][gk[0]]] });
+      supplies.push({ p: p, gnets: gnets, pnets: netsOf(pk), sys: !!def.mcu || p.type === 'mb102', island: r.island[b.pinNodes[p.id][gk[0]]] });
     });
     for (var i1 = 0; i1 < supplies.length; i1++) for (var i2 = i1 + 1; i2 < supplies.length; i2++) {
       var A = supplies[i1], Bs = supplies[i2];
-      if (A.island !== Bs.island) continue;
+      if (A.island !== Bs.island || !(A.sys || Bs.sys)) continue; // two batteries in series are fine
       var shared = A.gnets.some(function (g) { return Bs.gnets.indexOf(g) >= 0; });
-      if (!shared) issues.push({ part: Bs.p.id, kind: 'noground', level: 'warn', title: 'No common GND',
+      var stacked = A.gnets.some(function (g) { return Bs.pnets.indexOf(g) >= 0; }) || Bs.gnets.some(function (g) { return A.pnets.indexOf(g) >= 0; });
+      if (!shared && !stacked) issues.push({ part: Bs.p.id, kind: 'noground', level: 'warn', title: 'No common GND',
         text: 'The ' + PARTS[A.p.type].name + ' and the ' + PARTS[Bs.p.type].name + ' are both power sources, but their GND (−) sides are not joined. Current must flow back to the source it came from. Join the two GNDs with a wire.' });
     }
     // current into each pin from the hole it sits in

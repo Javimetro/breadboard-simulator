@@ -71,13 +71,13 @@
       name: 'Distance meter', desc: 'Sends a pulse on TRIG and times the pulse on ECHO from an HC-SR04. Shows the distance on a screen (if there is one) and in the serial monitor.',
       roles: { trig: { label: 'TRIG', mode: 'out' }, echo: { label: 'ECHO', mode: 'in' } }, display: true,
       step: function (io) {
-        io.out('trig', 0);
+        io.pulse('trig'); // a 10 µs HIGH pulse on TRIG starts each measurement
         var s = io.findOn('trig', 'hcsr04', 1);
-        var e = io.digital('echo');
+        var e = io.digitalPeak('echo');
         var txt;
         if (!s) txt = 'No sensor on TRIG';
         else if (!s.st.trig) txt = 'Sensor has no power';
-        else if (e === null) txt = 'ECHO unclear (' + io.volts('echo').toFixed(2) + ' V)';
+        else if (e === null) txt = 'ECHO unclear (' + io.voltsPeak('echo').toFixed(2) + ' V)';
         else if (e === 0) txt = 'No echo';
         else txt = 'Distance: ' + s.props.dist + ' cm';
         io.mem.dist = s && e === 1 ? s.props.dist : null;
@@ -158,6 +158,12 @@
       pwm: function (role, duty) { var o = io[pinFor(p, role)]; if (!o) return; duty = Math.max(0, Math.min(1, duty)); if (duty <= 0.004) { o.level = 0; delete o.pwm; } else if (duty >= 0.996) { o.level = 1; delete o.pwm; } else { o.pwm = duty; o.level = 1; } },
       tone: function (role, f) { var o = io[pinFor(p, role)]; if (!o) return; if (f > 0) { o.pwm = 0.5; o.level = 1; o.freq = f; } else { o.level = 0; delete o.pwm; delete o.freq; } },
       volts: function (role) { return lv[pinFor(p, role)] || 0; },
+      voltsPeak: function (role) { return (st.lastVpeak || {})[pinFor(p, role)] || 0; },
+      digitalPeak: function (role) { // for short pulses: the highest voltage during the step
+        var v = (st.lastVpeak || {})[pinFor(p, role)] || 0;
+        if (v >= cfg.hiTh) return 1; if (v <= cfg.loTh) return 0; return null;
+      },
+      pulse: function (role) { var o = io[pinFor(p, role)]; if (o) { o.pwm = 0.0002; o.level = 1; } },
       digital: function (role) {
         if (st.floating && st.floating[pinFor(p, role)]) return Math.random() < 0.5 ? 1 : 0;
         var v = lv[pinFor(p, role)] || 0;
@@ -198,7 +204,7 @@
         return { t: s.props.temp, h: s.props.hum };
       }
     };
-    if (st.powered && !st.dead) prog.step(api);
+    if (st.powered && !st.dead && st.lastV) prog.step(api);
     st.io = st.powered ? io : {};
     // Wio Terminal: its own screen shows what the program shows, or the serial output.
   }

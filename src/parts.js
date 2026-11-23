@@ -126,166 +126,189 @@
   };
   BB.BOARDS = BOARDS;
 
-  // A regulated output with a current limit. Normally it has a small series resistance rn.
-  // Above iLim it limits: we model that as series R = V / iLim, so a dead short gives about iLim.
+  // A regulated output (USB port, AMS1117, the boards' 3.3 V regulators). Three modes, chosen
+  // by the simulation inside each step (see BB.updateSrcModes):
+  //   'v'   holds its voltage V (small series resistance rn)
+  //   'lim' gives its maximum current iLim (current limit: the voltage drops)
+  //   'off' cannot take current back: if another source pushes harder, it lets go and the
+  //         voltage rises to whatever that other source makes.
   function limSrc(n, st, key, g, out, V, rn, iLim) {
-    var s = n.node();
-    var el = n.V(s, g, V);
-    if (n.mark) n.mark(el);
-    n.R(s, out, st['lim_' + key] ? V / iLim : rn);
-    return { el: el, key: key, V: V, iLim: iLim, out: out, g: g };
+    var mode = (st.mode || (st.mode = {}))[key] || 'v';
+    var src = { key: key, V: V, iLim: iLim, out: out, g: g, mode: mode, el: null };
+    if (mode === 'lim') src.el = n.I(g, out, iLim);
+    else if (mode === 'off') n.R(out, g, 1e7);
+    else { var s = n.node(); src.el = n.V(s, g, V); n.R(s, out, rn); }
+    if (src.el !== null && n.mark) n.mark(src.el);
+    return src;
   }
-  function limCheck(src, r, st, ctx) {
-    var i = r.i(src.el), v = r.v(src.out) - r.v(src.g), k = 'lim_' + src.key;
-    if (!st[k] && i > src.iLim * 1.02) { st[k] = true; st[k + 'T'] = ctx.t; ctx.dirty(); }
-    if (st[k] && v > src.V + 0.05) { st[k] = false; ctx.dirty(); }
-    else if (st[k] && v > 0.9 * src.V) { st[k] = false; ctx.dirty(); }
-    return { i: i, v: v, limited: !!st[k], since: st[k] ? ctx.t - st[k + 'T'] : 0 };
+  // Decide each regulated source's mode from a solved result. Returns true if any mode changed.
+  BB.updateSrcModes = function (p, rr) {
+    var srcs = p._e && p._e.srcs; if (!srcs || !srcs.length) return false;
+    var changed = false, st = p.st;
+    st.mode = st.mode || {};
+    srcs.forEach(function (src) {
+      var v = rr.v(src.out) - rr.v(src.g), i = src.el === null ? 0 : rr.i(src.el), m = src.mode, next = m;
+      if (m === 'v') { if (i > src.iLim * 1.02) next = 'lim'; else if (i < -0.004) next = 'off'; }
+      else if (m === 'lim') { if (v > src.V + 0.002) next = 'v'; }
+      else if (m === 'off') { if (v < src.V - 0.01) next = 'v'; }
+      if (next !== m) { st.mode[src.key] = next; if (next === 'lim') st['since_' + src.key] = st.now || 0; changed = true; }
+    });
+    return changed;
+  };
+  function srcState(src, r, st, ctx) {
+    var i = src.el === null ? 0 : r.i(src.el), v = r.v(src.out) - r.v(src.g);
+    if (src.mode !== 'lim') st['since_' + src.key] = ctx.t;
+    return { i: i, v: v, limited: src.mode === 'lim', off: src.mode === 'off', since: ctx.t - (st['since_' + src.key] || ctx.t) };
   }
 
   // Electrical model shared by all microcontroller boards.
+  var LOAD = { nano: 250, esp32: 62, pi5: 8.3, wio: 33 }; // board's own current draw when fed through a pin (≈20 mA, 80 mA, 0.6 A, 150 mA)
   function mcuStamp(p, n, ctx) {
     var def = PARTS[p.type], cfg = BOARDS[def.mcu], st = p.st;
     var pins = def.pins;
     var g = n.node();
     n.ref(g);
+    st.now = ctx.t;
     var e = p._e = { g: g, gnd: [], pin: {}, srcs: [] };
     pins.forEach(function (pin, i) { if (pin.kind === 'gnd') e.gnd.push(n.R('p' + i, g, 0.01)); });
-    var powered = !st.dead && p.props.usb !== false && !st.usbTripped;
-    // Without USB the board can be powered from its 5 V pin (or 3.3 V pin for 3.3 V boards).
-    var extPowered = false;
-    if (p.props.usb === false && !st.dead) {
-      var lv = st.lastV || {};
-      if (def.mcu === 'nano') { extPowered = (lv['5V'] || 0) > 4.3 || (lv.VIN || 0) > 6.5; st.extVia = (lv.VIN || 0) > 6.5 && st.extVia !== '5V' ? 'VIN' : ((lv['5V'] || 0) > 4.3 ? '5V' : 'VIN'); }
-      else if (def.mcu === 'esp32') { extPowered = (lv.USB || 0) > 4.3 || (lv['3V'] || 0) > 3.0; if (extPowered && !((lv.USB || 0) > 4.3)) st.extVia = '3V'; else st.extVia = '5V'; }
-      else extPowered = (lv['5V'] || 0) > 4.3;
+    // pins with the same power job are one copper net inside the board (Pi/Wio have two 5V and two 3V3 pins)
+    var first = {};
+    pins.forEach(function (pin, i) { if (pin.kind === 'v5' || pin.kind === 'v33') { if (first[pin.kind] === undefined) first[pin.kind] = i; else n.R('p' + i, 'p' + first[pin.kind], 0.01); } });
+    var usb = !st.dead && p.props.usb !== false && !st.usbTripped;
+    var lv = st.lastV || {};
+    var via = null;
+    if (!usb && !st.dead) {
+      if (def.mcu === 'nano') via = (lv['5V'] || 0) > 4.3 ? '5V' : (lv.VIN || 0) > 6.5 ? 'VIN' : null;
+      else if (def.mcu === 'esp32') via = (lv.USB || 0) > 4.3 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 3.0 ? 'BAT' : null;
+      else via = (lv['5V'] || 0) > 4.3 ? '5V' : null;
     }
-    st.powered = powered || extPowered;
-    st.extPowered = extPowered;
+    st.extVia = via;
+    st.extPowered = !!via;
+    st.powered = usb || !!via;
     var vccNode = n.node();
-    var k5 = 0, k3 = 0;
     pins.forEach(function (pin, i) {
       if (pin.kind === 'v5') {
-        if (powered) e.srcs.push(Object.assign(limSrc(n, st, 'v5_' + (k5++), g, n.pin(i), 5.0, 0.2, cfg.usbMax), { label: pin.n, what: 'usb' }));
-        else if (def.mcu === 'nano' && extPowered && st.extVia === 'VIN') e.srcs.push(Object.assign(limSrc(n, st, 'reg', g, n.pin(i), 5.0, 0.1, 0.8), { label: pin.n, what: 'reg' })); // the Nano's own regulator, fed from VIN
-        else n.R('p' + i, g, def.mcu === 'nano' ? 250 : 1e6); // an unplugged Nano draws ~20 mA from its 5 V pin
+        if (i !== first.v5) return;
+        if (usb) e.srcs.push(Object.assign(limSrc(n, st, 'usb', g, n.pin(i), 5.0, 0.2, cfg.usbMax), { label: pin.n, what: 'usb', idx: i }));
+        else if (def.mcu === 'nano' && via === 'VIN') e.srcs.push(Object.assign(limSrc(n, st, 'reg', g, n.pin(i), 5.0, 0.1, 0.8), { label: pin.n, what: 'reg', idx: i }));
+        else n.R('p' + i, g, via === '5V' ? LOAD[def.mcu] : 1e6);
       } else if (pin.kind === 'v33') {
-        if (st.powered && !(extPowered && st.extVia === '3V')) e.srcs.push(Object.assign(limSrc(n, st, 'v3_' + (k3++), g, n.pin(i), 3.3, def.mcu === 'nano' ? 2 : 0.3, cfg.v33Max), { label: pin.n, what: 'v33' }));
-        else n.R('p' + i, g, extPowered && st.extVia === '3V' ? 41 : 1e6); // fed from outside: the board draws ~80 mA
+        if (i !== first.v33) return;
+        if (st.powered && via !== '3V') e.srcs.push(Object.assign(limSrc(n, st, 'v33', g, n.pin(i), 3.3, def.mcu === 'nano' ? 2 : 0.3, cfg.v33Max), { label: pin.n, what: 'v33', idx: i }));
+        else n.R('p' + i, g, via === '3V' ? 41 : 1e6);
       } else if (pin.kind === 'vin') {
-        n.R('p' + i, g, st.powered && !powered ? 400 : 1e6);
+        n.R('p' + i, g, via === 'VIN' ? 400 : 1e6);
+      } else if (pin.kind === 'bat') {
+        n.R('p' + i, g, via === 'BAT' ? 46 : 1e6);
       }
     });
-    if (st.powered) { e.vcc = n.V(vccNode, g, cfg.vcc); } else n.R(vccNode, g, 1);
+    if (st.powered) e.vcc = n.V(vccNode, g, cfg.vcc); else n.R(vccNode, g, 1);
     var io = st.io || {};
     pins.forEach(function (pin, i) {
-      if (pin.kind !== 'gpio') { if (pin.kind === 'rst' || pin.kind === 'bat' || pin.kind === 'nc') n.R('p' + i, g, 1e8); return; }
+      if (pin.kind !== 'gpio') { if (pin.kind === 'rst' || pin.kind === 'nc') n.R('p' + i, g, 1e8); return; }
       var cfgPin = io[pin.n];
       var dmg = st.damaged && st.damaged[pin.n];
-      if (!st.powered || !cfgPin || dmg) { e.pin[pin.n] = { el: n.R('p' + i, g, 1e8), mode: 'in' }; return; }
-      if (cfgPin.mode === 'out') {
+      var rec;
+      if (!st.powered || !cfgPin || dmg) rec = { el: n.R('p' + i, g, 1e8), mode: 'in' };
+      else if (cfgPin.mode === 'out') {
         var level = cfgPin.level;
         if (cfgPin.pwm !== undefined) level = ctx.pwmHigh ? (ctx.pwmHigh(cfgPin.pwm) ? 1 : 0) : 1;
         var src = n.node();
         var vs = n.V(src, g, level ? cfg.vcc : 0);
-        e.pin[pin.n] = { el: n.R(src, 'p' + i, cfg.rout), mode: 'out', src: vs };
+        rec = { el: n.R(src, 'p' + i, cfg.rout), mode: 'out', src: vs };
       } else {
-        var el = n.R('p' + i, g, 1e8);
+        rec = { el: n.R('p' + i, g, 1e8), mode: 'in', pull: cfgPin.pull };
         if (cfgPin.pull === 'up') n.R('p' + i, vccNode, def.mcu === 'nano' ? 35000 : 45000);
-        e.pin[pin.n] = { el: el, mode: 'in', pull: cfgPin.pull };
       }
+      // every I/O pin has protection ("clamp") diodes to the chip's supply and to GND
+      if (!dmg) { rec.cHi = n.D('p' + i, vccNode, SILICON.is, SILICON.nvt); rec.cLo = n.D(g, 'p' + i, SILICON.is, SILICON.nvt); if (n.flag) { n.flag(rec.cHi, 'clamp'); n.flag(rec.cLo, 'clamp'); } }
+      e.pin[pin.n] = rec;
     });
   }
   function mcuAfter(p, r, ctx) {
     var def = PARTS[p.type], cfg = BOARDS[def.mcu], st = p.st, e = p._e;
-    st.lastV = {};
+    st.lastV = {}; st.lastVpeak = {};
     st.pinI = {};
-    def.pins.forEach(function (pin, i) { st.lastV[pin.n] = r.pinV(i) - r.v(e.g); });
-    // power pins: too much voltage from outside kills the board
-    var PMAX = { v5: 5.6, v33: 3.7, vin: 20 };
+    def.pins.forEach(function (pin, i) {
+      var v = r.pinV(i) - r.v(e.g), vp = (r.pinVpeak ? r.pinVpeak(i) : r.pinV(i)) - r.v(e.g);
+      // two pins may share a name (Pi: two 5V pins): keep the higher one
+      st.lastV[pin.n] = Math.max(v, st.lastV[pin.n] === undefined ? -1e9 : st.lastV[pin.n]);
+      st.lastVpeak[pin.n] = Math.max(vp, st.lastVpeak[pin.n] === undefined ? -1e9 : st.lastVpeak[pin.n]);
+    });
+    st.damaged = st.damaged || {};
+    st.damageWhy = st.damageWhy || {};
+    // power pins: too much voltage kills the board
+    var PMAX = { v5: 5.6, v33: 3.7, vin: 20, bat: 4.5 };
     def.pins.forEach(function (pin, i) {
       var mx = PMAX[pin.kind]; if (!mx || st.dead) return;
-      var v = st.lastV[pin.n];
+      var v = r.pinV(i) - r.v(e.g);
       if (v > mx) {
         st.pwrHeat = (st.pwrHeat || 0) + ctx.dt;
-        ctx.issue(p, 'overvolt', 'danger', 'Too much voltage on the ' + pin.n + ' pin: ' + fmtV(v), 'The ' + pin.n + ' pin takes at most ' + (pin.kind === 'v33' ? '3.6' : pin.kind === 'v5' ? '5.5' : '20') + ' V. ' + (pin.kind === 'v5' && def.mcu === 'nano' ? 'To power the Nano from 7–12 V (like a 9V battery), use the VIN pin: its regulator makes 5 V.' : pin.kind === 'v33' ? 'Feed a 3.3 V pin only from a 3.3 V supply.' : '') , i);
+        var tip = pin.kind === 'v5' && def.mcu === 'nano' ? 'To power the Nano from 7–12 V (like a 9V battery), use the VIN pin: its regulator makes 5 V.'
+          : pin.kind === 'v33' ? 'Feed a 3.3V pin only from a 3.3 V supply.' : pin.kind === 'bat' ? 'BAT is for one LiPo cell (3.7–4.2 V).' : '';
+        ctx.issue(p, 'overvolt', 'danger', 'Too much voltage on the ' + pin.n + ' pin: ' + fmtV(v), 'The ' + pin.n + ' pin takes at most ' + { v5: '5.5', v33: '3.6', vin: '20', bat: '4.3' }[pin.kind] + ' V. ' + tip, i);
         if (st.pwrHeat > 0.5) { st.dead = true; st.deadWhy = 'Its ' + pin.n + ' pin got ' + fmtV(v) + '.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
       }
     });
     if (st.dead) ctx.issue(p, 'dead', 'danger', 'The ' + cfg.name + ' is dead', (st.deadWhy || '') + ' Too much voltage on a power pin destroys the board. Fix the wiring, then tap the board and press “New board”.');
+    if (st.extPowered && def.mcu === 'pi5') ctx.issue(p, 'pipower', 'warn', 'The Pi 5 needs a strong supply', 'Through its 5V pins the Pi 5 draws about 0.6 A, and up to 5 A when busy. A breadboard supply (MB102: 700 mA) is not enough. Use the official 5V 5A USB-C supply.', def.pins.findIndex(function (q) { return q.kind === 'v5'; }));
+    // power outputs: current limit, back-feeding, and the USB port's fuse
     e.srcs.forEach(function (src) {
-      var c = { i: r.i(src.el) };
-      if (c.i < -0.03) ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting', 'Another power source pushes ' + fmtI(-c.i) + ' backwards into the ' + src.label + ' pin, while the board makes its own ' + (src.what === 'v33' ? '3.3' : '5') + ' V there. Use one power source only: unplug the USB cable, or remove the other source.', def.pins.findIndex(function (q) { return q.n === src.label; }));
-    });
-    // power outputs: current limit, then the USB port's fuse cuts the power
-    e.srcs.forEach(function (src) {
-      var c = limCheck(src, r, st, ctx);
+      var c = srcState(src, r, st, ctx);
       if (src.what === 'usb') st.usbI = c.i;
-      if (c.limited && ctx.fight(src.out)) {
-        st.shortMsg = { title: 'Two power sources are fighting', text: 'Another power source is joined to the ' + src.label + ' pin. A big current flows from one into the other. Use one power source only.' };
-      } else if (c.limited) {
-        st.shortMsg = { title: 'Short circuit on the ' + src.label + ' pin',
-          text: (src.what === 'usb' ? 'The ' + src.label + ' pin is joined to GND with almost no resistance. The USB port gives its maximum (about ' + fmtI(src.iLim) + ') and the voltage falls to ' + fmtV(c.v) + '. Soon the USB port cuts the power to protect your computer. '
-            : 'The ' + src.label + ' pin can give only about ' + fmtI(src.iLim) + '. Something joins it to GND, so its voltage falls to ' + fmtV(c.v) + '. ') +
-            'Remove the wire or part that joins ' + src.label + ' to GND.' };
-        if (src.what === 'usb' && c.since > 2) { st.usbTripped = true; st.tripT = ctx.t; ctx.dirty(); }
+      if (c.off && c.v > src.V + 0.15) {
+        ctx.issue(p, 'fight', 'danger', 'Another power source pushes into the ' + src.label + ' pin', 'The board makes ' + src.V + ' V on its ' + src.label + ' pin, but another source pushes it to ' + fmtV(c.v) + '. A ' + (src.what === 'usb' ? 'USB port' : 'regulator') + ' cannot take current back, so the voltage rises. Use one power source only.', src.idx);
+      }
+      if (c.limited) {
+        ctx.issue(p, 'short', 'danger', 'Too much current from the ' + src.label + ' pin',
+          'The ' + src.label + ' pin gives its maximum (about ' + fmtI(src.iLim) + ') and its voltage falls to ' + fmtV(c.v) + '. Something joins it to GND with too little resistance' + (src.what === 'usb' ? '. Soon the USB port cuts the power to protect your computer.' : '.') + ' Remove the wire or part that joins ' + src.label + ' to GND.', src.idx);
+        if (src.what === 'usb' && c.since > 2) { st.usbTripped = true; st.tripT = ctx.t; st.mode = {}; ctx.dirty(); }
       }
     });
-    if (st.usbTripped && ctx.t - st.tripT > 2) { st.usbTripped = false; Object.keys(st).forEach(function (k) { if (k.indexOf('lim_') === 0) st[k] = false; }); ctx.dirty(); }
-    var anyLim = e.srcs.some(function (src) { return st['lim_' + src.key]; });
-    if (anyLim || st.usbTripped) {
-      var m = st.shortMsg || { title: 'Short circuit', text: '' };
-      ctx.issue(p, m.title.indexOf('fighting') >= 0 ? 'fight' : 'short', 'danger', st.usbTripped ? 'The USB port cut the power (short circuit)' : m.title,
-        st.usbTripped ? 'A short circuit pulled too much current, so the USB port switched off. It tries again every 2 seconds. Remove the wire or part that joins 5V (or 3.3V) to GND.' : m.text);
-    } else st.shortMsg = null;
-    // pins that were damaged earlier keep telling why
-    st.damaged = st.damaged || {};
-    st.damageWhy = st.damageWhy || {};
+    if (st.usbTripped) {
+      ctx.issue(p, 'short', 'danger', 'The USB port cut the power (short circuit)', 'Too much current flowed, so the USB port switched off. It tries again every 2 seconds. Remove the wire or part that joins 5V (or 3.3V) to GND.');
+      if (ctx.t - st.tripT > 2) { st.usbTripped = false; ctx.dirty(); }
+    }
     Object.keys(st.damaged).forEach(function (pn) {
-      ctx.issue(p, 'damaged', 'danger', 'Pin ' + pn + ' is damaged', (st.damageWhy[pn] || 'It got too much voltage or current.') + ' On a real board this pin (or the whole chip) can be dead now. Fix the wiring, then tap the board and press “New board”.');
+      ctx.issue(p, 'damaged', 'danger', 'Pin ' + pn + ' is damaged', (st.damageWhy[pn] || 'It got too much voltage or current.') + ' On a real board this pin (or the whole chip) can be dead now. Fix the wiring, then tap the board and press “New board”.', def.pins.findIndex(function (q) { return q.n === pn; }));
     });
+    st.pinHeat = st.pinHeat || {};
     def.pins.forEach(function (pin, i) {
       if (pin.kind !== 'gpio') return;
-      var v = st.lastV[pin.n];
       var pe = e.pin[pin.n];
       var cur = pe ? Math.abs(r.i(pe.el)) : 0;
       st.pinI[pin.n] = cur;
-      var peak = pe ? Math.abs(r.iPeak ? r.iPeak(pe.el) : cur) : 0;
+      if (st.damaged[pin.n] || !pe) return;
+      var peak = Math.abs(r.iPeak ? r.iPeak(pe.el) : cur);
+      var v = st.lastVpeak[pin.n];
+      // current pushed into the pin's protection diodes (from a higher voltage, or below GND)
+      var inj = Math.max(pe.cHi !== undefined ? r.iPeak(pe.cHi) : 0, pe.cLo !== undefined ? r.iPeak(pe.cLo) : 0);
+      if (inj > 0.001) {
+        var lowSide = pe.cLo !== undefined && r.iPeak(pe.cLo) > 0.001;
+        if (inj > 0.005) st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * inj / 0.005;
+        ctx.issue(p, 'overvolt', 'danger', lowSide ? 'Pin ' + pin.n + ' is pulled below GND' : 'Pin ' + pin.n + ' gets ' + fmtV(v) + '. That is too much!',
+          (lowSide ? 'A pin must stay between GND and ' + cfg.vcc + ' V. Check that + and − are not swapped. ' :
+            'The ' + cfg.name + ' works at ' + cfg.vcc + ' V' + (st.powered ? '' : ' (and now it has no power at all)') + '. ' + fmtI(inj) + ' is pushed into the pin through its protection diode. More than about 1 mA can break the chip. ') +
+          (cfg.vcc < 4 && !lowSide ? 'Use a voltage divider (two resistors) to bring 5 V down to about 3.3 V.' : ''), i);
+        if (st.pinHeat[pin.n] > 1) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'About ' + fmtI(inj) + ' was pushed into it (it got ' + fmtV(v) + ').'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
+      }
       if (st.damaged[pin.n]) return;
-      st.pinHeat = st.pinHeat || {};
-      if (!st.powered) {
-        // a signal into an unpowered chip flows through its protection diodes and powers it "backwards"
-        if (v > 0.6) ctx.issue(p, 'backpower', 'warn', 'Voltage on pin ' + pin.n + ', but the board is off',
-          'The ' + cfg.name + ' has no power, but pin ' + pin.n + ' gets ' + fmtV(v) + '. Current flows into the chip through this pin. This can damage it. Power the board first, or remove the signal.');
-        if (v > cfg.absMax + 0.05) { st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt; if (st.pinHeat[pin.n] > 1.5) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It got ' + fmtV(v) + ' while the board had no power.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); } }
-        return;
-      }
-      if (v > cfg.absMax + 0.05) {
-        st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt;
-        ctx.issue(p, 'overvolt', 'danger', 'Pin ' + pin.n + ' gets ' + fmtV(v) + '. That is too much!',
-          'The ' + cfg.name + ' works at ' + cfg.vcc + ' V. Its pins can take at most ' + cfg.absMax + ' V. ' +
-          (cfg.vcc < 4 ? '5 V can break a 3.3 V chip. Use a voltage divider (two resistors) to bring 5 V down to about 3.3 V.' : 'Do not connect a higher voltage to a pin.'));
-        if (st.pinHeat[pin.n] > 0.6) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It got ' + fmtV(v) + ', more than the ' + cfg.absMax + ' V it can take.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); }
-      } else if (v < -0.5) {
-        ctx.issue(p, 'overvolt', 'danger', 'Pin ' + pin.n + ' is below GND (' + fmtV(v) + ')', 'A pin must stay between GND and ' + cfg.vcc + ' V. Check that + and − are not swapped.');
-      }
-      if (pe && pe.mode === 'out') {
+      if (pe.mode === 'out') {
         if (peak > cfg.pinMax) {
           st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * (peak / cfg.pinMax);
           ctx.issue(p, 'pin', 'danger', 'Too much current from pin ' + pin.n + ': ' + fmtI(peak),
-            'A pin of the ' + cfg.name + ' can give about ' + fmtI(cfg.pinSafe) + ' safely (' + fmtI(cfg.pinMax) + ' at most). ' +
-            'More current damages the chip. Add a resistor (for an LED, 220 Ω or more).');
-          if (st.pinHeat[pin.n] > 1.0) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It had to give ' + fmtI(peak) + ', far more than the ' + fmtI(cfg.pinMax) + ' it can give.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); }
+            'A pin of the ' + cfg.name + ' can give about ' + fmtI(cfg.pinSafe) + ' safely (' + fmtI(cfg.pinMax) + ' at most). More current damages the chip. Add a resistor (for an LED, 220 Ω or more).', i);
+          if (st.pinHeat[pin.n] > 1.0) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It had to give ' + fmtI(peak) + ', far more than the ' + fmtI(cfg.pinMax) + ' it can give.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
         } else if (peak > cfg.pinSafe * 1.05) {
-          ctx.issue(p, 'pinwarn', 'warn', 'Pin ' + pin.n + ' gives ' + fmtI(peak), 'This is more than the safe ' + fmtI(cfg.pinSafe) + '. Use a bigger resistor.');
+          ctx.issue(p, 'pinwarn', 'warn', 'Pin ' + pin.n + ' gives ' + fmtI(peak), 'This is more than the safe ' + fmtI(cfg.pinSafe) + '. Use a bigger resistor.', i);
         }
-      } else if (pe && pe.mode === 'in' && !pe.pull && st.io && st.io[pin.n] && ctx.pinFloating(p, i)) {
-        // an input with nothing connected "floats": it picks up noise and reads random values
+      } else if (st.powered && pe.mode === 'in' && !pe.pull && st.io && st.io[pin.n] && ctx.pinFloating(p, i)) {
+        // an input with nothing driving it "floats": it picks up noise and reads random values
         st.floating = st.floating || {};
         st.floating[pin.n] = true;
         ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing drives this input (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a pull-up or pull-down resistor.', i);
       }
-      if (st.floating && (!pe || pe.mode !== 'in' || !ctx.pinFloating(p, i))) delete st.floating[pin.n];
+      if (st.floating && (pe.mode !== 'in' || !ctx.pinFloating(p, i))) delete st.floating[pin.n];
     });
   }
 
@@ -510,44 +533,41 @@
       { k: 'pcb', label: 'Board colour (match yours)', type: 'select', options: ['black', 'green', 'red', 'blue'], labels: ['Black', 'Green', 'Red', 'Blue'] }
     ],
     links: function () { return [[0, 1], [2, 3], [4, 5], [6, 7], [2, 6]]; },
-    stamp: function (p, n) {
+    stamp: function (p, n, ctx) {
       var g = n.node(); n.ref(g);
+      p.st.now = ctx.t;
       [2, 3, 6, 7].forEach(function (k) { n.R('p' + k, g, 0.01); });
       p._e = { srcs: [] };
       [['top', 0, 1], ['bottom', 4, 5]].forEach(function (sd) {
         var sel = p.props[sd[0]];
         var plus = n.node();
         n.R(plus, 'p' + sd[1], 0.01); n.R(plus, 'p' + sd[2], 0.01);
-        if (p.props.on && sel !== 'off' && !p.st.tripped) {
-          // AMS1117 regulator: holds 3.3 V / 5 V and limits at about 1 A
-          p._e.srcs.push(Object.assign(limSrc(n, p.st, sd[0], g, plus, sel === '5' ? 5 : 3.3, 0.05, 1.0), { side: sd[0] }));
-        } else n.R(plus, g, 1e7);
+        // AMS1117 regulator: holds 3.3 V / 5 V, limits at about 1 A, cannot take current back
+        if (p.props.on && sel !== 'off' && !p.st.tripped) p._e.srcs.push(Object.assign(limSrc(n, p.st, sd[0], g, plus, sel === '5' ? 5 : 3.3, 0.05, 1.0), { side: sd[0] }));
+        else n.R(plus, g, 1e7);
       });
     },
     after: function (p, r, ctx) {
-      var tot = 0, st = p.st, lim = null, back = null;
+      var tot = 0, st = p.st, lim = null;
       p._e.srcs.forEach(function (src) {
-        var c = limCheck(src, r, st, ctx);
+        var c = srcState(src, r, st, ctx);
         tot += Math.max(0, c.i);
-        if (c.limited) { lim = { side: src.side, v: c.v, i: c.i, since: c.since }; if (c.since > 3) { st.tripped = true; st.tripT = ctx.t; ctx.dirty(); } }
-        if (c.i < -0.02) back = { side: src.side, i: c.i };
+        if (c.limited) { lim = { side: src.side, v: c.v }; if (c.since > 3) { st.tripped = true; st.tripT = ctx.t; st.mode = {}; ctx.dirty(); } }
+        if (c.off && c.v > src.V + 0.15) ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting', 'Another power source pushes the MB102 ' + src.side + ' rail to ' + fmtV(c.v) + '. The MB102 cannot take current back. Use one power source only for these rails.');
       });
       p._i = tot;
-      if (st.tripped && ctx.t - st.tripT > 2.5) { st.tripped = false; st.lim_top = st.lim_bottom = false; ctx.dirty(); }
+      if (st.tripped && ctx.t - st.tripT > 2.5) { st.tripped = false; ctx.dirty(); }
       p.vis = { on: p.props.on && !st.tripped };
+      if (lim) st.lastLim = lim;
       if (lim || st.tripped) {
-        if (lim) st.lastLim = lim;
         var L = st.lastLim || {};
-        var fight = p._e.srcs.some(function (src) { return ctx.fight(src.out); });
-        if (fight && !st.tripped) ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting', 'Another power source is joined to the MB102 ' + L.side + ' rails. A big current flows from one into the other, and the MB102 gives its maximum (about 1 A). Use one power source only for these rails.');
-        else ctx.issue(p, 'short', 'danger', st.tripped ? 'The MB102 switched off: it got too hot' : 'Short circuit on the ' + L.side + ' rails',
+        ctx.issue(p, 'short', 'danger', st.tripped ? 'The MB102 switched off: it got too hot' : 'Short circuit on the ' + L.side + ' rails',
           (st.tripped ? 'A short circuit made its regulator too hot, so it shut down. It tries again in a moment. ' :
             'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 1 A). The rail voltage falls to ' + fmtV(L.v) + ', and the regulator gets very hot. ') +
           'Remove the wire or part that joins + to −.');
       } else if (tot > 0.7) {
         ctx.issue(p, 'overload', 'warn', 'The MB102 gives ' + fmtI(tot), 'It is made for 700 mA at most. Its regulators get hot.');
       }
-      if (back) ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting', 'Another power source with a higher voltage is joined to the MB102 ' + back.side + ' rails. ' + fmtI(-back.i) + ' is pushed backwards into the MB102. Never connect two power sources to the same rails.');
     },
     hot: [{ id: 'jtop', x: -3.1, y: 2.0, r: 1.6, kind: 'jumper', side: 'top' }, { id: 'jbot', x: -3.1, y: 13.8, r: 1.6, kind: 'jumper', side: 'bottom' }, { id: 'sw', x: -6.7, y: 8.5, r: 1.6, kind: 'switch' }],
     info: function (p, r) {
@@ -819,27 +839,32 @@
     body: [-7.3, -4.6, 10.3, 0.25],
     defaults: { dist: 30 },
     props: [{ k: 'dist', label: 'Object distance', type: 'range', min: 3, max: 200, step: 1, env: true, fmt: function (v) { return v + ' cm'; } }],
-    stamp: function (p, n) {
+    stamp: function (p, n, ctx) {
       n.R('p0', 'p3', 333); // ~15 mA at 5 V
       n.R('p1', 'p3', 10000);
       var v = p.st.vcc || 0;
+      // ECHO is HIGH for 58 µs per cm, once every 60 ms (a short pulse, not a steady 5 V)
       var active = v >= 4.5 && p.st.trig;
+      var high = active && (ctx.pwmHigh ? ctx.pwmHigh(p.st.duty) : true);
       var s = n.node();
-      p._e = n.V(s, 'p3', active ? v : 0);
+      p._e = n.V(s, 'p3', high ? v : 0);
       n.R(s, 'p2', 10);
     },
     after: function (p, r, ctx) {
       var ok = needPower(p, r, ctx, 0, 3, 4.5, 5.5, 'HC-SR04');
       var v = r.pinV(0) - r.pinV(3);
       if (v > 2.5 && v < 4.5) ctx.issue(p, 'lowv', 'warn', 'The distance sensor needs 5V', 'It gets ' + fmtV(v) + '. At 3.3V the HC-SR04 does not work well. Power it from 5V (on an ESP32 Feather: the USB pin).');
-      var trig = mcuPinOnNet(ctx, p, 1);
-      var trigOk = !!(trig && trig.mcu.st.io && trig.mcu.st.io[trig.pin.n] && trig.mcu.st.io[trig.pin.n].mode === 'out' && trig.mcu.st.powered);
+      // a measurement starts when TRIG gets a short HIGH pulse (more than about 2 V)
+      var trigPeak = r.pinVpeak(1) - r.pinV(3);
       var was = !!p.st.trig;
-      p.st.trig = ok && trigOk;
-      if (was !== p.st.trig) ctx.dirty();
+      p.st.trig = ok && trigPeak > 2.0;
+      var d = p.st.trig ? Math.min(0.5, p.props.dist * 58e-6 / 0.06) : 0;
+      if (was !== p.st.trig || d !== p.st.duty) ctx.dirty();
+      p.st.duty = d;
       p.vis = { on: ok, pinging: p.st.trig };
     },
-    info: function (p) { return [['Power', fmtV(p.st.vcc || 0)], ['Measuring', p.st.trig ? 'Yes (TRIG pulses)' : 'No (TRIG not driven)']]; }
+    dynamic: function (p) { return !!p.st.trig; },
+    info: function (p) { return [['Power', fmtV(p.st.vcc || 0)], ['Measuring', p.st.trig ? 'Yes: TRIG pulses, ECHO answers' : 'No: TRIG gets no pulses'], ['ECHO pulse', p.st.trig ? Math.round(p.props.dist * 58) + ' µs (58 µs per cm)' : '—']]; }
   };
   PARTS.pir = {
     name: 'Motion sensor (PIR HC-SR501)', cat: 'sensors', kind: 'offboard',

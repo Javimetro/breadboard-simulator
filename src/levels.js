@@ -522,7 +522,7 @@
         { text: 'Put the distance sensor on the board (in a free area). Power it: VCC → USB pin (5V), GND → GND.', check: function (L) { var s = L.of('hcsr04')[0]; return s && (s.st.vcc || 0) > 4.5; }, ok: 'The sensor has 5V from the USB pin.' },
         { text: 'Connect {{TRIG}} to pin 21.', check: function (L) { var s = L.of('hcsr04')[0]; return s && s.st.trig; }, ok: 'The ESP32 now sends trigger pulses.' },
         { text: 'Connect {{ECHO}} to pin 33 safely, with a {{voltage divider}}: ECHO → 1 kΩ → middle → 2.2 kΩ → GND, and the middle → pin 33.', check: function (L) {
-          var e = L.part('esp'), v = (e.st.lastV || {})['33'] || 0, s = L.of('hcsr04')[0];
+          var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0, s = L.of('hcsr04')[0];
           if (!s || !(v > 2.5 && v < 3.6) || (e.st.damaged && e.st.damaged['33'])) return false;
           // the real divider must be there: ECHO → 1 kΩ → pin 33 → 2.2 kΩ → GND
           var echo = L.net(s, 2), p33 = mcuPinNet(L, e, '33'), gnds = anyGndNet(L, e).concat([L.hnet('T-2'), L.hnet('B-2')]);
@@ -532,7 +532,7 @@
         }, ok: 'Pin 33 gets about 3.4 V: safe, and still HIGH. The distance shows in the {{serial monitor}}.' }
       ],
       explain: function (L) {
-        var e = L.part('esp'), v = (e.st.lastV || {})['33'] || 0;
+        var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
         if (v > 3.6) return 'Danger! Pin 33 gets ' + v.toFixed(2) + ' V. The ESP32 takes 3.3 V (3.6 V at most). Use the two resistors as a divider.';
         if (v > 0.3 && v <= 2.47) return 'Pin 33 gets only ' + v.toFixed(2) + ' V. That is too low to read as HIGH (needs 2.5 V). Check the divider: 1 kΩ on top (from ECHO), 2.2 kΩ at the bottom (to GND).';

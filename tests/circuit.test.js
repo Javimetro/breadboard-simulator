@@ -175,10 +175,11 @@ test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k div
     return bench(parts);
   }
   const bad = make(false); run(bad, 0.3);
-  assert.ok(bad.res.issues.some(i => i.kind === 'overvolt'), 'over-voltage flagged');
+  assert.ok(bad.res.issues.some(i => i.kind === 'overvolt' || i.kind === 'damaged'), 'over-voltage flagged (or the pin already died)');
   const good = make(true); run(good, 0.3);
   const esp = byType(good, 'esp32')[0];
-  near(esp.st.lastV['33'], 5 * 2.2 / 3.21, 'pin 33 voltage');
+  near(esp.st.lastVpeak['33'], 5 * 2.2 / 3.21, 'pin 33 voltage while ECHO is HIGH');
+  near(esp.st.lastV['33'], 5 * 2.2 / 3.21 * (30 * 58e-6 / 0.06), 'average: ECHO is HIGH 58 µs/cm × 30 cm every 60 ms (2.9 %)', 0.05);
   assert.ok(!good.res.issues.some(i => i.kind === 'overvolt'));
   assert.ok(esp.st.serial.some(s => s.startsWith('Distance: 30')), esp.st.serial.join('|'));
 });
@@ -300,4 +301,61 @@ test('Meter diode mode on a red LED: about 1 mA test current, reads 1627 mV (han
   near(byType(sim, 'meter')[0].st.reading.val, 1.627, 'LED forward voltage');
   byType(sim, 'meter')[0].ends.reverse(); sim.dirty(); sim.step(1 / 60);
   assert.equal(byType(sim, 'meter')[0].st.reading.text, 'OL', 'backwards: OL');
+});
+
+test('USB current limit: Nano 5V pin into 5.5 Ω is held at 0.5 A (not 5/5.7 = 0.88 A), then the USB port trips', () => {
+  const sim = bench([['nano', { x: 8, y: 5 }], ['resistor', { props: { r: 22 }, ends: ['h19', 'h23'] }], ['resistor', { props: { r: 22 }, ends: ['i19', 'i23'] }],
+    ['resistor', { props: { r: 22 }, ends: ['j19', 'j23'] }], ['resistor', { props: { r: 22 }, ends: ['f23', 'f27'] }], ['wire', { ends: ['g23', 'g21'] }], ['wire', { ends: ['h27', 'h21'] }]]);
+  // 5V pin (column 19) → four 22 Ω in parallel (5.5 Ω) → GND (column 21)
+  sim.state.parts[4].ends = [{ at: 'f19' }, { at: 'f23' }];
+  sim.state.parts = sim.state.parts.filter((p, i) => i !== 6); sim.dirty();
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  const n = byType(sim, 'nano')[0];
+  near(n.st.usbI, 0.5, 'limited current');
+  for (let k = 0; k < 150; k++) sim.step(1 / 60);
+  assert.ok(n.st.usbTripped || sim.res.issues.some(i => i.kind === 'short'), 'USB port trips');
+});
+
+test('Nano 3V3 pin straight into a red LED: held at the 50 mA limit (not 117 mA)', () => {
+  const sim = bench([['nano', { x: 8, y: 5 }], ['led', { ends: ['h9', 'h12'] }]]); // 3V3 = bottom index 1 (column 9); LED − to column 12, joined to GND below
+  sim.state.parts.push(BB.newPart('wire', { ends: ['i12', 'i21'] })); sim.dirty();
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  near(byType(sim, 'led')[0]._i, 0.05, 'LED current', 0.02);
+});
+
+test('A USB port cannot take current back: 9 V on the 5V pin of a USB-powered Nano kills it', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['nano', { x: 8, y: 5 }], ['wire', { ends: ['h19', 'T+20'] }], ['wire', { ends: ['h21', 'T-21'] }]]);
+  for (let k = 0; k < 60; k++) sim.step(1 / 60);
+  assert.ok(byType(sim, 'nano')[0].st.dead);
+});
+
+test('Pi 5: both 5V pins (2 and 4) are the same net; 9 V on pin 2 kills it; from the MB102 it draws ≈0.6 A', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['pi5', { x: 0, y: 22, props: { usb: false } }]]);
+  const pi = byType(sim, 'pi5')[0];
+  sim.state.parts.push(BB.newPart('wire', { ends: ['P:' + pi.id + ':1', 'T+20'] }), BB.newPart('wire', { ends: ['P:' + pi.id + ':5', 'T-20'] })); // phys pin 2 (5V), 6 (GND)
+  sim.dirty();
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  assert.ok(pi.st.powered, 'powered from pin 2');
+  near(byType(sim, 'mb102')[0]._i, 5 / 8.3, 'Pi load current');
+  const sim2 = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['pi5', { x: 0, y: 22, props: { usb: false } }]]);
+  const pi2 = byType(sim2, 'pi5')[0];
+  sim2.state.parts.push(BB.newPart('wire', { ends: ['P:' + pi2.id + ':1', 'T+20'] }), BB.newPart('wire', { ends: ['P:' + pi2.id + ':5', 'T-20'] }));
+  sim2.dirty();
+  for (let k = 0; k < 60; k++) sim2.step(1 / 60);
+  assert.ok(pi2.st.dead, '9 V on pin 2 kills it');
+});
+
+test('5 V through 1 MΩ into an ESP32 pin: the clamp diode holds it, ≈1.4 µA flows, no damage', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['esp32', { x: 6, y: 4, props: { program: 'button_led' } }], ['resistor', { props: { r: 1000000 }, ends: ['T+20', 'i19'] }], ['wire', { ends: ['a9', 'T-9'] }]]);
+  for (let k = 0; k < 60; k++) sim.step(1 / 60);
+  const e = byType(sim, 'esp32')[0];
+  assert.ok(!Object.keys(e.st.damaged).length, 'no damage');
+  assert.ok(byType(sim, 'resistor')[0]._i < 3e-6);
+});
+
+test('Two batteries in series (9 V + 3 V) through 1 kΩ: 12/1002.3 = 11.97 mA and no "No common GND" warning', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'a5'] }], ['aa', { ends: ['b5', 'T-3'] }], ['resistor', { props: { r: 1000 }, ends: ['T+10', 'T-10'] }]]);
+  for (let k = 0; k < 5; k++) sim.step(1 / 60);
+  near(byType(sim, 'resistor')[0]._i, 12 / 1002.3, 'series current');
+  assert.ok(!sim.res.issues.some(i => i.kind === 'noground'));
 });
