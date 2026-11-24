@@ -150,7 +150,7 @@
         var sz = self.bench.size();
         if (b.dataset.z === 'in') self.bench.zoomAt(sz.left + sz.w / 2, sz.top + sz.h / 2, 1.35);
         if (b.dataset.z === 'out') self.bench.zoomAt(sz.left + sz.w / 2, sz.top + sz.h / 2, 1 / 1.35);
-        if (b.dataset.z === 'fit') self.fitView();
+        if (b.dataset.z === 'fit') self.bench.fitAll(); // the whole board and every part
         self.bench.renderUi();
       });
       $('#topbar').addEventListener('click', function (e) {
@@ -538,7 +538,7 @@
           var label = def.name;
           if (spec.type === 'resistor' && spec.props) label = 'Resistor ' + BB.fmt.R(spec.props.r);
           if (spec.type === 'led' && spec.props) label = BB.engine.LED_TYPES[spec.props.color].label + ' LED';
-          return '<button class="titem" data-spec=\'' + esc(JSON.stringify(spec)) + '\'><span class="tpic">' + trayPic(spec) + '</span><span class="tl">' + esc(label) + '</span></button>';
+          return '<button class="titem" aria-label="' + esc(label) + '" data-spec=\'' + esc(JSON.stringify(spec)) + '\'><span class="tpic" aria-hidden="true">' + trayPic(spec) + '</span><span class="tl">' + esc(label) + '</span></button>';
         }).join('') + '</div>';
       });
       $('#tray').innerHTML = html;
@@ -572,6 +572,10 @@
           }
         }
         if (!p) p = BB.newPart(type, { props: props, ends: [{ x: c.x, y: b.y1 + 2 }, { x: c.x + span, y: b.y1 + 2 }] });
+      } else if (def.kind === 'rigid' && this.mode === 'level' && (this.level.def.placeFree || []).indexOf(type) >= 0) {
+        // where to put it IS the lesson here: it starts next to the board, the player plugs it in
+        var r0 = BB.newPart(type, { props: props, x: 0, y: 0 }), br = sim.bodyRect(r0);
+        p = BB.newPart(type, { props: props, x: Math.round(c.x - (br.x1 + br.x0) / 2), y: Math.round(b.y1 + 2 - br.y0), free: true });
       } else if (def.kind === 'rigid') {
         var pref = { button: [7], nano: [5, 4, 6, 7], esp32: [4, 5, 6], seg7: [5, 4, 6, 7], mb102: [0] }[type] || [3, 10, 4, 11];
         var cands = [];
@@ -582,7 +586,9 @@
           var cd = cands[k];
           var test = BB.newPart(type, { props: props, x: cd.x, y: cd.y });
           var pts = sim.pinPoints(test);
-          if (pts.every(function (q) { return free(q.at); }) && (type === 'mb102' || !overlaps(sim.bodyRect(test)))) p = test;
+          var tr = sim.bodyRect(test);
+          var onBoard = type === 'mb102' || (tr.x0 >= b.x0 - 0.5 && tr.x1 <= b.x1 + 0.5); // do not hang off the end of the board
+          if (onBoard && pts.every(function (q) { return free(q.at); }) && (type === 'mb102' || !overlaps(tr))) p = test;
         }
         if (!p) p = BB.newPart(type, { props: props, x: b.x1 + 4, y: 2, free: true });
       } else {
@@ -604,7 +610,8 @@
       sim.state.parts.push(p);
       sim.dirty();
       this.commit(u);
-      bench.select(p.id);
+      $('#toasts').innerHTML = '';
+      bench.select(p.id, true); // selected (outlined), but the phone sheet stays closed so the board stays visible
       bench.render();
       this.ensureVisible(p);
       if (!this._addedTip) { this._addedTip = true; this.toast(def.kind === 'leads' ? 'Added. Drag it into place. Drag the end of a leg to move just that leg.' : 'Added. Drag it into place.', 'info'); }
@@ -772,7 +779,7 @@
       ins.onchange = function (e) {
         var t = e.target, k = t.dataset.k;
         if (t.type === 'range') { if (self._rangeUndo) self.commit(self._rangeUndo); self._rangeUndo = null; return; }
-        if (t.dataset.prog) { setProp('program', t.value); self.onSelect(id); return; }
+        if (t.dataset.prog) { setProp('program', t.value); document.body.classList.remove('insfull'); self.onSelect(id); var sp = self.sim.part(id); if (sp && window.innerWidth < 1100) self.ensureVisible(sp); return; }
         if (t.dataset.role) { var u = self.snapshot(); p.props.pins = Object.assign({}, p.props.pins || {}); p.props.pins[t.dataset.role] = t.value; self.commit(u); self.sim.dirty(); return; }
         if (!k) return;
         var pr = (def.props || []).find(function (q) { return q.k === k; });

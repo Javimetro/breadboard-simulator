@@ -329,23 +329,31 @@
     s += '<rect x="0" y="0" width="220" height="380" rx="22" fill="#f2bf14" stroke="#b78d00" stroke-width="1.2" filter="url(#fShadow)"/>';
     s += '<rect x="12" y="12" width="196" height="356" rx="14" fill="#2b2d31"/>';
     s += '<rect x="26" y="26" width="168" height="78" rx="6" fill="#9fae94" stroke="#555" stroke-width="2"/>';
-    var shown = m === 'off' ? '' : (v.text || '0.00');
-    s += '<text x="178" y="86" class="lcd" text-anchor="end">' + shown + '</text>';
-    s += '<text x="184" y="98" class="lcdu" text-anchor="end">' + (m === 'off' ? '' : (v.unit || '')) + '</text>';
+    // over range: a DT-830B shows just a "1" on the left
+    if (m !== 'off' && v.text === 'OL') s += '<text x="40" y="86" class="lcd">1</text>';
+    else {
+      s += '<text x="178" y="86" class="lcd" text-anchor="end">' + (m === 'off' ? '' : (v.text || '0.00')) + '</text>';
+      s += '<text x="184" y="98" class="lcdu" text-anchor="end">' + (m === 'off' ? '' : (v.unit || '')) + '</text>';
+    }
     if (p.st.fuse && m === 'A') s += '<text x="34" y="44" class="lcdu">FUSE</text>';
     s += txt(110, 122, 'DT-830B', 'mtrb', ' text-anchor="middle"');
-    // dial (left) with OFF at the top and the DCV, DCA, Ω and diode sections; jacks stacked on the right (like a DT-830B)
+    // dial (left): the real range marks around it; the pointer snaps to one range per mode.
+    // Jacks are stacked on the right (like a DT-830B).
     var DX = 95, DY = 228;
-    var ang = { off: 0, V: -70, A: 70, ohm: 140, diode: -140 }[m];
+    var ang = { off: 0, V: -66, A: 66, ohm: 151, diode: -150 }[m];
     s += '<circle cx="' + DX + '" cy="' + DY + '" r="70" fill="#1d1e21" stroke="#444" stroke-width="1"/>';
-    [[-118, -22], [22, 118], [125, 160]].forEach(function (seg) {
-      for (var t = seg[0]; t <= seg[1]; t += 12) { var aa = (t - 90) * Math.PI / 180; s += '<line x1="' + f1(DX + Math.cos(aa) * 62) + '" y1="' + f1(DY + Math.sin(aa) * 62) + '" x2="' + f1(DX + Math.cos(aa) * 67) + '" y2="' + f1(DY + Math.sin(aa) * 67) + '" stroke="#e9e9e9" stroke-width="1.4"/>'; }
+    var RANGES = [['1000', -114], ['200', -98], ['20', -66], ['2', -50], ['200m', -34], ['200µ', 18], ['2m', 34], ['20m', 66], ['200m', 82], ['10A', 106],
+      ['200', 123], ['2k', 137], ['20k', 151], ['200k', 165], ['2M', 179], ['hFE', -168], ['→|', -150], ['750', -132]];
+    RANGES.forEach(function (rg) {
+      var aa = (rg[1] - 90) * Math.PI / 180;
+      s += '<line x1="' + f1(DX + Math.cos(aa) * 64) + '" y1="' + f1(DY + Math.sin(aa) * 64) + '" x2="' + f1(DX + Math.cos(aa) * 69) + '" y2="' + f1(DY + Math.sin(aa) * 69) + '" stroke="#e9e9e9" stroke-width="1.4"/>';
+      s += '<text x="' + f1(DX + Math.cos(aa) * 55) + '" y="' + f1(DY + Math.sin(aa) * 55 + 2.5) + '" class="mtrr" text-anchor="middle">' + rg[0] + '</text>';
     });
-    [['OFF', 0], ['DCV', -70], ['DCA', 70], ['Ω', 140], ['→|', -140]].forEach(function (lb) {
+    [['OFF', 0], ['DCV', -82], ['DCA', 50], ['Ω', 140]].forEach(function (lb) {
       var aa = (lb[1] - 90) * Math.PI / 180;
-      s += '<text x="' + f1(DX + Math.cos(aa) * 50) + '" y="' + f1(DY + Math.sin(aa) * 50 + 4) + '" class="mtrl" text-anchor="middle">' + lb[0] + '</text>';
+      s += '<text x="' + f1(DX + Math.cos(aa) * 40) + '" y="' + f1(DY + Math.sin(aa) * 40 + 3) + '" class="mtrl" text-anchor="middle">' + lb[0] + '</text>';
     });
-    s += '<g transform="translate(' + DX + ' ' + DY + ') rotate(' + ang + ')"><circle r="33" fill="#111" stroke="#555" stroke-width="1.4"/><rect x="-7" y="-35" width="14" height="70" rx="6" fill="#2c2c2c" stroke="#666" stroke-width=".8"/><path d="M0 -33 L-4 -23 L4 -23Z" fill="#fff"/></g>';
+    s += '<g transform="translate(' + DX + ' ' + DY + ') rotate(' + ang + ')"><circle r="28" fill="#111" stroke="#555" stroke-width="1.4"/><rect x="-6" y="-31" width="12" height="62" rx="5" fill="#2c2c2c" stroke="#666" stroke-width=".8"/><path d="M0 -30 L-4 -21 L4 -21Z" fill="#fff"/></g>';
     // jacks, top to bottom: 10A, VΩmA (red probe), COM (black probe)
     [['10ADC', 248, '#d8322b'], ['VΩmA', 288, '#d8322b'], ['COM', 328, '#1c1c1c']].forEach(function (j) {
       s += '<circle cx="186" cy="' + j[1] + '" r="9" fill="#111" stroke="' + j[2] + '" stroke-width="2.5"/>';

@@ -96,7 +96,7 @@ def sandbox_every_part(page, tag):
     # sandbox challenge: power the Nano from the MB102 rails (USB unplugged)
     page.evaluate("BB.app.sim.state.parts = []; BB.app.sim.dirty()")
     page.evaluate("""(() => { const A = BB.app.actions(); A.add('mb102', {x: 2, y: 0}); const n = A.add('nano', {x: 8, y: 5, props: {usb: false}});
-      A.wire('h19', 'B+20'); A.wire('h21', 'B-21'); A.wait(0.3); })()""")
+      A.wire('h19', 'B+20'); A.wire('h21', 'B-21'); })()  // no forced steps: the live loop must switch the board on""")
     page.wait_for_timeout(500)
     ch = page.evaluate("(JSON.parse(localStorage.getItem('breadboard-lab.v1')) || {}).challenges || {}")
     check(ch.get('nanoMB'), f'{tag}: sandbox challenge "Nano from the MB102" detected')

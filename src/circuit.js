@@ -169,8 +169,9 @@
     }
     var r = built.r;
     var res = { v: accV, i: accI, iPeak: peakI, vPeak: peakV, island: r.island, refOf: r.refOf, converged: r.converged, capV: capV };
-    this.interpret(built, res, dt, nets);
+    // clear the flag BEFORE reading results: parts may ask for another step (ctx.dirty) while they are read
     this._dirty = false;
+    this.interpret(built, res, dt, nets);
     this.ver = (this.ver || 0) + 1;
     return this.res;
   };

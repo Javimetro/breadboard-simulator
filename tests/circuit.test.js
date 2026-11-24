@@ -378,3 +378,52 @@ test('Red and yellow-green LEDs in parallel on one 220 Ω resistor: red ≈ 10 m
   assert.ok(red._i > 2 * green._i, `red ${red._i} green ${green._i}`);
   assert.ok(sim.res.issues.some(i => i.kind === 'hog'));
 });
+
+// Step like the live app does: only while the simulation says something is still changing.
+function runLikeApp(sim, maxSteps = 120) { let k = 0; sim.step(1 / 60); while (sim.isDynamic() && k++ < maxSteps) sim.step(1 / 60); return k; }
+
+test('Live loop: a Nano with USB unplugged switches on by itself when 5 V reaches its 5V pin', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['nano', { x: 8, y: 5, props: { usb: false } }], ['wire', { ends: ['h19', 'B+20'] }], ['wire', { ends: ['h21', 'B-21'] }]]);
+  runLikeApp(sim);
+  assert.ok(byType(sim, 'nano')[0].st.powered, 'powered without forced extra steps');
+});
+
+test('No false "fighting": a USB Nano sharing GND with a 9 V battery that drives its own 100 Ω load', () => {
+  const sim = bench([['nano', { x: 8, y: 5 }], ['battery9', { ends: ['T+3', 'T-3'] }], ['resistor', { props: { r: 100 }, ends: ['T+10', 'T-10'] }], ['wire', { ends: ['a19', 'T-20'] }]]);
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  near(byType(sim, 'battery9')[0]._i, 9 / 102, 'battery current (9 V / 102 Ω)');
+  assert.ok(!sim.res.issues.some(i => i.kind === 'fight'), JSON.stringify(sim.res.issues.map(i => i.kind)));
+});
+
+test('Nano on VIN with 5V shorted to GND: the regulator limits at 0.8 A, steady message, then cuts out when hot', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['nano', { x: 8, y: 5, props: { usb: false } }],
+    ['wire', { ends: ['h22', 'T+22'] }], ['wire', { ends: ['h21', 'T-21'] }], ['wire', { ends: ['i19', 'i21'] }]]);
+  const kinds = [];
+  for (let k = 0; k < 30; k++) { sim.step(1 / 60); kinds.push(sim.res.issues.some(i => i.kind === 'short')); }
+  assert.ok(kinds.slice(5).every(Boolean), 'the short message stays on: ' + kinds.join(''));
+  near(byType(sim, 'battery9')[0]._i, 0.8 + 0, 'battery gives the 0.8 A limit (no load from the dead-shorted board itself)', 0.05);
+  // 9 V − 2 Ω × 0.8 A = 7.4 V on VIN; heat = 7.4 V × 0.8 A ≈ 5.9 W → cut-out within about a second
+  for (let k = 0; k < 120; k++) sim.step(1 / 60);
+  assert.ok(byType(sim, 'nano')[0].st.regOffUntil > 0, 'thermal cut-out happened');
+});
+
+test('USB Nano + MB102 5 V on its 5V pin: safe (the USB diode blocks back-flow): an info note, not danger', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['nano', { x: 8, y: 5 }], ['wire', { ends: ['h19', 'B+20'] }], ['wire', { ends: ['h21', 'B-21'] }]]);
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  assert.ok(sim.res.issues.some(i => i.kind === 'usbdiode'));
+  assert.ok(!sim.res.issues.some(i => i.level === 'danger'), JSON.stringify(sim.res.issues.map(i => i.kind)));
+});
+
+test('4 × AA (6 V) on the Nano 5V pin: a strong warning, but it survives (the ATmega is rated 6 V absolute max)', () => {
+  const sim = bench([['aa', { props: { cells: 4 }, ends: ['T+3', 'T-3'] }], ['nano', { x: 8, y: 5, props: { usb: false } }], ['wire', { ends: ['h19', 'T+20'] }], ['wire', { ends: ['h21', 'T-21'] }]]);
+  for (let k = 0; k < 60; k++) sim.step(1 / 60);
+  const n = byType(sim, 'nano')[0];
+  assert.ok(!n.st.dead, 'still alive');
+  assert.ok(sim.res.issues.some(i => i.kind === 'overvolt' && i.level === 'warn'));
+});
+
+test('Resistor with both legs in one strip: warning (it does nothing)', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['wire', { ends: ['T+5', 'a5'] }], ['resistor', { props: { r: 470 }, ends: ['b5', 'd5'] }], ['led', { ends: ['e5', 'T-8'] }]]);
+  for (let k = 0; k < 3; k++) sim.step(1 / 60);
+  assert.ok(sim.res.issues.some(i => i.kind === 'samerow' && /resistor/.test(i.title)));
+});

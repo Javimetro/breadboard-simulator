@@ -308,7 +308,7 @@
     {
       id: 'button', title: 'Push button', icon: 'button',
       intro: { pic: I.button, text: 'A push button closes a gap while you press it. Put it across the middle gap of the board.' },
-      board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], phone: [0, -15.5, 19, 18.6], tray: ['button', 'wire'],
+      board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], phone: [0, -15.5, 19, 18.6], placeFree: ['button'], tray: ['button', 'wire'],
       setup: function (A) {
         A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['T+8', 'a8'], locked: true });
@@ -391,7 +391,7 @@
     },
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
-      intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part, and current in the path of the current ({{series}}).' },
+      intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part. To measure current, you put the meter into the loop ({{series}}).' },
       board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 34], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
@@ -430,7 +430,7 @@
     {
       id: 'nano', title: 'Arduino Nano: blink', icon: 'nano',
       intro: { pic: I.nano, text: 'The Arduino Nano is a {{microcontroller}} board. Put it across the middle gap, then let a {{pin}} blink an LED.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 24, 18.6], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'green' } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 31.5, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'green' } }, 'wire'],
       lock: ['r', 'color'],
       steps: [
         { text: 'Put the Arduino Nano across the middle gap.', check: function (L) { var n = L.of('nano')[0]; return n && !n.free; }, ok: 'Each Nano pin now has its own strip of free holes.' },
@@ -535,7 +535,7 @@
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (4.7 V ÷ 253 Ω ≈ 19 mA: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
+      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 19 mA, just under the safe 20 mA. All the ohms in the loop add up: 220 + 8 (speaker) + about 25 (inside the pin) = 253 Ω, and 4.7 V ÷ 253 Ω ≈ 19 mA.',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');
@@ -547,11 +547,11 @@
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [4, -6, 28, 18.6], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [3, -6, 31.5, 26], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
-        { text: 'Put the distance sensor on the board (in a free area). Power it: VCC → USB pin (5V), GND → GND.', check: function (L) { var s = L.of('hcsr04')[0]; return s && (s.st.vcc || 0) > 4.5; }, ok: 'The sensor has 5V from the USB pin.' },
+        { text: 'Plug the distance sensor into row a, in the free columns on the right (22–30). Then power it: VCC to the USB pin (5V), GND to GND.', check: function (L) { var s = L.of('hcsr04')[0]; return s && (s.st.vcc || 0) > 4.5; }, ok: 'The sensor has 5V from the USB pin.' },
         { text: 'Connect {{TRIG}} to pin 21.', check: function (L) { var s = L.of('hcsr04')[0]; return s && s.st.trig; }, ok: 'The ESP32 now sends trigger pulses.' },
         { text: 'Build a {{voltage divider}} for {{ECHO}}: ECHO → 1 kΩ → a free middle column → 2.2 kΩ → GND (the − rail joined to GND).', check: function (L) {
           var s = L.of('hcsr04')[0], e = L.part('esp'); if (!s) return false;
