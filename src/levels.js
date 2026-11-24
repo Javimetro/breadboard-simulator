@@ -65,6 +65,9 @@
     'OL': 'Over limit: the meter cannot measure it. For Ω it means the resistance is too big (or nothing is connected).',
     'time constant': 'R × C: how fast a capacitor charges. After one time constant it has about 63 % of the voltage. 1 kΩ × 1000 µF = 1 second.',
     'voltage rating': 'The highest voltage a part can take, printed on it (like 16 V on a capacitor).',
+    'AO': 'Analog out: a pin whose voltage goes up and down with the signal (here: how loud the sound is).',
+    'DO': 'Digital out: a pin that is only HIGH or LOW (here: HIGH when the sound is louder than a set level).',
+    'trimmer': 'A small potentiometer that you turn with a screwdriver or a little knob. It does the same job as a big knob.',
     'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
@@ -396,7 +399,7 @@
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail: set the dial to {{DCV}} (volts), put the red probe in the + rail and the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band (tolerance) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
@@ -488,11 +491,11 @@
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [
-        { text: 'Put the microphone on the board and connect: + → 5V, G → GND, AO → A0.', check: function (L) {
+        { text: 'Put the microphone on the board. Connect + to 5V and G to GND. Connect {{AO}} (the sound signal) to A0.', check: function (L) {
           var m = L.of('mic')[0], n = L.part('nano'); if (!m) return false;
           return (m.st.vcc || 0) > 4.5 && L.net(m, 0) === mcuPinNet(L, n, 'A0');
         }, ok: 'The microphone is on. AO follows the sound.' },
-        { text: 'Connect the speaker: D8 → 220 Ω resistor → speaker → GND.', check: function (L) {
+        { text: 'Connect the speaker in a line: pin D8, then the 220 Ω resistor, then the speaker, then GND.', check: function (L) {
           var s = L.of('speaker')[0], n = L.part('nano'); if (!s) return false;
           var d8 = mcuPinNet(L, n, 'D8'), gnd = anyGndNet(L, n);
           var sn = [L.net(s, 0), L.net(s, 1)];
@@ -511,8 +514,8 @@
         if (n.st.damaged && n.st.damaged.D8) return 'Pin D8 is damaged: the speaker is only 8 Ω, so without a resistor the pin gives about 150 mA. A pin gives 20 mA safely. Tap the Nano and press “New board”, then add the 220 Ω resistor.';
         return null;
       },
-      hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: red wire → a column with the resistor; resistor → a column joined to D8; black wire → GND (or the − rail joined to GND).', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. While the tone is HIGH, the pin gives 5 V ÷ (220 Ω + 8 Ω speaker + about 25 Ω inside the pin) ≈ 20 mA: just at the safe limit.',
+      hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
+      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (5 V ÷ 253 Ω: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');
@@ -560,7 +563,7 @@
       solve: function (A) {
         A.add('hcsr04', { x: 24, y: 3 });
         A.wire('j12', 'b24'); A.wire('a9', 'T-9'); A.wire('T-27', 'b27'); A.wire('a21', 'b25'); A.wait(0.2);
-        A.add('resistor', { props: { r: 1000 }, ends: ['c26', 'f26'] }); A.add('resistor', { props: { r: 2200 }, ends: ['g26', 'T-28'] }); A.wire('i16', 'h26'); A.wait(0.4);
+        A.add('resistor', { props: { r: 1000 }, ends: ['c26', 'c29'] }); A.add('resistor', { props: { r: 2200 }, ends: ['d29', 'T-30'] }); A.wait(0.2); A.wire('e29', 'i16'); A.wait(0.4);
       }
     }
   ];

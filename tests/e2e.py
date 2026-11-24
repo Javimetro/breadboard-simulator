@@ -86,6 +86,13 @@ def sandbox_every_part(page, tag):
     ok = page.evaluate("""(() => { let n = 0; BB.app.sim.state.parts.forEach(p => { BB.app.bench.select(p.id); BB.app.refreshInspector(); if (document.querySelector('#inspector h3').textContent.length) n++; }); return n; })()""")
     check(ok == cnt, f'{tag}: inspector works for every part ({ok})')
     page.evaluate("BB.app.bench.select(null)")
+    # rotating a board twice brings it back onto the board
+    page.evaluate("BB.app.sim.state.parts = []; BB.app.sim.dirty()")
+    plugged = page.evaluate("""(() => { const n = BB.app.actions().add('nano', {x: 8, y: 5}); BB.app.rotatePart(n); BB.app.rotatePart(n); return !n.free && BB.app.sim.pinPoints(n).every(q => q.at); })()""")
+    check(plugged, f'{tag}: rotating a Nano twice (180°) plugs it back in')
+    if tag == 'desktop':
+        ty = page.evaluate("document.getElementById('tray').getBoundingClientRect().top")
+        check(ty < 300, f'desktop: sandbox parts are visible without scrolling (tray top {round(ty)} px)')
     # sandbox challenge: power the Nano from the MB102 rails (USB unplugged)
     page.evaluate("BB.app.sim.state.parts = []; BB.app.sim.dirty()")
     page.evaluate("""(() => { const A = BB.app.actions(); A.add('mb102', {x: 2, y: 0}); const n = A.add('nano', {x: 8, y: 5, props: {usb: false}});

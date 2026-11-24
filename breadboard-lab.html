@@ -227,7 +227,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #toasts { top: 64px; bottom: auto; }
   body.hassel #toasts { top: 64px; }
   body:not(.insfull) #inspector .desc { display: block; }
-  body.sandmode #goal { display: block; }
+  body.sandmode #goal { display: block; order: 2; } body.sandmode #tray { order: 1; } /* sandbox: parts first */
   #goal .steps li.todo, #goal .steps li.done { display: list-item; }
   #goal .steps { list-style: decimal; padding-left: 22px; } #goal .steps .sn { display: none; }
   #tray, #inspector { position: static; transform: none !important; max-height: none; box-shadow: none; border: 0; border-radius: 0; padding: 0; overflow: visible; background: transparent; }
@@ -626,7 +626,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     red:    { vf20: 2.0, rs: 10, nm: 630, rgb: '#ff2a1a', label: 'Red' },
     orange: { vf20: 2.05, rs: 10, nm: 605, rgb: '#ff8a1a', label: 'Orange' },
     yellow: { vf20: 2.1, rs: 10, nm: 590, rgb: '#ffd21a', label: 'Yellow' },
-    green:  { vf20: 2.2, rs: 10, nm: 570, rgb: '#3dff3a', label: 'Green' },
+    green:  { vf20: 2.2, rs: 10, nm: 570, rgb: '#9bff3a', label: 'Yellow-green' },
+    tgreen: { vf20: 3.0, rs: 12, nm: 525, rgb: '#19ff8a', label: 'Bright green' },
     blue:   { vf20: 3.0, rs: 12, nm: 470, rgb: '#2a7bff', label: 'Blue' },
     white:  { vf20: 3.1, rs: 12, nm: 0, rgb: '#f4f7ff', label: 'White' }
   };
@@ -913,9 +914,10 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     var lv = st.lastV || {};
     var via = null;
     if (!usb && !st.dead) {
-      if (def.mcu === 'nano') via = (lv['5V'] || 0) > 4.3 ? '5V' : (lv.VIN || 0) > 6.5 ? 'VIN' : null;
-      else if (def.mcu === 'esp32') via = (lv.USB || 0) > 4.3 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 3.0 ? 'BAT' : null;
-      else via = (lv['5V'] || 0) > 4.3 ? '5V' : null;
+      // VIN has priority: when the regulator runs, the 5V pin is its output, not an input
+      if (def.mcu === 'nano') via = (lv.VIN || 0) > 5.6 ? 'VIN' : (lv['5V'] || 0) > 4.3 ? '5V' : null;
+      else if (def.mcu === 'esp32') via = (lv.USB || 0) > 3.6 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 3.0 ? 'BAT' : null;
+      else via = (lv['5V'] || 0) > 4.3 && !(st.brownUntil > ctx.t) ? '5V' : null;
     }
     st.extVia = via;
     st.extPowered = !!via;
@@ -925,14 +927,20 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       if (pin.kind === 'v5') {
         if (i !== first.v5) return;
         if (usb) e.srcs.push(Object.assign(limSrc(n, st, 'usb', g, n.pin(i), 5.0, 0.2, cfg.usbMax), { label: pin.n, what: 'usb', idx: i }));
-        else if (def.mcu === 'nano' && via === 'VIN') e.srcs.push(Object.assign(limSrc(n, st, 'reg', g, n.pin(i), 5.0, 0.1, 0.8), { label: pin.n, what: 'reg', idx: i }));
-        else n.R('p' + i, g, via === '5V' ? LOAD[def.mcu] : 1e6);
+        else if (def.mcu === 'nano' && via === 'VIN') {
+          // the Nano's linear regulator: a pass element from VIN to 5V. It drops VIN − 5 V, but
+          // at least 1.1 V (its "dropout"), so all the 5V current really comes from VIN.
+          var vinIdx = pins.findIndex(function (q) { return q.kind === 'vin'; });
+          e.reg = n.V('p' + vinIdx, 'p' + i, Math.max(1.1, (lv.VIN || 0) - 5));
+          n.R('p' + i, g, LOAD.nano); // the board itself
+        }
+        else n.R('p' + i, g, via === '5V' ? (def.mcu === 'pi5' ? 4.2 : LOAD[def.mcu]) : 1e6); // Pi 5 needs over 1 A to boot
       } else if (pin.kind === 'v33') {
         if (i !== first.v33) return;
         if (st.powered && via !== '3V') e.srcs.push(Object.assign(limSrc(n, st, 'v33', g, n.pin(i), 3.3, def.mcu === 'nano' ? 2 : 0.3, cfg.v33Max), { label: pin.n, what: 'v33', idx: i }));
         else n.R('p' + i, g, via === '3V' ? 41 : 1e6);
       } else if (pin.kind === 'vin') {
-        n.R('p' + i, g, via === 'VIN' ? 400 : 1e6);
+        n.R('p' + i, g, 1e6);
       } else if (pin.kind === 'bat') {
         n.R('p' + i, g, via === 'BAT' ? 46 : 1e6);
       }
@@ -986,7 +994,23 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       }
     });
     if (st.dead) ctx.issue(p, 'dead', 'danger', 'The ' + cfg.name + ' is dead', (st.deadWhy || '') + ' Too much voltage on a power pin destroys the board. Fix the wiring, then tap the board and press “New board”.');
-    if (st.extPowered && def.mcu === 'pi5') ctx.issue(p, 'pipower', 'warn', 'The Pi 5 needs a strong supply', 'Through its 5V pins the Pi 5 draws about 0.6 A, and up to 5 A when busy. A breadboard supply (MB102: 700 mA) is not enough. Use the official 5V 5A USB-C supply.', def.pins.findIndex(function (q) { return q.kind === 'v5'; }));
+    var v5i = def.pins.findIndex(function (q) { return q.kind === 'v5'; });
+    if (def.mcu === 'pi5' && !st.dead && (st.extVia === '5V' || st.brownUntil > ctx.t)) {
+      // a weak supply sags when the Pi starts (it needs over 1 A): it resets and tries again
+      if (st.extVia === '5V' && (r.pinV(v5i) - r.v(e.g)) < 4.63) { st.brownUntil = ctx.t + 1.2; ctx.dirty(); }
+      ctx.issue(p, 'pipower', 'warn', st.brownUntil > ctx.t ? 'The Pi 5 keeps restarting' : 'The Pi 5 needs a strong supply',
+        'The Pi 5 needs 1–2.5 A (more with USB devices). A breadboard supply (MB102: 700 mA) cannot give that: the voltage drops below 4.6 V and the Pi restarts. Use the official 5 V USB-C supply.', v5i);
+    }
+    // a supply that is too weak to start the board: say so instead of staying silent
+    if (!st.powered && !st.dead && p.props.usb === false) {
+      var low = null;
+      def.pins.forEach(function (q, i) {
+        var v = r.pinV(i) - r.v(e.g);
+        if ((q.kind === 'v5' && v > 0.5 && v <= 4.3) || (q.kind === 'vin' && v > 0.5 && v <= 5.6) || (q.kind === 'v33' && v > 0.5 && v <= 3.0)) low = low || { n: q.n, v: v, k: q.kind, i: i };
+      });
+      if (low) ctx.issue(p, 'lowpower', 'info', 'The ' + cfg.name + ' stays off', 'Its ' + low.n + ' pin gets only ' + fmtV(low.v) + '. ' + (low.k === 'vin' ? 'VIN needs about 7–12 V (the regulator inside uses up about 1–2 V).' : low.k === 'v33' ? 'It needs 3.3 V.' : 'It needs about 5 V.'), low.i);
+    }
+    if (e.reg !== undefined && (st.lastV.VIN || 0) < 6.5) ctx.issue(p, 'lowvin', 'info', 'VIN is a bit low: ' + fmtV(st.lastV.VIN), 'The regulator needs about 7 V on VIN to make a steady 5 V. Now the board gets only ' + fmtV(st.lastV['5V']) + '.', def.pins.findIndex(function (q) { return q.kind === 'vin'; }));
     // power outputs: current limit, back-feeding, and the USB port's fuse
     e.srcs.forEach(function (src) {
       var c = srcState(src, r, st, ctx);
@@ -1041,7 +1065,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         // an input with nothing driving it "floats": it picks up noise and reads random values
         st.floating = st.floating || {};
         st.floating[pin.n] = true;
-        ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing drives this input (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a pull-up or pull-down resistor.', i);
+        ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing sets this input HIGH or LOW (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a pull-up or pull-down resistor.', i);
       }
       if (st.floating && (pe.mode !== 'in' || !ctx.pinFloating(p, i))) delete st.floating[pin.n];
     });
@@ -1077,7 +1101,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     desc: 'An LED is a small light. Current can flow only one way ({{polarity}}): in at the long leg (+), out at the short leg (−).',
     pins: [{ n: '+', d: 'Anode (+): the long leg' }, { n: '−', d: 'Cathode (−): the short leg, flat side' }],
     defaults: { color: 'red' },
-    props: [{ k: 'color', label: 'Colour', type: 'select', options: ['red', 'orange', 'yellow', 'green', 'blue', 'white'], labels: ['Red (2.0 V)', 'Orange (2.05 V)', 'Yellow (2.1 V)', 'Green (2.2 V)', 'Blue (3.0 V)', 'White (3.1 V)'] }],
+    props: [{ k: 'color', label: 'Colour', type: 'select', options: ['red', 'orange', 'yellow', 'green', 'tgreen', 'blue', 'white'], labels: ['Red (2.0 V)', 'Orange (2.05 V)', 'Yellow (2.1 V)', 'Yellow-green, old type (2.2 V)', 'Bright green (3.0 V)', 'Blue (3.0 V)', 'White (3.1 V)'] }],
     stamp: function (p, n) {
       if (p.st.burnt) { p._e = null; n.R('p0', 'p1', 1e9); return; }
       var lp = E.ledParams(p.props.color);
@@ -1094,10 +1118,17 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         p.st.burnt = true; p.st.burntBy = i; p.st.smoke = ctx.t;
         ctx.event(p, 'burn', i);
       }
+      // an LED survives only about 5 V backwards (from a real power source, not a meter)
+      var supplied = ctx.nodeSupplied(p, 0);
+      if (!p.st.burnt && supplied && vrev > 5.5) {
+        p.st.rev = (p.st.rev || 0) + ctx.dt / 2;
+        if (p.st.rev > 1) { p.st.burnt = true; p.st.burntBy = 0; p.st.revBurn = true; p.st.smoke = ctx.t; ctx.event(p, 'burn', 0); }
+      }
       p.vis = { b: p.st.burnt ? 0 : Math.min(1.25, Math.sqrt(Math.max(0, i) / 0.02)), burnt: !!p.st.burnt, hot: p.st.heat > 0.05 };
       if (p.st.burnt) {
         var vf = E.ledVf(p.props.color, 0.015);
-        ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
+        if (p.st.revBurn) ctx.issue(p, 'burnt', 'danger', 'The LED broke', 'It was in backwards on more than 5 V. An LED can take only about 5 V the wrong way round. Tap it and press “New LED”, then put the long leg toward +.');
+        else ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
           (p.st.burntBy ? 'About ' + fmtI(p.st.burntBy) + ' went through it. ' : '') +
           'An LED can take about 20 mA. With no resistor (or one that is too small) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED”.');
@@ -1108,9 +1139,14 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       } else if (sameNet && ctx.nodeSupplied(p, 0)) {
         ctx.issue(p, 'samerow', 'warn', 'Both LED legs are connected together',
           'Both legs are in the same strip (or joined by a wire). The current goes around the LED, not through it. Put the legs in two different strips.');
-      } else if (vrev > 1.0) {
+      } else if (vrev > 1.0 && supplied) {
         ctx.issue(p, 'reversed', 'warn', 'The LED is in backwards',
-          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.');
+          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.' + (vrev > 5 ? ' Over about 5 V backwards it breaks.' : ''));
+      } else if (i > 0.001) {
+        // LEDs side by side on one resistor: the one with the lower voltage takes most current
+        var na = ctx.netOfPin(p, 0), nk = ctx.netOfPin(p, 1);
+        var twin = ctx.parts.find(function (q) { return q !== p && q.type === 'led' && !q.st.burnt && ctx.netOfPin(q, 0) === na && ctx.netOfPin(q, 1) === nk && Math.abs(q._i || 0) * 2 < i; });
+        if (twin) ctx.issue(p, 'hog', 'info', 'One LED takes most of the current', 'These LEDs share one resistor. The one that needs less voltage (' + E.LED_TYPES[p.props.color].label.toLowerCase() + ') takes ' + fmtI(i) + '; the other gets only ' + fmtI(twin._i || 0) + '. Give each LED its own resistor.');
       }
     },
     info: function (p, r) {
@@ -1140,7 +1176,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       else if (pw > 0.25) ctx.issue(p, 'hot', 'warn', 'The resistor is hot: ' + fmtP(pw), 'A small resistor can take 0.25 W. Power = voltage × current. Use a bigger resistor, or check for a short circuit.');
     },
     info: function (p, r) {
-      if (p.hideValue) return [['Value', '? Read the bands, or measure it'], ['Bands', bands(p.props.r).join(', ')]].concat(twoTermInfo(p, r));
+      if (p.hideValue) return [['Value', '? Look at its colour bands (zoom in), or measure it']];
       return [['Value', fmtR(p.props.r) + ' (±5 %)'], ['Bands', bands(p.props.r).join(', ')]].concat(twoTermInfo(p, r)).concat([['Max power', '0.25 W']]);
     }
   };
@@ -1197,7 +1233,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     pinPos: [[0, 0], [2, 0], [4, 0]],
     body: [-1.3, -6.6, 5.3, 0.3],
     defaults: { r: 10000, pos: 0.5, style: 'rotary' },
-    props: [{ k: 'style', label: 'Looks like (match yours)', type: 'select', options: ['rotary', 'trimmer'], labels: ['Round knob', 'Blue trimmer'] }, { k: 'r', label: 'Total', type: 'select', options: [1000, 10000, 100000], labels: ['1 kΩ', '10 kΩ', '100 kΩ'] }, { k: 'pos', label: 'Knob', type: 'range', min: 0, max: 1, step: 0.01, fmt: function (v) { return Math.round(v * 100) + ' %'; } }],
+    props: [{ k: 'style', label: 'Looks like (match yours)', type: 'select', options: ['rotary', 'trimmer'], labels: ['Round knob', 'Blue trimmer (small)'] }, { k: 'r', label: 'Total', type: 'select', options: [1000, 10000, 100000], labels: ['1 kΩ', '10 kΩ', '100 kΩ'] }, { k: 'pos', label: 'Knob', type: 'range', min: 0, max: 1, step: 0.01, fmt: function (v) { return Math.round(v * 100) + ' %'; } }],
     stamp: function (p, n) {
       var a = p.props.pos, R = p.props.r;
       if (p.st.burnt) { p._e = [n.R('p0', 'p1', 1e9), n.R('p1', 'p2', 1e9)]; return; }
@@ -1285,8 +1321,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         var sel = p.props[sd[0]];
         var plus = n.node();
         n.R(plus, 'p' + sd[1], 0.01); n.R(plus, 'p' + sd[2], 0.01);
-        // AMS1117 regulator: holds 3.3 V / 5 V, limits at about 1 A, cannot take current back
-        if (p.props.on && sel !== 'off' && !p.st.tripped) p._e.srcs.push(Object.assign(limSrc(n, p.st, sd[0], g, plus, sel === '5' ? 5 : 3.3, 0.05, 1.0), { side: sd[0] }));
+        // AMS1117 regulator: holds 3.3 V / 5 V, limits at about 0.7 A (the MB102's rating), cannot take current back
+        if (p.props.on && sel !== 'off' && !p.st.tripped) p._e.srcs.push(Object.assign(limSrc(n, p.st, sd[0], g, plus, sel === '5' ? 5 : 3.3, 0.05, 0.7), { side: sd[0] }));
         else n.R(plus, g, 1e7);
       });
     },
@@ -1306,7 +1342,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         var L = st.lastLim || {};
         ctx.issue(p, 'short', 'danger', st.tripped ? 'The MB102 switched off: it got too hot' : 'Short circuit on the ' + L.side + ' rails',
           (st.tripped ? 'A short circuit made its regulator too hot, so it shut down. It tries again in a moment. ' :
-            'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 1 A). The rail voltage falls to ' + fmtV(L.v) + ', and the regulator gets very hot. ') +
+            'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 0.7 A). The rail voltage falls to ' + fmtV(L.v) + ', and the regulator gets very hot. ') +
           'Remove the wire or part that joins + to −.');
       } else if (tot > 0.7) {
         ctx.issue(p, 'overload', 'warn', 'The MB102 gives ' + fmtI(tot), 'It is made for 700 mA at most. Its regulators get hot.');
@@ -1475,6 +1511,11 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     var lines = why || !mcu ? null : (mcu.st.display || null);
     p.vis = { on: ok, lines: lines, why: why };
     if (ok && why && mcu) ctx.issue(p, 'i2c', 'warn', name + ' stays blank', why + ' I2C uses two wires: SDA (data) and SCL (clock).');
+    // the module's own pull-up resistors go to its VCC: on 5 V they pull a 3.3 V board's pins too high
+    if (ok && mcu && BOARDS[PARTS[mcu.type].mcu].vcc < 4 && (p.st.vcc || 0) > 3.8) {
+      ctx.issue(p, 'i2cvolt', 'warn', 'SDA and SCL are pulled up to ' + fmtV(p.st.vcc),
+        'This screen has small pull-up resistors to its VCC. With VCC on 5V they pull the ' + BOARDS[PARTS[mcu.type].mcu].name + ' pins above 3.3 V (its limit is 3.6 V). Power the screen from the 3.3V pin instead, or use a level shifter.');
+    }
     return lines;
   }
   function sdaName(m) { var d = PARTS[m.type]; var q = d.pins.find(function (x) { return x.sda; }); return q ? q.n : 'SDA'; }
@@ -1639,7 +1680,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   };
   PARTS.mic = {
     name: 'Microphone module (KY-038)', cat: 'sensors', kind: 'rigid',
-    desc: 'Hears sound. AO gives a voltage that gets bigger with louder sound. DO goes HIGH when the sound is louder than the level set by its small screw.',
+    desc: 'Hears sound. {{AO}} gives a voltage that gets bigger with louder sound. {{DO}} goes HIGH when the sound is louder than the level set by its small screw.',
     pins: [{ n: 'AO' }, { n: 'G' }, { n: '+' }, { n: 'DO' }],
     pinPos: [[0, 0], [1, 0], [2, 0], [3, 0]],
     body: [-1.0, -13.2, 4.0, 0.25],
@@ -2200,8 +2241,14 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         else if (!s.st.trig) txt = 'Sensor has no power';
         else if (e === null) txt = 'ECHO unclear (' + io.voltsPeak('echo').toFixed(2) + ' V)';
         else if (e === 0) txt = 'No echo';
-        else txt = 'Distance: ' + s.props.dist + ' cm';
-        io.mem.dist = s && e === 1 ? s.props.dist : null;
+        else {
+          // time the ECHO pulse: its share of the 60 ms cycle is (average ÷ peak) voltage;
+          // 58 µs of pulse = 1 cm (sound goes there and back)
+          var frac = io.voltsPeak('echo') > 0 ? io.volts('echo') / io.voltsPeak('echo') : 0;
+          if (frac > 0.6) txt = 'ECHO stuck HIGH (no pulse)';
+          else { var cm = Math.round(frac * 0.06 / 58e-6); txt = 'Distance: ' + cm + ' cm'; io.mem.dist = cm; }
+        }
+        if (!/^Distance/.test(txt)) io.mem.dist = null;
         io.show(['DISTANCE', txt]);
         io.print(txt);
       }
@@ -2325,7 +2372,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         return { t: s.props.temp, h: s.props.hum };
       }
     };
-    if (st.powered && !st.dead && st.lastV) prog.step(api);
+    // run the program only when the last reading was taken with these same pin settings
+    // (otherwise an input read before its pull-up was on would give a false value)
+    var ioKey = Object.keys(io).map(function (k) { return k + io[k].mode + (io[k].pull || ''); }).join('|');
+    var settled = st.lastV && st.ioKey === ioKey;
+    st.ioKey = ioKey;
+    if (st.powered && !st.dead && settled) prog.step(api);
     st.io = st.powered ? io : {};
     // Wio Terminal: its own screen shows what the program shows, or the serial output.
   }
@@ -2636,6 +2688,15 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       var c1 = probe ? { x: a.x, y: a.y + 40 } : { x: a.x + out[0] * 30, y: a.y + out[1] * 30 };
       var c2 = probe ? { x: b.x, y: b.y + 60 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
       var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 18 : 0));
+      if (probe) {
+        // a probe above the meter: the cable goes down out of the jack and round the side, not over the display
+        var bx1 = (p.x + def.size[0]) * U, bx0 = p.x * U, by1 = (p.y + def.size[1]) * U, pbot = b.y + 39;
+        if (pbot < by1 && b.x > bx0 - 20 && b.x < bx1 + 20) {
+          var side = b.x > (bx0 + bx1) / 2 ? bx1 + 18 + k * 8 : bx0 - 18 - k * 8, sy = (a.y + pbot) / 2;
+          d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x) + ' ' + f1(a.y + 50) + ' ' + f1(side) + ' ' + f1(a.y + 40) + ' ' + f1(side) + ' ' + f1(sy) +
+            ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(b.x) + ' ' + f1(pbot + 30) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+        }
+      }
       s += '<path d="' + d + '" fill="none" stroke="#00000044" stroke-width="4.4" transform="translate(0 1.5)"/>';
       s += '<path d="' + d + '" fill="none" stroke="' + cols[k] + '" stroke-width="' + (probe ? 3.6 : 3) + '" stroke-linecap="round"/>';
       if (probe) {
@@ -2798,7 +2859,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     var shell = p.props.shell === 'white' ? '#eef0f2' : '#2f6fb7';
     var s = '<g transform="translate(' + x + ' ' + y + ')">';
     // back header strip (shown below the case)
-    s += '<rect x="34" y="270" width="210" height="28" rx="4" fill="#1d1f22" stroke="#555" stroke-dasharray="3 2"/>' + txt(36, 266, '40-pin header on the back (shown here)', 'tiny');
+    // the header is on the back of the case: drawn as a "pulled-out" view, joined by dashed guide lines
+    s += '<path d="M40 224 L40 270 M238 224 L238 270" stroke="#7d8792" stroke-width="1" stroke-dasharray="3 3"/>';
+    s += '<rect x="34" y="270" width="210" height="28" rx="4" fill="#1d1f22" stroke="#555" stroke-dasharray="3 2"/>' + txt(46, 250, '40-pin header (on the back)', 'tiny');
     s += '<rect x="0" y="0" width="285" height="224" rx="26" fill="' + shell + '" filter="url(#fShadow)"/>';
     [30, 76, 122].forEach(function (bx) { s += '<rect x="' + bx + '" y="-7" width="26" height="10" rx="3" fill="#20242a" stroke="#000" stroke-opacity=".4"/>'; });
     s += '<rect x="22" y="18" width="200" height="160" rx="8" fill="#0b0b0d"/>';
@@ -3620,6 +3683,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     'OL': 'Over limit: the meter cannot measure it. For Ω it means the resistance is too big (or nothing is connected).',
     'time constant': 'R × C: how fast a capacitor charges. After one time constant it has about 63 % of the voltage. 1 kΩ × 1000 µF = 1 second.',
     'voltage rating': 'The highest voltage a part can take, printed on it (like 16 V on a capacitor).',
+    'AO': 'Analog out: a pin whose voltage goes up and down with the signal (here: how loud the sound is).',
+    'DO': 'Digital out: a pin that is only HIGH or LOW (here: HIGH when the sound is louder than a set level).',
+    'trimmer': 'A small potentiometer that you turn with a screwdriver or a little knob. It does the same job as a big knob.',
     'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
@@ -3951,7 +4017,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail: set the dial to {{DCV}} (volts), put the red probe in the + rail and the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band (tolerance) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
@@ -4043,11 +4109,11 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [
-        { text: 'Put the microphone on the board and connect: + → 5V, G → GND, AO → A0.', check: function (L) {
+        { text: 'Put the microphone on the board. Connect + to 5V and G to GND. Connect {{AO}} (the sound signal) to A0.', check: function (L) {
           var m = L.of('mic')[0], n = L.part('nano'); if (!m) return false;
           return (m.st.vcc || 0) > 4.5 && L.net(m, 0) === mcuPinNet(L, n, 'A0');
         }, ok: 'The microphone is on. AO follows the sound.' },
-        { text: 'Connect the speaker: D8 → 220 Ω resistor → speaker → GND.', check: function (L) {
+        { text: 'Connect the speaker in a line: pin D8, then the 220 Ω resistor, then the speaker, then GND.', check: function (L) {
           var s = L.of('speaker')[0], n = L.part('nano'); if (!s) return false;
           var d8 = mcuPinNet(L, n, 'D8'), gnd = anyGndNet(L, n);
           var sn = [L.net(s, 0), L.net(s, 1)];
@@ -4066,8 +4132,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         if (n.st.damaged && n.st.damaged.D8) return 'Pin D8 is damaged: the speaker is only 8 Ω, so without a resistor the pin gives about 150 mA. A pin gives 20 mA safely. Tap the Nano and press “New board”, then add the 220 Ω resistor.';
         return null;
       },
-      hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: red wire → a column with the resistor; resistor → a column joined to D8; black wire → GND (or the − rail joined to GND).', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. While the tone is HIGH, the pin gives 5 V ÷ (220 Ω + 8 Ω speaker + about 25 Ω inside the pin) ≈ 20 mA: just at the safe limit.',
+      hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
+      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (5 V ÷ 253 Ω: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');
@@ -4115,7 +4181,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       solve: function (A) {
         A.add('hcsr04', { x: 24, y: 3 });
         A.wire('j12', 'b24'); A.wire('a9', 'T-9'); A.wire('T-27', 'b27'); A.wire('a21', 'b25'); A.wait(0.2);
-        A.add('resistor', { props: { r: 1000 }, ends: ['c26', 'f26'] }); A.add('resistor', { props: { r: 2200 }, ends: ['g26', 'T-28'] }); A.wire('i16', 'h26'); A.wait(0.4);
+        A.add('resistor', { props: { r: 1000 }, ends: ['c26', 'c29'] }); A.add('resistor', { props: { r: 2200 }, ends: ['d29', 'T-30'] }); A.wait(0.2); A.wire('e29', 'i16'); A.wait(0.4);
       }
     }
   ];
@@ -4519,7 +4585,11 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       if (!step || !step.choices) return;
       var c = step.choices[i];
       if (c.ok) this.stepDone(c.why);
-      else { lv.wrong = (lv.wrong || 0) + 1; this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04); }
+      else {
+        lv.wrong = (lv.wrong || 0) + 1; this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04);
+        // no blind guessing: after a wrong answer, look again (tap the holes) before answering
+        if (step.ready) { lv.tapped = {}; this.renderGoal(); }
+      }
     },
     // colour-band picker: the player reads the bands and picks each colour
     checkBands: function (picked) {
@@ -4530,7 +4600,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       for (var k = 0; k < 3; k++) if (picked[k] !== want[k]) bad.push(['1st', '2nd', '3rd'][k]);
       if (!bad.length) { this.stepDone(step.bands.ok); return; }
       lv.wrong = (lv.wrong || 0) + 1;
-      this.toast('The ' + bad.join(' and the ') + ' band ' + (bad.length > 1 ? 'are' : 'is') + ' not right. Zoom in on the resistor and look again: ' + step.bands.tip, 'bad');
+      this.toast((bad.length === 1 ? 'One band is' : bad.length + ' bands are') + ' not right. Zoom in on the resistor and look again: ' + step.bands.tip, 'bad');
       audio.blip(220, 0.18, 'sawtooth', 0.04);
     },
     hint: function () {
@@ -4583,7 +4653,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
-      if (!state.parts.length) this.toast('Tap “Parts” to add components. Start with a battery or the MB102 power board.', 'info');
+      if (!state.parts.length) this.toast(window.innerWidth < 1100 ? 'Tap “Parts” to add components. Start with a battery or the MB102 power board.' : 'Pick a part on the left to add it. Start with a battery or the MB102 power board.', 'info');
     },
     renderChallenges: function () {
       var done = store.data.challenges || {}, self = this;
@@ -4653,6 +4723,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       });
       var html = '<div class="trayhead"><b>Parts</b><span class="mut small">Tap to add</span><button class="ibtn closetray" title="Close">' + icon('close') + '</button></div>';
       if (!list.length) html += '<p class="small mut">No parts needed here. Just tap the holes.</p>';
+      if (items) { groups = { all: [].concat.apply([], Object.keys(cats).map(function (c) { return groups[c] || []; })) }; cats = { all: '' }; } // levels: one grid
       Object.keys(cats).forEach(function (c) {
         if (!groups[c]) return;
         if (!items) html += '<h4>' + cats[c] + '</h4>';
@@ -4797,7 +4868,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 
     // ---------- undo / save ----------
     serialize: function () {
-      return JSON.stringify(this.sim.state, function (k, v) { if (k && (k[0] === '_' || k === 'vis' || k === 'lastV' || k === 'pinI' || k === 'io')) return undefined; return v; });
+      return JSON.stringify(this.sim.state, function (k, v) { if (k && (k[0] === '_' || k === 'vis' || k === 'lastV' || k === 'lastVpeak' || k === 'pinI' || k === 'io' || k === 'smoke' || k === 'ioKey')) return undefined; return v; });
     },
     snapshot: function () { return this.serialize(); },
     commit: function (before) {
@@ -4966,14 +5037,21 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     rotatePart: function (p) {
       var u = this.snapshot(), sim = this.sim, def = PARTS[p.type];
       var old = p.rot || 0;
+      // turn around the part's centre, so it stays where it was
+      var r0 = sim.bodyRect(p), c0 = { x: (r0.x0 + r0.x1) / 2, y: (r0.y0 + r0.y1) / 2 };
       p.rot = (old + 90) % 360;
-      // keep it plugged in if the rotated pins fit, else lift it off the board
+      var r1 = sim.bodyRect(p);
+      p.x += c0.x - (r1.x0 + r1.x1) / 2; p.y += c0.y - (r1.y0 + r1.y1) / 2;
+      // keep it plugged in if the rotated pins fit nearby, else lift it off the board
       var pts = sim.pinPoints(p), occ = sim.occupancy(), cov = sim.covered();
       var ok = !p.free && pts.every(function (q) { return q.at && (!occ[q.at] || occ[q.at].id === p.id) && (!cov[q.at] || cov[q.at] === p.id); });
       if (!ok) {
         var found = false;
-        for (var dx = -2; dx <= 2 && !found; dx++) for (var dy = -3; dy <= 3 && !found; dy++) {
-          var x0 = Math.round(p.x) + dx, y0 = Math.round(p.y) + dy;
+        var cands = [];
+        for (var dx = -4; dx <= 4; dx++) for (var dy = -4; dy <= 4; dy++) cands.push([dx, dy]);
+        cands.sort(function (a, b) { return Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]); });
+        for (var ci = 0; ci < cands.length && !found; ci++) {
+          var x0 = Math.round(p.x) + cands[ci][0], y0 = Math.round(p.y) + cands[ci][1];
           var good = def.pinPos.every(function (q) { var r = BB.rotate(q[0], q[1], p.rot), h = sim.board.holeAt(x0 + r[0], y0 + r[1]); return h && h.x === x0 + r[0] && h.y === y0 + r[1] && (!occ[h.id] || occ[h.id].id === p.id) && (!cov[h.id] || cov[h.id] === p.id); });
           if (good) { p.x = x0; p.y = y0; p.free = false; found = true; }
         }
@@ -5092,6 +5170,13 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       t.innerHTML = rich(text);
       $('#toasts').appendChild(t);
       var all = $('#toasts').children, max = window.innerWidth < 1100 ? 1 : 2; while (all.length > max) all[0].remove();
+      // phones: just under the goal card (or the top bar), never on top of the task text
+      var box = $('#toasts');
+      if (window.innerWidth < 1100) {
+        var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
+        box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
+        box.style.bottom = 'auto';
+      } else { box.style.top = ''; box.style.bottom = ''; }
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },
@@ -5155,6 +5240,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       pts = p.ends;
       if (spec.type === 'wire') { p.props.color = 'red'; pts = [{ x: 0, y: 0.6 }, { x: 3, y: 0.6 }]; }
       vb = [-14, -16, span * 10 + 28, 30];
+      if (spec.type === 'led') vb = [-12, -42, 34, 48]; // the LED body stands above its legs
       if (spec.type === 'capacitor') vb = [-14, -16, 42, 32];
     } else if (def.kind === 'rigid') {
       var b = def.body; pts = [];

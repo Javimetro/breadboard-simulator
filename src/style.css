@@ -219,7 +219,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #toasts { top: 64px; bottom: auto; }
   body.hassel #toasts { top: 64px; }
   body:not(.insfull) #inspector .desc { display: block; }
-  body.sandmode #goal { display: block; }
+  body.sandmode #goal { display: block; order: 2; } body.sandmode #tray { order: 1; } /* sandbox: parts first */
   #goal .steps li.todo, #goal .steps li.done { display: list-item; }
   #goal .steps { list-style: decimal; padding-left: 22px; } #goal .steps .sn { display: none; }
   #tray, #inspector { position: static; transform: none !important; max-height: none; box-shadow: none; border: 0; border-radius: 0; padding: 0; overflow: visible; background: transparent; }

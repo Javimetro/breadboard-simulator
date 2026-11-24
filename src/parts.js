@@ -178,9 +178,10 @@
     var lv = st.lastV || {};
     var via = null;
     if (!usb && !st.dead) {
-      if (def.mcu === 'nano') via = (lv['5V'] || 0) > 4.3 ? '5V' : (lv.VIN || 0) > 6.5 ? 'VIN' : null;
-      else if (def.mcu === 'esp32') via = (lv.USB || 0) > 4.3 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 3.0 ? 'BAT' : null;
-      else via = (lv['5V'] || 0) > 4.3 ? '5V' : null;
+      // VIN has priority: when the regulator runs, the 5V pin is its output, not an input
+      if (def.mcu === 'nano') via = (lv.VIN || 0) > 5.6 ? 'VIN' : (lv['5V'] || 0) > 4.3 ? '5V' : null;
+      else if (def.mcu === 'esp32') via = (lv.USB || 0) > 3.6 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 3.0 ? 'BAT' : null;
+      else via = (lv['5V'] || 0) > 4.3 && !(st.brownUntil > ctx.t) ? '5V' : null;
     }
     st.extVia = via;
     st.extPowered = !!via;
@@ -190,14 +191,20 @@
       if (pin.kind === 'v5') {
         if (i !== first.v5) return;
         if (usb) e.srcs.push(Object.assign(limSrc(n, st, 'usb', g, n.pin(i), 5.0, 0.2, cfg.usbMax), { label: pin.n, what: 'usb', idx: i }));
-        else if (def.mcu === 'nano' && via === 'VIN') e.srcs.push(Object.assign(limSrc(n, st, 'reg', g, n.pin(i), 5.0, 0.1, 0.8), { label: pin.n, what: 'reg', idx: i }));
-        else n.R('p' + i, g, via === '5V' ? LOAD[def.mcu] : 1e6);
+        else if (def.mcu === 'nano' && via === 'VIN') {
+          // the Nano's linear regulator: a pass element from VIN to 5V. It drops VIN − 5 V, but
+          // at least 1.1 V (its "dropout"), so all the 5V current really comes from VIN.
+          var vinIdx = pins.findIndex(function (q) { return q.kind === 'vin'; });
+          e.reg = n.V('p' + vinIdx, 'p' + i, Math.max(1.1, (lv.VIN || 0) - 5));
+          n.R('p' + i, g, LOAD.nano); // the board itself
+        }
+        else n.R('p' + i, g, via === '5V' ? (def.mcu === 'pi5' ? 4.2 : LOAD[def.mcu]) : 1e6); // Pi 5 needs over 1 A to boot
       } else if (pin.kind === 'v33') {
         if (i !== first.v33) return;
         if (st.powered && via !== '3V') e.srcs.push(Object.assign(limSrc(n, st, 'v33', g, n.pin(i), 3.3, def.mcu === 'nano' ? 2 : 0.3, cfg.v33Max), { label: pin.n, what: 'v33', idx: i }));
         else n.R('p' + i, g, via === '3V' ? 41 : 1e6);
       } else if (pin.kind === 'vin') {
-        n.R('p' + i, g, via === 'VIN' ? 400 : 1e6);
+        n.R('p' + i, g, 1e6);
       } else if (pin.kind === 'bat') {
         n.R('p' + i, g, via === 'BAT' ? 46 : 1e6);
       }
@@ -251,7 +258,23 @@
       }
     });
     if (st.dead) ctx.issue(p, 'dead', 'danger', 'The ' + cfg.name + ' is dead', (st.deadWhy || '') + ' Too much voltage on a power pin destroys the board. Fix the wiring, then tap the board and press “New board”.');
-    if (st.extPowered && def.mcu === 'pi5') ctx.issue(p, 'pipower', 'warn', 'The Pi 5 needs a strong supply', 'Through its 5V pins the Pi 5 draws about 0.6 A, and up to 5 A when busy. A breadboard supply (MB102: 700 mA) is not enough. Use the official 5V 5A USB-C supply.', def.pins.findIndex(function (q) { return q.kind === 'v5'; }));
+    var v5i = def.pins.findIndex(function (q) { return q.kind === 'v5'; });
+    if (def.mcu === 'pi5' && !st.dead && (st.extVia === '5V' || st.brownUntil > ctx.t)) {
+      // a weak supply sags when the Pi starts (it needs over 1 A): it resets and tries again
+      if (st.extVia === '5V' && (r.pinV(v5i) - r.v(e.g)) < 4.63) { st.brownUntil = ctx.t + 1.2; ctx.dirty(); }
+      ctx.issue(p, 'pipower', 'warn', st.brownUntil > ctx.t ? 'The Pi 5 keeps restarting' : 'The Pi 5 needs a strong supply',
+        'The Pi 5 needs 1–2.5 A (more with USB devices). A breadboard supply (MB102: 700 mA) cannot give that: the voltage drops below 4.6 V and the Pi restarts. Use the official 5 V USB-C supply.', v5i);
+    }
+    // a supply that is too weak to start the board: say so instead of staying silent
+    if (!st.powered && !st.dead && p.props.usb === false) {
+      var low = null;
+      def.pins.forEach(function (q, i) {
+        var v = r.pinV(i) - r.v(e.g);
+        if ((q.kind === 'v5' && v > 0.5 && v <= 4.3) || (q.kind === 'vin' && v > 0.5 && v <= 5.6) || (q.kind === 'v33' && v > 0.5 && v <= 3.0)) low = low || { n: q.n, v: v, k: q.kind, i: i };
+      });
+      if (low) ctx.issue(p, 'lowpower', 'info', 'The ' + cfg.name + ' stays off', 'Its ' + low.n + ' pin gets only ' + fmtV(low.v) + '. ' + (low.k === 'vin' ? 'VIN needs about 7–12 V (the regulator inside uses up about 1–2 V).' : low.k === 'v33' ? 'It needs 3.3 V.' : 'It needs about 5 V.'), low.i);
+    }
+    if (e.reg !== undefined && (st.lastV.VIN || 0) < 6.5) ctx.issue(p, 'lowvin', 'info', 'VIN is a bit low: ' + fmtV(st.lastV.VIN), 'The regulator needs about 7 V on VIN to make a steady 5 V. Now the board gets only ' + fmtV(st.lastV['5V']) + '.', def.pins.findIndex(function (q) { return q.kind === 'vin'; }));
     // power outputs: current limit, back-feeding, and the USB port's fuse
     e.srcs.forEach(function (src) {
       var c = srcState(src, r, st, ctx);
@@ -306,7 +329,7 @@
         // an input with nothing driving it "floats": it picks up noise and reads random values
         st.floating = st.floating || {};
         st.floating[pin.n] = true;
-        ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing drives this input (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a pull-up or pull-down resistor.', i);
+        ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing sets this input HIGH or LOW (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a pull-up or pull-down resistor.', i);
       }
       if (st.floating && (pe.mode !== 'in' || !ctx.pinFloating(p, i))) delete st.floating[pin.n];
     });
@@ -342,7 +365,7 @@
     desc: 'An LED is a small light. Current can flow only one way ({{polarity}}): in at the long leg (+), out at the short leg (−).',
     pins: [{ n: '+', d: 'Anode (+): the long leg' }, { n: '−', d: 'Cathode (−): the short leg, flat side' }],
     defaults: { color: 'red' },
-    props: [{ k: 'color', label: 'Colour', type: 'select', options: ['red', 'orange', 'yellow', 'green', 'blue', 'white'], labels: ['Red (2.0 V)', 'Orange (2.05 V)', 'Yellow (2.1 V)', 'Green (2.2 V)', 'Blue (3.0 V)', 'White (3.1 V)'] }],
+    props: [{ k: 'color', label: 'Colour', type: 'select', options: ['red', 'orange', 'yellow', 'green', 'tgreen', 'blue', 'white'], labels: ['Red (2.0 V)', 'Orange (2.05 V)', 'Yellow (2.1 V)', 'Yellow-green, old type (2.2 V)', 'Bright green (3.0 V)', 'Blue (3.0 V)', 'White (3.1 V)'] }],
     stamp: function (p, n) {
       if (p.st.burnt) { p._e = null; n.R('p0', 'p1', 1e9); return; }
       var lp = E.ledParams(p.props.color);
@@ -359,10 +382,17 @@
         p.st.burnt = true; p.st.burntBy = i; p.st.smoke = ctx.t;
         ctx.event(p, 'burn', i);
       }
+      // an LED survives only about 5 V backwards (from a real power source, not a meter)
+      var supplied = ctx.nodeSupplied(p, 0);
+      if (!p.st.burnt && supplied && vrev > 5.5) {
+        p.st.rev = (p.st.rev || 0) + ctx.dt / 2;
+        if (p.st.rev > 1) { p.st.burnt = true; p.st.burntBy = 0; p.st.revBurn = true; p.st.smoke = ctx.t; ctx.event(p, 'burn', 0); }
+      }
       p.vis = { b: p.st.burnt ? 0 : Math.min(1.25, Math.sqrt(Math.max(0, i) / 0.02)), burnt: !!p.st.burnt, hot: p.st.heat > 0.05 };
       if (p.st.burnt) {
         var vf = E.ledVf(p.props.color, 0.015);
-        ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
+        if (p.st.revBurn) ctx.issue(p, 'burnt', 'danger', 'The LED broke', 'It was in backwards on more than 5 V. An LED can take only about 5 V the wrong way round. Tap it and press “New LED”, then put the long leg toward +.');
+        else ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
           (p.st.burntBy ? 'About ' + fmtI(p.st.burntBy) + ' went through it. ' : '') +
           'An LED can take about 20 mA. With no resistor (or one that is too small) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED”.');
@@ -373,9 +403,14 @@
       } else if (sameNet && ctx.nodeSupplied(p, 0)) {
         ctx.issue(p, 'samerow', 'warn', 'Both LED legs are connected together',
           'Both legs are in the same strip (or joined by a wire). The current goes around the LED, not through it. Put the legs in two different strips.');
-      } else if (vrev > 1.0) {
+      } else if (vrev > 1.0 && supplied) {
         ctx.issue(p, 'reversed', 'warn', 'The LED is in backwards',
-          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.');
+          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.' + (vrev > 5 ? ' Over about 5 V backwards it breaks.' : ''));
+      } else if (i > 0.001) {
+        // LEDs side by side on one resistor: the one with the lower voltage takes most current
+        var na = ctx.netOfPin(p, 0), nk = ctx.netOfPin(p, 1);
+        var twin = ctx.parts.find(function (q) { return q !== p && q.type === 'led' && !q.st.burnt && ctx.netOfPin(q, 0) === na && ctx.netOfPin(q, 1) === nk && Math.abs(q._i || 0) * 2 < i; });
+        if (twin) ctx.issue(p, 'hog', 'info', 'One LED takes most of the current', 'These LEDs share one resistor. The one that needs less voltage (' + E.LED_TYPES[p.props.color].label.toLowerCase() + ') takes ' + fmtI(i) + '; the other gets only ' + fmtI(twin._i || 0) + '. Give each LED its own resistor.');
       }
     },
     info: function (p, r) {
@@ -405,7 +440,7 @@
       else if (pw > 0.25) ctx.issue(p, 'hot', 'warn', 'The resistor is hot: ' + fmtP(pw), 'A small resistor can take 0.25 W. Power = voltage × current. Use a bigger resistor, or check for a short circuit.');
     },
     info: function (p, r) {
-      if (p.hideValue) return [['Value', '? Read the bands, or measure it'], ['Bands', bands(p.props.r).join(', ')]].concat(twoTermInfo(p, r));
+      if (p.hideValue) return [['Value', '? Look at its colour bands (zoom in), or measure it']];
       return [['Value', fmtR(p.props.r) + ' (±5 %)'], ['Bands', bands(p.props.r).join(', ')]].concat(twoTermInfo(p, r)).concat([['Max power', '0.25 W']]);
     }
   };
@@ -462,7 +497,7 @@
     pinPos: [[0, 0], [2, 0], [4, 0]],
     body: [-1.3, -6.6, 5.3, 0.3],
     defaults: { r: 10000, pos: 0.5, style: 'rotary' },
-    props: [{ k: 'style', label: 'Looks like (match yours)', type: 'select', options: ['rotary', 'trimmer'], labels: ['Round knob', 'Blue trimmer'] }, { k: 'r', label: 'Total', type: 'select', options: [1000, 10000, 100000], labels: ['1 kΩ', '10 kΩ', '100 kΩ'] }, { k: 'pos', label: 'Knob', type: 'range', min: 0, max: 1, step: 0.01, fmt: function (v) { return Math.round(v * 100) + ' %'; } }],
+    props: [{ k: 'style', label: 'Looks like (match yours)', type: 'select', options: ['rotary', 'trimmer'], labels: ['Round knob', 'Blue trimmer (small)'] }, { k: 'r', label: 'Total', type: 'select', options: [1000, 10000, 100000], labels: ['1 kΩ', '10 kΩ', '100 kΩ'] }, { k: 'pos', label: 'Knob', type: 'range', min: 0, max: 1, step: 0.01, fmt: function (v) { return Math.round(v * 100) + ' %'; } }],
     stamp: function (p, n) {
       var a = p.props.pos, R = p.props.r;
       if (p.st.burnt) { p._e = [n.R('p0', 'p1', 1e9), n.R('p1', 'p2', 1e9)]; return; }
@@ -550,8 +585,8 @@
         var sel = p.props[sd[0]];
         var plus = n.node();
         n.R(plus, 'p' + sd[1], 0.01); n.R(plus, 'p' + sd[2], 0.01);
-        // AMS1117 regulator: holds 3.3 V / 5 V, limits at about 1 A, cannot take current back
-        if (p.props.on && sel !== 'off' && !p.st.tripped) p._e.srcs.push(Object.assign(limSrc(n, p.st, sd[0], g, plus, sel === '5' ? 5 : 3.3, 0.05, 1.0), { side: sd[0] }));
+        // AMS1117 regulator: holds 3.3 V / 5 V, limits at about 0.7 A (the MB102's rating), cannot take current back
+        if (p.props.on && sel !== 'off' && !p.st.tripped) p._e.srcs.push(Object.assign(limSrc(n, p.st, sd[0], g, plus, sel === '5' ? 5 : 3.3, 0.05, 0.7), { side: sd[0] }));
         else n.R(plus, g, 1e7);
       });
     },
@@ -571,7 +606,7 @@
         var L = st.lastLim || {};
         ctx.issue(p, 'short', 'danger', st.tripped ? 'The MB102 switched off: it got too hot' : 'Short circuit on the ' + L.side + ' rails',
           (st.tripped ? 'A short circuit made its regulator too hot, so it shut down. It tries again in a moment. ' :
-            'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 1 A). The rail voltage falls to ' + fmtV(L.v) + ', and the regulator gets very hot. ') +
+            'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 0.7 A). The rail voltage falls to ' + fmtV(L.v) + ', and the regulator gets very hot. ') +
           'Remove the wire or part that joins + to −.');
       } else if (tot > 0.7) {
         ctx.issue(p, 'overload', 'warn', 'The MB102 gives ' + fmtI(tot), 'It is made for 700 mA at most. Its regulators get hot.');
@@ -740,6 +775,11 @@
     var lines = why || !mcu ? null : (mcu.st.display || null);
     p.vis = { on: ok, lines: lines, why: why };
     if (ok && why && mcu) ctx.issue(p, 'i2c', 'warn', name + ' stays blank', why + ' I2C uses two wires: SDA (data) and SCL (clock).');
+    // the module's own pull-up resistors go to its VCC: on 5 V they pull a 3.3 V board's pins too high
+    if (ok && mcu && BOARDS[PARTS[mcu.type].mcu].vcc < 4 && (p.st.vcc || 0) > 3.8) {
+      ctx.issue(p, 'i2cvolt', 'warn', 'SDA and SCL are pulled up to ' + fmtV(p.st.vcc),
+        'This screen has small pull-up resistors to its VCC. With VCC on 5V they pull the ' + BOARDS[PARTS[mcu.type].mcu].name + ' pins above 3.3 V (its limit is 3.6 V). Power the screen from the 3.3V pin instead, or use a level shifter.');
+    }
     return lines;
   }
   function sdaName(m) { var d = PARTS[m.type]; var q = d.pins.find(function (x) { return x.sda; }); return q ? q.n : 'SDA'; }
@@ -904,7 +944,7 @@
   };
   PARTS.mic = {
     name: 'Microphone module (KY-038)', cat: 'sensors', kind: 'rigid',
-    desc: 'Hears sound. AO gives a voltage that gets bigger with louder sound. DO goes HIGH when the sound is louder than the level set by its small screw.',
+    desc: 'Hears sound. {{AO}} gives a voltage that gets bigger with louder sound. {{DO}} goes HIGH when the sound is louder than the level set by its small screw.',
     pins: [{ n: 'AO' }, { n: 'G' }, { n: '+' }, { n: 'DO' }],
     pinPos: [[0, 0], [1, 0], [2, 0], [3, 0]],
     body: [-1.0, -13.2, 4.0, 0.25],

@@ -204,7 +204,8 @@
     red:    { vf20: 2.0, rs: 10, nm: 630, rgb: '#ff2a1a', label: 'Red' },
     orange: { vf20: 2.05, rs: 10, nm: 605, rgb: '#ff8a1a', label: 'Orange' },
     yellow: { vf20: 2.1, rs: 10, nm: 590, rgb: '#ffd21a', label: 'Yellow' },
-    green:  { vf20: 2.2, rs: 10, nm: 570, rgb: '#3dff3a', label: 'Green' },
+    green:  { vf20: 2.2, rs: 10, nm: 570, rgb: '#9bff3a', label: 'Yellow-green' },
+    tgreen: { vf20: 3.0, rs: 12, nm: 525, rgb: '#19ff8a', label: 'Bright green' },
     blue:   { vf20: 3.0, rs: 12, nm: 470, rgb: '#2a7bff', label: 'Blue' },
     white:  { vf20: 3.1, rs: 12, nm: 0, rgb: '#f4f7ff', label: 'White' }
   };

@@ -299,6 +299,15 @@
       var c1 = probe ? { x: a.x, y: a.y + 40 } : { x: a.x + out[0] * 30, y: a.y + out[1] * 30 };
       var c2 = probe ? { x: b.x, y: b.y + 60 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
       var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 18 : 0));
+      if (probe) {
+        // a probe above the meter: the cable goes down out of the jack and round the side, not over the display
+        var bx1 = (p.x + def.size[0]) * U, bx0 = p.x * U, by1 = (p.y + def.size[1]) * U, pbot = b.y + 39;
+        if (pbot < by1 && b.x > bx0 - 20 && b.x < bx1 + 20) {
+          var side = b.x > (bx0 + bx1) / 2 ? bx1 + 18 + k * 8 : bx0 - 18 - k * 8, sy = (a.y + pbot) / 2;
+          d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x) + ' ' + f1(a.y + 50) + ' ' + f1(side) + ' ' + f1(a.y + 40) + ' ' + f1(side) + ' ' + f1(sy) +
+            ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(b.x) + ' ' + f1(pbot + 30) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+        }
+      }
       s += '<path d="' + d + '" fill="none" stroke="#00000044" stroke-width="4.4" transform="translate(0 1.5)"/>';
       s += '<path d="' + d + '" fill="none" stroke="' + cols[k] + '" stroke-width="' + (probe ? 3.6 : 3) + '" stroke-linecap="round"/>';
       if (probe) {
@@ -461,7 +470,9 @@
     var shell = p.props.shell === 'white' ? '#eef0f2' : '#2f6fb7';
     var s = '<g transform="translate(' + x + ' ' + y + ')">';
     // back header strip (shown below the case)
-    s += '<rect x="34" y="270" width="210" height="28" rx="4" fill="#1d1f22" stroke="#555" stroke-dasharray="3 2"/>' + txt(36, 266, '40-pin header on the back (shown here)', 'tiny');
+    // the header is on the back of the case: drawn as a "pulled-out" view, joined by dashed guide lines
+    s += '<path d="M40 224 L40 270 M238 224 L238 270" stroke="#7d8792" stroke-width="1" stroke-dasharray="3 3"/>';
+    s += '<rect x="34" y="270" width="210" height="28" rx="4" fill="#1d1f22" stroke="#555" stroke-dasharray="3 2"/>' + txt(46, 250, '40-pin header (on the back)', 'tiny');
     s += '<rect x="0" y="0" width="285" height="224" rx="26" fill="' + shell + '" filter="url(#fShadow)"/>';
     [30, 76, 122].forEach(function (bx) { s += '<rect x="' + bx + '" y="-7" width="26" height="10" rx="3" fill="#20242a" stroke="#000" stroke-opacity=".4"/>'; });
     s += '<rect x="22" y="18" width="200" height="160" rx="8" fill="#0b0b0d"/>';

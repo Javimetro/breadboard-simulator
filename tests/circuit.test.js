@@ -226,11 +226,11 @@ test('PWM on two boards at once: knob 80 % and 20 % give ≈ 0.8 × 12.6 = 10.1 
   near(l2._i, full * d2, 'LED 2 average current');
 });
 
-test('MB102 short: the regulator limits at about 1 A (5 V / 5 Ω limit model), the rail falls near 0 V', () => {
+test('MB102 short: the regulator limits at its 0.7 A rating, the rail falls near 0 V (0.7 A × 0.05 Ω of wire and links)', () => {
   const sim = bench([['mb102', { x: 2, y: 0 }], ['wire', { ends: ['T+10', 'T-10'] }]]);
   for (let k = 0; k < 10; k++) sim.step(1 / 60);
   const mb = byType(sim, 'mb102')[0];
-  near(mb._i, 5 / (5 + 0.02 + 0.03), 'limited current'); // 5 V over 5 Ω limit + wire 0.02 Ω + rail links
+  near(mb._i, 0.7, 'limited current');
   assert.ok(sim.holeVoltage('T+20') < 0.05);
   for (let k = 0; k < 60; k++) sim.step(1 / 60);
   assert.ok(sim.res.issues.some(i => i.kind === 'short'), 'the short message stays on');
@@ -329,14 +329,15 @@ test('A USB port cannot take current back: 9 V on the 5V pin of a USB-powered Na
   assert.ok(byType(sim, 'nano')[0].st.dead);
 });
 
-test('Pi 5: both 5V pins (2 and 4) are the same net; 9 V on pin 2 kills it; from the MB102 it draws ≈0.6 A', () => {
+test('Pi 5: on the MB102 (0.7 A) it cannot start (needs > 1 A, 5 V / 4.2 Ω = 1.19 A) and keeps restarting; 9 V on pin 2 kills it', () => {
   const sim = bench([['mb102', { x: 2, y: 0 }], ['pi5', { x: 0, y: 22, props: { usb: false } }]]);
   const pi = byType(sim, 'pi5')[0];
   sim.state.parts.push(BB.newPart('wire', { ends: ['P:' + pi.id + ':1', 'T+20'] }), BB.newPart('wire', { ends: ['P:' + pi.id + ':5', 'T-20'] })); // phys pin 2 (5V), 6 (GND)
   sim.dirty();
-  for (let k = 0; k < 10; k++) sim.step(1 / 60);
-  assert.ok(pi.st.powered, 'powered from pin 2');
-  near(byType(sim, 'mb102')[0]._i, 5 / 8.3, 'Pi load current');
+  let restarts = 0, maxI = 0;
+  for (let k = 0; k < 240; k++) { sim.step(1 / 60); maxI = Math.max(maxI, byType(sim, 'mb102')[0]._i); if (sim.res.issues.some(i => /restarting/.test(i.title))) restarts++; }
+  assert.ok(restarts > 0, 'the Pi keeps restarting');
+  near(maxI, 0.7, 'the MB102 gives its 0.7 A limit while the Pi tries to start');
   const sim2 = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['pi5', { x: 0, y: 22, props: { usb: false } }]]);
   const pi2 = byType(sim2, 'pi5')[0];
   sim2.state.parts.push(BB.newPart('wire', { ends: ['P:' + pi2.id + ':1', 'T+20'] }), BB.newPart('wire', { ends: ['P:' + pi2.id + ':5', 'T-20'] }));
@@ -358,4 +359,22 @@ test('Two batteries in series (9 V + 3 V) through 1 kΩ: 12/1002.3 = 11.97 mA an
   for (let k = 0; k < 5; k++) sim.step(1 / 60);
   near(byType(sim, 'resistor')[0]._i, 12 / 1002.3, 'series current');
   assert.ok(!sim.res.issues.some(i => i.kind === 'noground'));
+});
+
+test('Nano from a 9 V battery on VIN: the 5V pin is a steady 5.00 V, and the battery gives the load current too', () => {
+  const sim = bench([['battery9', { ends: ['T+3', 'T-3'] }], ['nano', { x: 8, y: 5, props: { usb: false } }],
+    ['wire', { ends: ['h22', 'T+22'] }], ['wire', { ends: ['h21', 'T-21'] }], ['resistor', { props: { r: 47 }, ends: ['i19', 'i25'] }], ['wire', { ends: ['j25', 'B-26'] }], ['wire', { ends: ['j21', 'B-20'] }]]);
+  const n = byType(sim, 'nano')[0], v5 = [];
+  for (let k = 0; k < 20; k++) { sim.step(1 / 60); v5.push(n.st.lastV['5V']); }
+  assert.ok(v5.slice(5).every(v => Math.abs(v - 5) < 0.02), 'no flicker: ' + v5.slice(5).map(v => v.toFixed(2)).join(' '));
+  // load: 5 V / 47 Ω = 106 mA, plus the board's own 5 V / 250 Ω = 20 mA → the battery gives ≈ 126 mA
+  near(byType(sim, 'battery9')[0]._i, 5 / 47 + 5 / 250, 'battery current');
+});
+
+test('Red and yellow-green LEDs in parallel on one 220 Ω resistor: red ≈ 10 mA hogs it, green ≈ 1.4 mA (info message)', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['resistor', { props: { r: 220 }, ends: ['T+10', 'a10'] }], ['led', { ends: ['b10', 'T-11'] }], ['led', { props: { color: 'green' }, ends: ['c10', 'T-12'] }]]);
+  for (let k = 0; k < 5; k++) sim.step(1 / 60);
+  const [red, green] = byType(sim, 'led');
+  assert.ok(red._i > 2 * green._i, `red ${red._i} green ${green._i}`);
+  assert.ok(sim.res.issues.some(i => i.kind === 'hog'));
 });

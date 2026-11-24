@@ -79,8 +79,14 @@
         else if (!s.st.trig) txt = 'Sensor has no power';
         else if (e === null) txt = 'ECHO unclear (' + io.voltsPeak('echo').toFixed(2) + ' V)';
         else if (e === 0) txt = 'No echo';
-        else txt = 'Distance: ' + s.props.dist + ' cm';
-        io.mem.dist = s && e === 1 ? s.props.dist : null;
+        else {
+          // time the ECHO pulse: its share of the 60 ms cycle is (average ÷ peak) voltage;
+          // 58 µs of pulse = 1 cm (sound goes there and back)
+          var frac = io.voltsPeak('echo') > 0 ? io.volts('echo') / io.voltsPeak('echo') : 0;
+          if (frac > 0.6) txt = 'ECHO stuck HIGH (no pulse)';
+          else { var cm = Math.round(frac * 0.06 / 58e-6); txt = 'Distance: ' + cm + ' cm'; io.mem.dist = cm; }
+        }
+        if (!/^Distance/.test(txt)) io.mem.dist = null;
         io.show(['DISTANCE', txt]);
         io.print(txt);
       }
@@ -204,7 +210,12 @@
         return { t: s.props.temp, h: s.props.hum };
       }
     };
-    if (st.powered && !st.dead && st.lastV) prog.step(api);
+    // run the program only when the last reading was taken with these same pin settings
+    // (otherwise an input read before its pull-up was on would give a false value)
+    var ioKey = Object.keys(io).map(function (k) { return k + io[k].mode + (io[k].pull || ''); }).join('|');
+    var settled = st.lastV && st.ioKey === ioKey;
+    st.ioKey = ioKey;
+    if (st.powered && !st.dead && settled) prog.step(api);
     st.io = st.powered ? io : {};
     // Wio Terminal: its own screen shows what the program shows, or the serial output.
   }

@@ -391,7 +391,11 @@
       if (!step || !step.choices) return;
       var c = step.choices[i];
       if (c.ok) this.stepDone(c.why);
-      else { lv.wrong = (lv.wrong || 0) + 1; this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04); }
+      else {
+        lv.wrong = (lv.wrong || 0) + 1; this.toast(c.why, 'bad'); audio.blip(220, 0.18, 'sawtooth', 0.04);
+        // no blind guessing: after a wrong answer, look again (tap the holes) before answering
+        if (step.ready) { lv.tapped = {}; this.renderGoal(); }
+      }
     },
     // colour-band picker: the player reads the bands and picks each colour
     checkBands: function (picked) {
@@ -402,7 +406,7 @@
       for (var k = 0; k < 3; k++) if (picked[k] !== want[k]) bad.push(['1st', '2nd', '3rd'][k]);
       if (!bad.length) { this.stepDone(step.bands.ok); return; }
       lv.wrong = (lv.wrong || 0) + 1;
-      this.toast('The ' + bad.join(' and the ') + ' band ' + (bad.length > 1 ? 'are' : 'is') + ' not right. Zoom in on the resistor and look again: ' + step.bands.tip, 'bad');
+      this.toast((bad.length === 1 ? 'One band is' : bad.length + ' bands are') + ' not right. Zoom in on the resistor and look again: ' + step.bands.tip, 'bad');
       audio.blip(220, 0.18, 'sawtooth', 0.04);
     },
     hint: function () {
@@ -455,7 +459,7 @@
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
-      if (!state.parts.length) this.toast('Tap “Parts” to add components. Start with a battery or the MB102 power board.', 'info');
+      if (!state.parts.length) this.toast(window.innerWidth < 1100 ? 'Tap “Parts” to add components. Start with a battery or the MB102 power board.' : 'Pick a part on the left to add it. Start with a battery or the MB102 power board.', 'info');
     },
     renderChallenges: function () {
       var done = store.data.challenges || {}, self = this;
@@ -525,6 +529,7 @@
       });
       var html = '<div class="trayhead"><b>Parts</b><span class="mut small">Tap to add</span><button class="ibtn closetray" title="Close">' + icon('close') + '</button></div>';
       if (!list.length) html += '<p class="small mut">No parts needed here. Just tap the holes.</p>';
+      if (items) { groups = { all: [].concat.apply([], Object.keys(cats).map(function (c) { return groups[c] || []; })) }; cats = { all: '' }; } // levels: one grid
       Object.keys(cats).forEach(function (c) {
         if (!groups[c]) return;
         if (!items) html += '<h4>' + cats[c] + '</h4>';
@@ -669,7 +674,7 @@
 
     // ---------- undo / save ----------
     serialize: function () {
-      return JSON.stringify(this.sim.state, function (k, v) { if (k && (k[0] === '_' || k === 'vis' || k === 'lastV' || k === 'pinI' || k === 'io')) return undefined; return v; });
+      return JSON.stringify(this.sim.state, function (k, v) { if (k && (k[0] === '_' || k === 'vis' || k === 'lastV' || k === 'lastVpeak' || k === 'pinI' || k === 'io' || k === 'smoke' || k === 'ioKey')) return undefined; return v; });
     },
     snapshot: function () { return this.serialize(); },
     commit: function (before) {
@@ -838,14 +843,21 @@
     rotatePart: function (p) {
       var u = this.snapshot(), sim = this.sim, def = PARTS[p.type];
       var old = p.rot || 0;
+      // turn around the part's centre, so it stays where it was
+      var r0 = sim.bodyRect(p), c0 = { x: (r0.x0 + r0.x1) / 2, y: (r0.y0 + r0.y1) / 2 };
       p.rot = (old + 90) % 360;
-      // keep it plugged in if the rotated pins fit, else lift it off the board
+      var r1 = sim.bodyRect(p);
+      p.x += c0.x - (r1.x0 + r1.x1) / 2; p.y += c0.y - (r1.y0 + r1.y1) / 2;
+      // keep it plugged in if the rotated pins fit nearby, else lift it off the board
       var pts = sim.pinPoints(p), occ = sim.occupancy(), cov = sim.covered();
       var ok = !p.free && pts.every(function (q) { return q.at && (!occ[q.at] || occ[q.at].id === p.id) && (!cov[q.at] || cov[q.at] === p.id); });
       if (!ok) {
         var found = false;
-        for (var dx = -2; dx <= 2 && !found; dx++) for (var dy = -3; dy <= 3 && !found; dy++) {
-          var x0 = Math.round(p.x) + dx, y0 = Math.round(p.y) + dy;
+        var cands = [];
+        for (var dx = -4; dx <= 4; dx++) for (var dy = -4; dy <= 4; dy++) cands.push([dx, dy]);
+        cands.sort(function (a, b) { return Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]); });
+        for (var ci = 0; ci < cands.length && !found; ci++) {
+          var x0 = Math.round(p.x) + cands[ci][0], y0 = Math.round(p.y) + cands[ci][1];
           var good = def.pinPos.every(function (q) { var r = BB.rotate(q[0], q[1], p.rot), h = sim.board.holeAt(x0 + r[0], y0 + r[1]); return h && h.x === x0 + r[0] && h.y === y0 + r[1] && (!occ[h.id] || occ[h.id].id === p.id) && (!cov[h.id] || cov[h.id] === p.id); });
           if (good) { p.x = x0; p.y = y0; p.free = false; found = true; }
         }
@@ -964,6 +976,13 @@
       t.innerHTML = rich(text);
       $('#toasts').appendChild(t);
       var all = $('#toasts').children, max = window.innerWidth < 1100 ? 1 : 2; while (all.length > max) all[0].remove();
+      // phones: just under the goal card (or the top bar), never on top of the task text
+      var box = $('#toasts');
+      if (window.innerWidth < 1100) {
+        var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
+        box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
+        box.style.bottom = 'auto';
+      } else { box.style.top = ''; box.style.bottom = ''; }
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },
@@ -1027,6 +1046,7 @@
       pts = p.ends;
       if (spec.type === 'wire') { p.props.color = 'red'; pts = [{ x: 0, y: 0.6 }, { x: 3, y: 0.6 }]; }
       vb = [-14, -16, span * 10 + 28, 30];
+      if (spec.type === 'led') vb = [-12, -42, 34, 48]; // the LED body stands above its legs
       if (spec.type === 'capacitor') vb = [-14, -16, 42, 32];
     } else if (def.kind === 'rigid') {
       var b = def.body; pts = [];
