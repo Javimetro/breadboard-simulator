@@ -926,7 +926,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     pins.forEach(function (pin, i) {
       if (pin.kind === 'v5') {
         if (i !== first.v5) return;
-        if (usb) e.srcs.push(Object.assign(limSrc(n, st, 'usb', g, n.pin(i), 5.0, 0.2, cfg.usbMax), { label: pin.n, what: 'usb', idx: i }));
+        // USB gives 5 V; the Nano has a small diode (MBR0520) after it, so its 5V pin sits near 4.7 V
+        if (usb) e.srcs.push(Object.assign(limSrc(n, st, 'usb', g, n.pin(i), def.mcu === 'nano' ? 4.7 : 5.0, 0.2, cfg.usbMax), { label: pin.n, what: 'usb', idx: i }));
         else if (def.mcu === 'nano' && via === 'VIN') {
           // the Nano's linear regulator: a pass element from VIN to 5V. It drops VIN − 5 V, but
           // at least 1.1 V (its "dropout"), so all the 5V current really comes from VIN.
@@ -945,7 +946,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         n.R('p' + i, g, via === 'BAT' ? 46 : 1e6);
       }
     });
-    if (st.powered) e.vcc = n.V(vccNode, g, cfg.vcc); else n.R(vccNode, g, 1);
+    // the Nano's chip runs on whatever its 5V net has (4.7 V on USB, 5.0 V from the regulator)
+    var vcc = def.mcu === 'nano' ? (usb ? 4.7 : Math.max(4.3, Math.min(5.3, lv['5V'] || 5))) : cfg.vcc;
+    st.vcc = st.powered ? vcc : 0;
+    if (st.powered) e.vcc = n.V(vccNode, g, vcc); else n.R(vccNode, g, 1);
+    // power pins also have protection diodes from GND: a supply connected backwards drives a big current through them
+    pins.forEach(function (pin, i) { if (pin.kind === 'v5' || pin.kind === 'v33' || pin.kind === 'vin') { var dz = n.D(g, 'p' + i, SILICON.is * 1000, SILICON.nvt); if (n.flag) n.flag(dz, 'clamp'); } });
     var io = st.io || {};
     pins.forEach(function (pin, i) {
       if (pin.kind !== 'gpio') { if (pin.kind === 'rst' || pin.kind === 'nc') n.R('p' + i, g, 1e8); return; }
@@ -957,7 +963,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         var level = cfgPin.level;
         if (cfgPin.pwm !== undefined) level = ctx.pwmHigh ? (ctx.pwmHigh(cfgPin.pwm) ? 1 : 0) : 1;
         var src = n.node();
-        var vs = n.V(src, g, level ? cfg.vcc : 0);
+        var vs = n.V(src, g, level ? vcc : 0);
         rec = { el: n.R(src, 'p' + i, cfg.rout), mode: 'out', src: vs };
       } else {
         rec = { el: n.R('p' + i, g, 1e8), mode: 'in', pull: cfgPin.pull };
@@ -988,12 +994,21 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       if (v > mx) {
         st.pwrHeat = (st.pwrHeat || 0) + ctx.dt;
         var tip = pin.kind === 'v5' && def.mcu === 'nano' ? 'To power the Nano from 7–12 V (like a 9V battery), use the VIN pin: its regulator makes 5 V.'
-          : pin.kind === 'v33' ? 'Feed a 3.3V pin only from a 3.3 V supply.' : pin.kind === 'bat' ? 'BAT is for one LiPo cell (3.7–4.2 V).' : '';
+          : pin.kind === 'v33' ? 'Feed a 3.3V pin only from a 3.3 V supply.' : pin.kind === 'bat' ? 'BAT is for one {{LiPo}} cell (3.7–4.2 V).' : '';
         ctx.issue(p, 'overvolt', 'danger', 'Too much voltage on the ' + pin.n + ' pin: ' + fmtV(v), 'The ' + pin.n + ' pin takes at most ' + { v5: '5.5', v33: '3.6', vin: '20', bat: '4.3' }[pin.kind] + ' V. ' + tip, i);
         if (st.pwrHeat > 0.5) { st.dead = true; st.deadWhy = 'Its ' + pin.n + ' pin got ' + fmtV(v) + '.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
       }
     });
-    if (st.dead) ctx.issue(p, 'dead', 'danger', 'The ' + cfg.name + ' is dead', (st.deadWhy || '') + ' Too much voltage on a power pin destroys the board. Fix the wiring, then tap the board and press “New board”.');
+    def.pins.forEach(function (pin, i) {
+      if (st.dead || !(pin.kind === 'v5' || pin.kind === 'v33' || pin.kind === 'vin')) return;
+      var v = r.pinV(i) - r.v(e.g);
+      if (v < -0.4) {
+        st.pwrHeat = (st.pwrHeat || 0) + ctx.dt;
+        ctx.issue(p, 'reversed', 'danger', 'Power is backwards on the ' + pin.n + ' pin', 'The ' + pin.n + ' pin is ' + fmtV(v) + ' below GND: + and − are swapped. A big current flows through the chip’s protection diodes and it can burn. Swap the two power wires.', i);
+        if (st.pwrHeat > 0.5) { st.dead = true; st.deadWhy = 'Its power was connected backwards.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
+      }
+    });
+    if (st.dead) ctx.issue(p, 'dead', 'danger', 'The ' + cfg.name + ' is dead', (st.deadWhy || '') + ' On a real board this destroys it. Fix the wiring, then tap the board and press “New board”.');
     var v5i = def.pins.findIndex(function (q) { return q.kind === 'v5'; });
     if (def.mcu === 'pi5' && !st.dead && (st.extVia === '5V' || st.brownUntil > ctx.t)) {
       // a weak supply sags when the Pi starts (it needs over 1 A): it resets and tries again
@@ -1042,12 +1057,16 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       var v = st.lastVpeak[pin.n];
       // current pushed into the pin's protection diodes (from a higher voltage, or below GND)
       var inj = Math.max(pe.cHi !== undefined ? r.iPeak(pe.cHi) : 0, pe.cLo !== undefined ? r.iPeak(pe.cLo) : 0);
+      if (inj <= 0.001 && v > cfg.absMax + 0.05) {
+        ctx.issue(p, 'overvolt', 'warn', 'Pin ' + pin.n + ' gets ' + fmtV(v) + ': above its ' + cfg.absMax + ' V limit',
+          'Only a tiny current flows now, so it may survive, but this is outside the chip’s rating. ' + (cfg.vcc < 4 ? 'The ' + cfg.name + ' pins are not 5 V tolerant: use a voltage divider or a 3.3 V supply.' : ''), i);
+      }
       if (inj > 0.001) {
         var lowSide = pe.cLo !== undefined && r.iPeak(pe.cLo) > 0.001;
         if (inj > 0.005) st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * inj / 0.005;
         ctx.issue(p, 'overvolt', 'danger', lowSide ? 'Pin ' + pin.n + ' is pulled below GND' : 'Pin ' + pin.n + ' gets ' + fmtV(v) + '. That is too much!',
           (lowSide ? 'A pin must stay between GND and ' + cfg.vcc + ' V. Check that + and − are not swapped. ' :
-            'The ' + cfg.name + ' works at ' + cfg.vcc + ' V' + (st.powered ? '' : ' (and now it has no power at all)') + '. ' + fmtI(inj) + ' is pushed into the pin through its protection diode. More than about 1 mA can break the chip. ') +
+            'The ' + cfg.name + ' works at ' + cfg.vcc + ' V' + (st.powered ? '' : ' (and now it has no power at all)') + '. ' + fmtI(inj) + ' is pushed into the pin through its {{protection diode}}. More than about 1 mA can break the chip. ') +
           (cfg.vcc < 4 && !lowSide ? 'Use a voltage divider (two resistors) to bring 5 V down to about 3.3 V.' : ''), i);
         if (st.pinHeat[pin.n] > 1) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'About ' + fmtI(inj) + ' was pushed into it (it got ' + fmtV(v) + ').'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
       }
@@ -1118,17 +1137,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         p.st.burnt = true; p.st.burntBy = i; p.st.smoke = ctx.t;
         ctx.event(p, 'burn', i);
       }
-      // an LED survives only about 5 V backwards (from a real power source, not a meter)
+      // backwards from a real power source (not just a meter testing it)?
       var supplied = ctx.nodeSupplied(p, 0);
-      if (!p.st.burnt && supplied && vrev > 5.5) {
-        p.st.rev = (p.st.rev || 0) + ctx.dt / 2;
-        if (p.st.rev > 1) { p.st.burnt = true; p.st.burntBy = 0; p.st.revBurn = true; p.st.smoke = ctx.t; ctx.event(p, 'burn', 0); }
-      }
       p.vis = { b: p.st.burnt ? 0 : Math.min(1.25, Math.sqrt(Math.max(0, i) / 0.02)), burnt: !!p.st.burnt, hot: p.st.heat > 0.05 };
       if (p.st.burnt) {
         var vf = E.ledVf(p.props.color, 0.015);
-        if (p.st.revBurn) ctx.issue(p, 'burnt', 'danger', 'The LED broke', 'It was in backwards on more than 5 V. An LED can take only about 5 V the wrong way round. Tap it and press “New LED”, then put the long leg toward +.');
-        else ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
+        ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
           (p.st.burntBy ? 'About ' + fmtI(p.st.burntBy) + ' went through it. ' : '') +
           'An LED can take about 20 mA. With no resistor (or one that is too small) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED”.');
@@ -1141,7 +1155,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
           'Both legs are in the same strip (or joined by a wire). The current goes around the LED, not through it. Put the legs in two different strips.');
       } else if (vrev > 1.0 && supplied) {
         ctx.issue(p, 'reversed', 'warn', 'The LED is in backwards',
-          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.' + (vrev > 5 ? ' Over about 5 V backwards it breaks.' : ''));
+          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.' + (vrev > 5 ? ' (LEDs are only rated for 5 V backwards. With a resistor in the loop almost no current flows, so it survives.)' : ''));
       } else if (i > 0.001) {
         // LEDs side by side on one resistor: the one with the lower voltage takes most current
         var na = ctx.netOfPin(p, 0), nk = ctx.netOfPin(p, 1);
@@ -1417,7 +1431,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     hot: [{ id: 'dial', x: 7.7, y: 15.05, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
-      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows the voltage an LED or diode needs, in mV. Red probe on the long leg (+). OL (over limit) = no current flows: backwards, or more than 2 V.', off: 'The meter is off.' }[p.props.mode];
+      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows the voltage an LED or {{diode}} needs, in mV. Red probe on the long leg (+). OL (over limit) = no current flows: backwards, or more than 2 V. Blue, white and bright-green LEDs need about 2.6–3 V, so this meter shows OL for them even when they are fine.', off: 'The meter is off.' }[p.props.mode];
       return [['Reading', (rd.text || '—') + ' ' + (rd.unit || '')], ['Mode', help], ['Range', 'This meter picks the range for you. On a real DT-830B you turn the dial to a range, like 20 V or 200 mA.']];
     }
   };
@@ -1426,7 +1440,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   var np = nanoPins();
   PARTS.nano = {
     name: 'Arduino Nano', cat: 'boards', kind: 'rigid', mcu: 'nano',
-    desc: 'A small Arduino board (ATmega328P chip). It works at 5V. Put it across the middle gap so each pin has its own strip. Power: USB, 5V on the 5V pin, or 7–12 V on {{VIN}}.',
+    desc: 'A small Arduino board (ATmega328P chip). It works at 5V. Put it across the middle gap so each pin has its own strip. Power: USB, 5V on the 5V pin, or 7–12 V on {{VIN}}. On USB its 5V pin gives about 4.7 V (a small diode protects your computer).',
     pins: np.pins, pinPos: np.pos,
     body: [-2.0, -0.6, 15.0, 6.6], covers: true,
     defaults: { usb: true, program: 'none' },
@@ -1438,7 +1452,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   var fp = featherPins();
   PARTS.esp32 = {
     name: 'ESP32 Feather (HUZZAH32)', cat: 'boards', kind: 'rigid', mcu: 'esp32',
-    desc: 'An Adafruit board with an ESP32 chip (Wi-Fi + Bluetooth). It works at 3.3V: its pins must never get 5V. Power: USB, or a LiPo on {{BAT}}. {{EN}} and {{RST}} are control pins.',
+    desc: 'An Adafruit board with an ESP32 chip (Wi-Fi + Bluetooth). It works at 3.3V: its pins must never get 5V. Power: USB, or a {{LiPo}} battery on {{BAT}}. {{EN}} and {{RST}} are control pins.',
     pins: fp.pins, pinPos: fp.pos,
     body: [-2.6, -0.55, 17.4, 8.55], covers: true,
     defaults: { usb: true, program: 'none' },
@@ -1514,7 +1528,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     // the module's own pull-up resistors go to its VCC: on 5 V they pull a 3.3 V board's pins too high
     if (ok && mcu && BOARDS[PARTS[mcu.type].mcu].vcc < 4 && (p.st.vcc || 0) > 3.8) {
       ctx.issue(p, 'i2cvolt', 'warn', 'SDA and SCL are pulled up to ' + fmtV(p.st.vcc),
-        'This screen has small pull-up resistors to its VCC. With VCC on 5V they pull the ' + BOARDS[PARTS[mcu.type].mcu].name + ' pins above 3.3 V (its limit is 3.6 V). Power the screen from the 3.3V pin instead, or use a level shifter.');
+        'This screen has small pull-up resistors to its VCC. With VCC on 5V they pull the ' + BOARDS[PARTS[mcu.type].mcu].name + ' pins above 3.3 V (its limit is 3.6 V). Power the screen from the 3.3V pin instead, or use a {{level shifter}}.');
     }
     return lines;
   }
@@ -1639,9 +1653,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       var v = r.pinV(0) - r.pinV(3);
       if (v > 2.5 && v < 4.5) ctx.issue(p, 'lowv', 'warn', 'The distance sensor needs 5V', 'It gets ' + fmtV(v) + '. At 3.3V the HC-SR04 does not work well. Power it from 5V (on an ESP32 Feather: the USB pin).');
       // a measurement starts when TRIG gets a short HIGH pulse (more than about 2 V)
-      var trigPeak = r.pinVpeak(1) - r.pinV(3);
+      var trigPeak = r.pinVpeak(1) - r.pinV(3), trigAvg = r.pinV(1) - r.pinV(3);
       var was = !!p.st.trig;
-      p.st.trig = ok && trigPeak > 2.0;
+      // it measures on each short pulse (HIGH, then LOW again); a steady HIGH starts nothing
+      var pulsing = trigPeak > 2.0 && trigAvg < 0.5 * trigPeak;
+      p.st.trig = ok && pulsing;
+      if (ok && trigPeak > 2.0 && !pulsing) ctx.issue(p, 'trigsteady', 'info', 'TRIG is HIGH all the time', 'The sensor starts a measurement on a short pulse (HIGH for 10 µs, then LOW). A steady HIGH does nothing. Connect TRIG to a board pin that sends the pulses.', 1);
       var d = p.st.trig ? Math.min(0.5, p.props.dist * 58e-6 / 0.06) : 0;
       if (was !== p.st.trig || d !== p.st.duty) ctx.dirty();
       p.st.duty = d;
@@ -2101,11 +2118,15 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   // Is anything changing over time, so the simulation must keep stepping?
   S.isDynamic = function () {
     var dyn = this._dirty;
+    // while something is in danger (heating, a pin being pushed), time must keep running,
+    // so the result never depends on what else happens to be on the bench
+    if (this.res && this.res.issues.some(function (i) { return i.level === 'danger'; })) dyn = true;
     this.state.parts.forEach(function (p) {
       var def = PARTS[p.type], st = p.st || {};
       if (def.mcu && st.powered && p.props.program && p.props.program !== 'none') dyn = true;
       if (def.mcu && (st.usbTripped || (st.pinHeat && Object.keys(st.pinHeat).length))) dyn = true;
       if (st.heat > 0 && st.heat < 1) dyn = true;
+      if (st.rev > 0 || st.pwrHeat > 0) dyn = true;
       if (st.tripped) dyn = true;
       if (def.dynamic && def.dynamic(p)) dyn = true;
       if (st.segHeat && Object.keys(st.segHeat).some(function (k) { return st.segHeat[k] > 0; })) dyn = true;
@@ -2343,8 +2364,10 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         var label = pinFor(p, role), pin = def.pins[pinIdx[label]];
         if (!pin || !pin.analog || !cfg.adcMax) return null;
         if (st.floating && st.floating[label]) { st.mem._noise = Math.max(0.1, Math.min(0.9, (st.mem._noise || 0.5) + (Math.random() - 0.5) * 0.12)); return Math.round(st.mem._noise * cfg.adcMax); }
-        var v = Math.max(0, Math.min(cfg.adcRef, lv[label] || 0));
-        return Math.round(v / cfg.adcRef * cfg.adcMax);
+        // the Nano compares with its own supply (AVCC), so the number does not change when 5 V sags
+        var ref = def.mcu === 'nano' && st.vcc ? st.vcc : cfg.adcRef;
+        var v = Math.max(0, Math.min(ref, lv[label] || 0));
+        return Math.round(v / ref * cfg.adcMax);
       },
       show: function (lines) { st.display = lines; },
       print: function (line) {
@@ -3640,7 +3663,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     'short circuit': '+ joined to − with (almost) nothing in between. A huge current flows and things get hot.',
     'series': 'One after the other in the same path. The same current goes through each part.',
     'parallel': 'Side by side: both ends joined. Each part gets the same voltage.',
-    'mA': 'Milliamp: one thousandth of an amp. 20 mA = 0.02 A.',
+    'mA': 'Milliamp: one thousandth of an amp. 20 mA = 0.02 A. (1 mA = 1000 µA.)',
     'potentiometer': 'A resistor with a knob. The middle leg (the wiper) slides along it.',
     'jumper': 'A small plastic cap with metal inside that joins two pins. On the MB102 it picks 3.3V or 5V.',
     'regulator': 'A chip that keeps a voltage steady, for example at exactly 5V or 3.3V.',
@@ -3686,6 +3709,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     'AO': 'Analog out: a pin whose voltage goes up and down with the signal (here: how loud the sound is).',
     'DO': 'Digital out: a pin that is only HIGH or LOW (here: HIGH when the sound is louder than a set level).',
     'trimmer': 'A small potentiometer that you turn with a screwdriver or a little knob. It does the same job as a big knob.',
+    'diode': 'A part that lets current flow only one way. An LED is a diode that also makes light.',
+    'protection diode': 'A tiny diode inside a chip, from each pin to + and to GND. It catches small wrong voltages; a big current through it burns the chip.',
+    'level shifter': 'A small board that turns 5 V signals into 3.3 V signals (and back), so 5 V and 3.3 V parts can talk safely.',
+    'tolerance': 'How exact a resistor is. Gold = ±5 %: a 4.7 kΩ resistor is really between 4.47 and 4.94 kΩ.',
+    'LiPo': 'A flat rechargeable lithium battery. One cell gives 3.7 V (4.2 V when full).',
+    'µA': 'Microamp: one thousandth of a mA. 703 µA = 0.703 mA.',
     'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
@@ -3970,7 +3999,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
-        if (p && lit(l) && (L.flags.maxI || 0) > 0.012 && Math.abs(L.flags.maxI - (L.flags.minI || 1)) < 0.003) return 'The brightness does not change: you are using the two outer legs. Use one outer leg and the middle leg ({{wiper}}, marked W).';
+        // the knob is in the loop, but through its two outer legs: always the full 10 kΩ, so the LED is dim and never changes
+        if (p && l && inSeries(p, l) && L.alone(p, 1)) return 'You use the two outer legs of the knob. Between them it is always the full ' + fmt.R(p.props.r) + ', so the LED stays dim and turning does nothing. Use one outer leg and the middle leg ({{wiper}}, marked W).';
         return whyDark(L, l);
       },
       hints: ['Path: + rail → knob leg 1 → knob middle leg ({{wiper}}, W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the + rail to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
@@ -4017,9 +4047,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
-        { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band (tolerance) is at the other end.' } },
+        { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
       explain: function (L) {
@@ -4055,11 +4085,18 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! The pin gives 5 V, and 220 Ω keeps the current near 12 mA.' }
+        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 11 mA.' }
       ],
-      explain: function (L) { var l = L.of('led')[0]; var n = L.of('nano')[0]; if (n && n.props.program === 'blink' && l && !lit(l) && !(n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return whyDark(L, l); return null; },
+      explain: function (L) {
+        var l = L.of('led')[0], n = L.of('nano')[0];
+        if (!n || n.props.program !== 'blink' || !l || lit(l) || (n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return null;
+        // the LED's − side goes somewhere, but not back to the Nano's GND: say that, not "not connected"
+        var nk = L.net(l, 1);
+        if (nk !== null && !L.alone(l, 1) && anyGndNet(L, n).indexOf(nk) < 0) return 'The LED’s short leg (−) is in a strip or rail that is not joined to the Nano’s GND. Current must flow back to the Nano. Add a wire from a GND pin to that rail.';
+        return whyDark(L, l);
+      },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it (h, i, j) are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives 5 V. With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 12 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -4078,14 +4115,20 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
           if (!ldr || !r) return false;
           var a0 = mcuPinNet(L, n, 'A0'), v5 = mcuPinNet(L, n, '5V'), gnd = anyGndNet(L, n);
           var ln = [L.net(ldr, 0), L.net(ldr, 1)], rn = [L.net(r, 0), L.net(r, 1)];
-          return ln.indexOf(a0) >= 0 && ln.indexOf(v5) >= 0 && rn.indexOf(a0) >= 0 && (gnd.indexOf(rn[0]) >= 0 || gnd.indexOf(rn[1]) >= 0);
+          var isG = function (x) { return gnd.indexOf(x) >= 0; };
+          // LDR on top (more light → bigger number) or upside down (more light → smaller number): both are real dividers
+          var normal = ln.indexOf(a0) >= 0 && ln.indexOf(v5) >= 0 && rn.indexOf(a0) >= 0 && (isG(rn[0]) || isG(rn[1]));
+          var flipped = ln.indexOf(a0) >= 0 && (isG(ln[0]) || isG(ln[1])) && rn.indexOf(a0) >= 0 && rn.indexOf(v5) >= 0;
+          L.flags.flipped = flipped && !normal;
+          return normal || flipped;
         }, ok: 'Now A0 gets a voltage that follows the light.' },
         { text: 'Tap the light sensor and move its Light slider from bright to dark. Watch the number.', check: function (L) {
-          var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0, a = Math.round(v / 5 * 1023), f = L.flags;
+          var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0, a = Math.round(v / (n.st.vcc || 5) * 1023), f = L.flags;
           if (!L.part('oled').st.mcu) return false;
-          if (a > 600) f.hi = true; if (a < 300 && f.hi) f.lo = true;
+          // either way round: the number must swing from big to small (or small to big) as the light changes
+          if (a > 600) f.hi = true; if (a < 300) f.lo = true;
           return f.hi && f.lo;
-        }, ok: 'Bright: big number. Dark: small number. Your light meter works!' }
+        }, ok: 'The number follows the light. Your light meter works! (With the LDR on top, more light gives a bigger number.)' }
       ],
       explain: function (L) {
         var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0;
@@ -4133,7 +4176,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (5 V ÷ 253 Ω: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
+      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (4.7 V ÷ 253 Ω ≈ 19 mA: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');

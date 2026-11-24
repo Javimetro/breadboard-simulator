@@ -22,7 +22,7 @@
     'short circuit': '+ joined to − with (almost) nothing in between. A huge current flows and things get hot.',
     'series': 'One after the other in the same path. The same current goes through each part.',
     'parallel': 'Side by side: both ends joined. Each part gets the same voltage.',
-    'mA': 'Milliamp: one thousandth of an amp. 20 mA = 0.02 A.',
+    'mA': 'Milliamp: one thousandth of an amp. 20 mA = 0.02 A. (1 mA = 1000 µA.)',
     'potentiometer': 'A resistor with a knob. The middle leg (the wiper) slides along it.',
     'jumper': 'A small plastic cap with metal inside that joins two pins. On the MB102 it picks 3.3V or 5V.',
     'regulator': 'A chip that keeps a voltage steady, for example at exactly 5V or 3.3V.',
@@ -68,6 +68,12 @@
     'AO': 'Analog out: a pin whose voltage goes up and down with the signal (here: how loud the sound is).',
     'DO': 'Digital out: a pin that is only HIGH or LOW (here: HIGH when the sound is louder than a set level).',
     'trimmer': 'A small potentiometer that you turn with a screwdriver or a little knob. It does the same job as a big knob.',
+    'diode': 'A part that lets current flow only one way. An LED is a diode that also makes light.',
+    'protection diode': 'A tiny diode inside a chip, from each pin to + and to GND. It catches small wrong voltages; a big current through it burns the chip.',
+    'level shifter': 'A small board that turns 5 V signals into 3.3 V signals (and back), so 5 V and 3.3 V parts can talk safely.',
+    'tolerance': 'How exact a resistor is. Gold = ±5 %: a 4.7 kΩ resistor is really between 4.47 and 4.94 kΩ.',
+    'LiPo': 'A flat rechargeable lithium battery. One cell gives 3.7 V (4.2 V when full).',
+    'µA': 'Microamp: one thousandth of a mA. 703 µA = 0.703 mA.',
     'polarity': 'Which side is + and which is −. Some parts (LED, electrolytic capacitor, buzzer) only work one way round.'
   };
 
@@ -352,7 +358,8 @@
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
-        if (p && lit(l) && (L.flags.maxI || 0) > 0.012 && Math.abs(L.flags.maxI - (L.flags.minI || 1)) < 0.003) return 'The brightness does not change: you are using the two outer legs. Use one outer leg and the middle leg ({{wiper}}, marked W).';
+        // the knob is in the loop, but through its two outer legs: always the full 10 kΩ, so the LED is dim and never changes
+        if (p && l && inSeries(p, l) && L.alone(p, 1)) return 'You use the two outer legs of the knob. Between them it is always the full ' + fmt.R(p.props.r) + ', so the LED stays dim and turning does nothing. Use one outer leg and the middle leg ({{wiper}}, marked W).';
         return whyDark(L, l);
       },
       hints: ['Path: + rail → knob leg 1 → knob middle leg ({{wiper}}, W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the + rail to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
@@ -399,9 +406,9 @@
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20'); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
-        { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band (tolerance) is at the other end.' } },
+        { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
       explain: function (L) {
@@ -437,11 +444,18 @@
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! The pin gives 5 V, and 220 Ω keeps the current near 12 mA.' }
+        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 11 mA.' }
       ],
-      explain: function (L) { var l = L.of('led')[0]; var n = L.of('nano')[0]; if (n && n.props.program === 'blink' && l && !lit(l) && !(n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return whyDark(L, l); return null; },
+      explain: function (L) {
+        var l = L.of('led')[0], n = L.of('nano')[0];
+        if (!n || n.props.program !== 'blink' || !l || lit(l) || (n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return null;
+        // the LED's − side goes somewhere, but not back to the Nano's GND: say that, not "not connected"
+        var nk = L.net(l, 1);
+        if (nk !== null && !L.alone(l, 1) && anyGndNet(L, n).indexOf(nk) < 0) return 'The LED’s short leg (−) is in a strip or rail that is not joined to the Nano’s GND. Current must flow back to the Nano. Add a wire from a GND pin to that rail.';
+        return whyDark(L, l);
+      },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it (h, i, j) are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives 5 V. With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 12 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -460,14 +474,20 @@
           if (!ldr || !r) return false;
           var a0 = mcuPinNet(L, n, 'A0'), v5 = mcuPinNet(L, n, '5V'), gnd = anyGndNet(L, n);
           var ln = [L.net(ldr, 0), L.net(ldr, 1)], rn = [L.net(r, 0), L.net(r, 1)];
-          return ln.indexOf(a0) >= 0 && ln.indexOf(v5) >= 0 && rn.indexOf(a0) >= 0 && (gnd.indexOf(rn[0]) >= 0 || gnd.indexOf(rn[1]) >= 0);
+          var isG = function (x) { return gnd.indexOf(x) >= 0; };
+          // LDR on top (more light → bigger number) or upside down (more light → smaller number): both are real dividers
+          var normal = ln.indexOf(a0) >= 0 && ln.indexOf(v5) >= 0 && rn.indexOf(a0) >= 0 && (isG(rn[0]) || isG(rn[1]));
+          var flipped = ln.indexOf(a0) >= 0 && (isG(ln[0]) || isG(ln[1])) && rn.indexOf(a0) >= 0 && rn.indexOf(v5) >= 0;
+          L.flags.flipped = flipped && !normal;
+          return normal || flipped;
         }, ok: 'Now A0 gets a voltage that follows the light.' },
         { text: 'Tap the light sensor and move its Light slider from bright to dark. Watch the number.', check: function (L) {
-          var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0, a = Math.round(v / 5 * 1023), f = L.flags;
+          var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0, a = Math.round(v / (n.st.vcc || 5) * 1023), f = L.flags;
           if (!L.part('oled').st.mcu) return false;
-          if (a > 600) f.hi = true; if (a < 300 && f.hi) f.lo = true;
+          // either way round: the number must swing from big to small (or small to big) as the light changes
+          if (a > 600) f.hi = true; if (a < 300) f.lo = true;
           return f.hi && f.lo;
-        }, ok: 'Bright: big number. Dark: small number. Your light meter works!' }
+        }, ok: 'The number follows the light. Your light meter works! (With the LDR on top, more light gives a bigger number.)' }
       ],
       explain: function (L) {
         var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0;
@@ -515,7 +535,7 @@
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (5 V ÷ 253 Ω: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
+      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 20 mA, the safe limit. (4.7 V ÷ 253 Ω ≈ 19 mA: 220 Ω resistor, 8 Ω speaker, about 25 Ω inside the pin.)',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');

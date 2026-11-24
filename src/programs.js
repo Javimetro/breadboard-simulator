@@ -181,8 +181,10 @@
         var label = pinFor(p, role), pin = def.pins[pinIdx[label]];
         if (!pin || !pin.analog || !cfg.adcMax) return null;
         if (st.floating && st.floating[label]) { st.mem._noise = Math.max(0.1, Math.min(0.9, (st.mem._noise || 0.5) + (Math.random() - 0.5) * 0.12)); return Math.round(st.mem._noise * cfg.adcMax); }
-        var v = Math.max(0, Math.min(cfg.adcRef, lv[label] || 0));
-        return Math.round(v / cfg.adcRef * cfg.adcMax);
+        // the Nano compares with its own supply (AVCC), so the number does not change when 5 V sags
+        var ref = def.mcu === 'nano' && st.vcc ? st.vcc : cfg.adcRef;
+        var v = Math.max(0, Math.min(ref, lv[label] || 0));
+        return Math.round(v / ref * cfg.adcMax);
       },
       show: function (lines) { st.display = lines; },
       print: function (line) {

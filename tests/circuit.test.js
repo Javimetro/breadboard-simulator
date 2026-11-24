@@ -144,7 +144,7 @@ test('Meter in mA mode across the rails: the fuse blows', () => {
   assert.ok(byType(sim, 'meter')[0].st.fuse);
 });
 
-test('Arduino Nano across the gap runs Blink on D13 (like the Arduino example): LED blinks at ≈12.6 mA ((5−1.93)/(25+220+...))', () => {
+test('Arduino Nano on USB (4.7 V after its diode) runs Blink on D13: LED blinks at 11.49 mA (hand: (4.7 − Vf)/245 Ω, Vf ≈ 1.89 V)', () => {
   const sim = bench([
     ['nano', { x: 8, y: 5, props: { program: 'blink' } }],      // top row c8..c22, bottom row g8..g22
     ['resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }],   // D13 is bottom row index 0 → column 8
@@ -156,7 +156,7 @@ test('Arduino Nano across the gap runs Blink on D13 (like the Arduino example): 
   assert.equal(pts[15].at, 'g8'); assert.equal(BB.PARTS.nano.pins[15].n, 'D13');
   let maxI = 0, minI = 1;
   for (let k = 0; k < 90; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); minI = Math.min(minI, led._i); }
-  near(maxI, 0.012642, 'LED on');
+  near(maxI, 0.011485, 'LED on');
   assert.ok(minI < 1e-6, 'LED off part of the time');
 });
 
@@ -198,11 +198,11 @@ test('Two supplies without a common GND: LED stays dark and a "No common GND" wa
   assert.ok(sim.res.issues.some(i => i.kind === 'noground'));
   sim.state.parts.push(BB.newPart('wire', { ends: ['h21', 'B-20'] })); sim.dirty();
   for (let k = 0; k < 60; k++) { sim.step(1 / 60); maxI = Math.max(maxI, led._i); }
-  near(maxI, 0.012642, 'LED on with common GND');
+  near(maxI, 0.011485, 'LED on with common GND');
   assert.ok(!sim.res.issues.some(i => i.kind === 'noground'));
 });
 
-test('PWM on two boards at once: knob 80 % and 20 % give ≈ 0.8 × 12.6 = 10.1 mA and ≈ 0.2 × 12.6 = 2.5 mA', () => {
+test('PWM on two boards at once: knob ≈80 % and ≈20 % give ≈ 0.82 × 11.5 mA and ≈ 0.18 × 11.5 mA (USB Nano: 4.7 V)', () => {
   const sim = bench([
     ['nano', { x: 1, y: 5, props: { program: 'fade_knob' } }],
     ['nano', { x: 16, y: 5, props: { program: 'fade_knob' } }]
@@ -220,7 +220,7 @@ test('PWM on two boards at once: knob 80 % and 20 % give ≈ 0.8 × 12.6 = 10.1 
   add('resistor', { props: { r: 220 }, ends: ['a19', 'a40'] }); add('led', { ends: ['b40', 'b41'] }); add('wire', { ends: ['a41', 'a27'] });
   for (let k = 0; k < 30; k++) sim.step(1 / 60);
   const [l1, l2] = byType(sim, 'led');
-  const full = 0.012642;
+  const full = 0.011485;
   const d1 = Math.round(5 * 4.7 / 5.7 / 5 * 1023) / 1023, d2 = Math.round(5 * 1 / 5.7 / 5 * 1023) / 1023;
   near(l1._i, full * d1, 'LED 1 average current');
   near(l2._i, full * d2, 'LED 2 average current');

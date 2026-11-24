@@ -346,11 +346,15 @@
   // Is anything changing over time, so the simulation must keep stepping?
   S.isDynamic = function () {
     var dyn = this._dirty;
+    // while something is in danger (heating, a pin being pushed), time must keep running,
+    // so the result never depends on what else happens to be on the bench
+    if (this.res && this.res.issues.some(function (i) { return i.level === 'danger'; })) dyn = true;
     this.state.parts.forEach(function (p) {
       var def = PARTS[p.type], st = p.st || {};
       if (def.mcu && st.powered && p.props.program && p.props.program !== 'none') dyn = true;
       if (def.mcu && (st.usbTripped || (st.pinHeat && Object.keys(st.pinHeat).length))) dyn = true;
       if (st.heat > 0 && st.heat < 1) dyn = true;
+      if (st.rev > 0 || st.pwrHeat > 0) dyn = true;
       if (st.tripped) dyn = true;
       if (def.dynamic && def.dynamic(p)) dyn = true;
       if (st.segHeat && Object.keys(st.segHeat).some(function (k) { return st.segHeat[k] > 0; })) dyn = true;
