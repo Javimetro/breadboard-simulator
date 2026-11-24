@@ -372,7 +372,12 @@
         var hid = h && hit && (hit.kind === 'hole' || hit.kind === 'end' || (hit.kind === 'body' && this.sim.occupancy()[h.id])) ? h.id : null;
         if (!this.stickyHi && hid !== this.hiHole) { this.hiHole = hid; this.renderUi(); }
         else if (this.wireStart) this.renderUi();
-        if (hid) this.showTip(hid, e.clientX, e.clientY); else this.hideTip();
+        if (hid) this.showTip(hid, e.clientX, e.clientY);
+        else {
+          // header pins of off-board parts (Pi, Wio, screens): show the pin's name and voltage
+          var pin = this.offPinAt(w, 0.6);
+          if (pin) this.showPinTip(pin, e.clientX, e.clientY); else this.hideTip();
+        }
         this.svg.style.cursor = hit && (hit.kind === 'body' || hit.kind === 'end' || hit.kind === 'hot') ? 'grab' : (this.tool === 'wire' ? 'crosshair' : 'default');
       }
       return;
@@ -404,6 +409,13 @@
       if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
       if (d.kind === 'end') this.select(d.hit.id, true);
       this.hideLoupe();
+    }
+    // dragging something near the edge of the bench moves the view, so a far hole can be reached
+    if (d.kind === 'end' || d.kind === 'body' || d.kind === 'wire') {
+      var sz = this.size(), px = e.clientX - sz.left, py = e.clientY - sz.top, edge = 36, sx = 0, sy = 0;
+      if (px < edge) sx = (edge - px) / 3; else if (px > sz.w - edge) sx = -(px - sz.w + edge) / 3;
+      if (py < edge) sy = (edge - py) / 3; else if (py > sz.h - edge) sy = -(py - sz.h + edge) / 3;
+      if (sx || sy) { this.view.tx += sx; this.view.ty += sy; this.applyView(); w = this.toWorld(e.clientX, e.clientY); }
     }
     if (d.kind === 'pan') {
       this.view.tx = d.v0.tx + dx; this.view.ty = d.v0.ty + dy; this.applyView();
@@ -551,6 +563,8 @@
       this.select(hit.id);
       var pt = sim.pinPoints(sim.part(hit.id));
       if (hit.kind === 'end' && pt[hit.k].at && pt[hit.k].at.slice(0, 2) !== 'P:') this.app.onTapHole(pt[hit.k].at, true);
+      var op = hit.kind === 'body' ? this.offPinAt(d.w0, 0.5) : null; // tapped a header pin: say its name
+      if (op) this.showPinTip(op, e.clientX, e.clientY);
       return;
     }
     if (hit.kind === 'hole') {
@@ -587,6 +601,27 @@
     this.tip.hidden = false;
   };
   B.hideTip = function () { this.tip.hidden = true; };
+  // the off-board header pin under a world point, as 'P:<part>:<pin>'
+  B.offPinAt = function (w, r) {
+    var best = null, bd = r * r;
+    this.sim.state.parts.forEach(function (p) {
+      if (PARTS[p.type].kind !== 'offboard') return;
+      PARTS[p.type].pinPos.forEach(function (q, k) {
+        var d = (p.x + q[0] - w.x) * (p.x + q[0] - w.x) + (p.y + q[1] - w.y) * (p.y + q[1] - w.y);
+        if (d < bd) { bd = d; best = 'P:' + p.id + ':' + k; }
+      });
+    });
+    return best;
+  };
+  B.showPinTip = function (at, x, y) {
+    var b = at.split(':'), p = this.sim.part(b[1]), pin = PARTS[p.type].pins[+b[2]], res = this.sim.res;
+    var v = res && res.keyPowered[at] ? res.keyV[at] : null;
+    this.tip.innerHTML = '<b>' + (pin.phys ? 'Pin ' + pin.phys + ': ' : '') + pin.n + '</b> · ' + PARTS[p.type].name + '<br>' + (v === null ? '<span class="mut">No power here</span>' : '<b class="vv">' + v.toFixed(2) + ' V</b>');
+    var sz = this.size();
+    this.tip.style.left = Math.min(sz.left + sz.w - 190, Math.max(sz.left + 4, x + 14)) + 'px';
+    this.tip.style.top = Math.max(sz.top + 4, y - 64) + 'px';
+    this.tip.hidden = false;
+  };
   B.showLoupe = function (cx, cy, w, at) {
     if (!this.loupe || (this.drag && this.drag.ptype === 'mouse')) return;
     var R = 15; // world radius in pitch units shown in the loupe... adjusted for zoom

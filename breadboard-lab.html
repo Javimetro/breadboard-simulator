@@ -398,6 +398,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     <h1 id="introTitle"></h1>
     <div id="introPic"></div>
     <p id="introText"></p>
+    <p id="introTip" class="mut small"></p>
     <div class="ibtns"><button id="introBack">Levels</button><button id="introGo" class="primary">Start</button></div>
   </div>
 </section>
@@ -1373,7 +1374,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     name: 'Multimeter', cat: 'tools', kind: 'module',
     desc: 'Measures voltage (V), current (A) and resistance (Ω). Red probe = +, black probe = COM (−).',
     pins: [{ n: 'red', d: 'Red probe (V Ω mA)' }, { n: 'black', d: 'Black probe (COM)' }],
-    size: [15.4, 26.6], leadFrom: [[5.74, 26.04], [9.66, 26.04]],
+    size: [15.4, 26.6], leadFrom: [[13.02, 20.16], [13.02, 22.96]], // VΩmA and COM jacks (drawing × 0.7)
     defaults: { mode: 'V' },
     props: [{ k: 'mode', label: 'Dial', type: 'seg', options: ['off', 'V', 'A', 'ohm', 'diode'], labels: ['OFF', 'DCV', 'DCA', 'Ω', '→|'] }],
     stamp: function (p, n) {
@@ -1428,7 +1429,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       p.st.reading = { m: m, text: read, unit: unit, val: val };
       p.vis = { text: read, unit: unit, m: m };
     },
-    hot: [{ id: 'dial', x: 7.7, y: 15.05, r: 4.6, kind: 'dial' }],
+    hot: [{ id: 'dial', x: 6.65, y: 15.96, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
       var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows the voltage an LED or {{diode}} needs, in mV. Red probe on the long leg (+). OL (over limit) = no current flows: backwards, or more than 2 V. Blue, white and bright-green LEDs need about 2.6–3 V, so this meter shows OL for them even when they are fine.', off: 'The meter is off.' }[p.props.mode];
@@ -1465,7 +1466,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   PARTS.pi5 = {
     name: 'Raspberry Pi 5', cat: 'boards', kind: 'offboard', mcu: 'pi5',
     desc: 'A full small computer. It is too big for the breadboard, so you connect its {{GPIO}} {{header pin|header pins}} with jumper wires. Its pins work at 3.3V. Pin names like GPIO17 are {{BCM}} numbers.',
-    pins: pp.pins, pinPos: pp.pos.map(function (q) { return [q[0] + 7.4, q[1] + 1.0]; }),
+    pins: pp.pins, pinPos: pp.pos.map(function (q) { return [q[0] + 2.9, q[1] + 1.0]; }), // pin 1 is about 7 mm from the left edge
     size: [33.5, 22],
     defaults: { usb: true, program: 'none' },
     props: [{ k: 'usb', label: 'Power supply plugged in', type: 'toggle' }],
@@ -2633,8 +2634,10 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   function pinDots(pos, col) {
     return pos.map(function (q) { return '<rect x="' + f1(q[0] * U - 2.2) + '" y="' + f1(q[1] * U - 2.2) + '" width="4.4" height="4.4" rx=".8" fill="#1a1a1a"/><circle cx="' + f1(q[0] * U) + '" cy="' + f1(q[1] * U) + '" r="1.35" fill="' + (col || 'url(#gGold)') + '"/>'; }).join('');
   }
-  function headerPinsSvg(pos) {
-    return pos.map(function (q) { return '<rect x="' + f1(q[0] * U - 3.6) + '" y="' + f1(q[1] * U - 3.6) + '" width="7.2" height="7.2" rx="1" fill="#1d1d1d"/><rect x="' + f1(q[0] * U - 1.3) + '" y="' + f1(q[1] * U - 1.3) + '" width="2.6" height="2.6" fill="url(#gGold)"/>'; }).join('');
+  // pins: optional pin list; power pins get a coloured base (5V red, 3.3V orange, GND black) so they are easy to find
+  var PIN_COL = { v5: '#c8302a', v33: '#e08a1c', gnd: '#050505' };
+  function headerPinsSvg(pos, pins) {
+    return pos.map(function (q, i) { var c = pins && PIN_COL[pins[i].kind]; return '<rect x="' + f1(q[0] * U - 3.6) + '" y="' + f1(q[1] * U - 3.6) + '" width="7.2" height="7.2" rx="1" fill="' + (c || '#1d1d1d') + '"' + (pins && pins[i].kind === 'gnd' ? ' stroke="#9aa0a8" stroke-width=".6"' : '') + '/><rect x="' + f1(q[0] * U - 1.3) + '" y="' + f1(q[1] * U - 1.3) + '" width="2.6" height="2.6" fill="url(#gGold)"/>'; }).join('');
   }
 
   DRAW.button = function (p) {
@@ -2714,7 +2717,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       if (probe) {
         // a probe above the meter: the cable goes down out of the jack and round the side, not over the display
         var bx1 = (p.x + def.size[0]) * U, bx0 = p.x * U, by1 = (p.y + def.size[1]) * U, pbot = b.y + 39;
-        if (pbot < by1 && b.x > bx0 - 20 && b.x < bx1 + 20) {
+        if (b.x < bx0 - 10 || b.x > bx1 + 10) {
+          // probe off to the side: out of the jack to the right, under the meter, then up to the probe
+          var qx = a.x + 30 + k * 6, qy = by1 + 18 + k * 8;
+          d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x + 40) + ' ' + f1(a.y) + ' ' + f1(qx + 10) + ' ' + f1(qy - 30) + ' ' + f1(qx) + ' ' + f1(qy) +
+            ' C' + f1(qx - 60) + ' ' + f1(qy + 30) + ' ' + f1(b.x) + ' ' + f1(Math.max(pbot, qy) + 40) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+        } else if (pbot < by1) {
           var side = b.x > (bx0 + bx1) / 2 ? bx1 + 18 + k * 8 : bx0 - 18 - k * 8, sy = (a.y + pbot) / 2;
           d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x) + ' ' + f1(a.y + 50) + ' ' + f1(side) + ' ' + f1(a.y + 40) + ' ' + f1(side) + ' ' + f1(sy) +
             ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(b.x) + ' ' + f1(pbot + 30) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
@@ -2739,21 +2747,22 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     s += '<text x="184" y="98" class="lcdu" text-anchor="end">' + (m === 'off' ? '' : (v.unit || '')) + '</text>';
     if (p.st.fuse && m === 'A') s += '<text x="34" y="44" class="lcdu">FUSE</text>';
     s += txt(110, 122, 'DT-830B', 'mtrb', ' text-anchor="middle"');
-    // dial: OFF at the top; DCV, DCA, Ω and diode sections around it (like a DT-830B)
+    // dial (left) with OFF at the top and the DCV, DCA, Ω and diode sections; jacks stacked on the right (like a DT-830B)
+    var DX = 95, DY = 228;
     var ang = { off: 0, V: -70, A: 70, ohm: 140, diode: -140 }[m];
-    s += '<circle cx="110" cy="215" r="74" fill="#1d1e21" stroke="#444" stroke-width="1"/>';
-    [[-118, -22, '#e9e9e9'], [22, 118, '#e9e9e9'], [125, 160, '#e9e9e9']].forEach(function (seg) {
-      for (var t = seg[0]; t <= seg[1]; t += 12) { var aa = (t - 90) * Math.PI / 180; s += '<line x1="' + f1(110 + Math.cos(aa) * 66) + '" y1="' + f1(215 + Math.sin(aa) * 66) + '" x2="' + f1(110 + Math.cos(aa) * 71) + '" y2="' + f1(215 + Math.sin(aa) * 71) + '" stroke="' + seg[2] + '" stroke-width="1.4"/>'; }
+    s += '<circle cx="' + DX + '" cy="' + DY + '" r="70" fill="#1d1e21" stroke="#444" stroke-width="1"/>';
+    [[-118, -22], [22, 118], [125, 160]].forEach(function (seg) {
+      for (var t = seg[0]; t <= seg[1]; t += 12) { var aa = (t - 90) * Math.PI / 180; s += '<line x1="' + f1(DX + Math.cos(aa) * 62) + '" y1="' + f1(DY + Math.sin(aa) * 62) + '" x2="' + f1(DX + Math.cos(aa) * 67) + '" y2="' + f1(DY + Math.sin(aa) * 67) + '" stroke="#e9e9e9" stroke-width="1.4"/>'; }
     });
     [['OFF', 0], ['DCV', -70], ['DCA', 70], ['Ω', 140], ['→|', -140]].forEach(function (lb) {
       var aa = (lb[1] - 90) * Math.PI / 180;
-      s += '<text x="' + f1(110 + Math.cos(aa) * 54) + '" y="' + f1(215 + Math.sin(aa) * 54 + 4) + '" class="mtrl" text-anchor="middle">' + lb[0] + '</text>';
+      s += '<text x="' + f1(DX + Math.cos(aa) * 50) + '" y="' + f1(DY + Math.sin(aa) * 50 + 4) + '" class="mtrl" text-anchor="middle">' + lb[0] + '</text>';
     });
-    s += '<g transform="translate(110 215) rotate(' + ang + ')"><circle r="36" fill="#111" stroke="#555" stroke-width="1.4"/><rect x="-7" y="-38" width="14" height="76" rx="6" fill="#2c2c2c" stroke="#666" stroke-width=".8"/><path d="M0 -36 L-4 -26 L4 -26Z" fill="#fff"/></g>';
-    // jacks
-    [['10A', 50, '#d8322b'], ['COM', 138, '#1c1c1c'], ['VΩmA', 82, '#d8322b']].forEach(function (j) {
-      s += '<circle cx="' + j[1] + '" cy="345" r="9" fill="#111" stroke="' + j[2] + '" stroke-width="2.5"/>';
-      s += txt(j[1], 330, j[0], 'mtrs', ' text-anchor="middle"');
+    s += '<g transform="translate(' + DX + ' ' + DY + ') rotate(' + ang + ')"><circle r="33" fill="#111" stroke="#555" stroke-width="1.4"/><rect x="-7" y="-35" width="14" height="70" rx="6" fill="#2c2c2c" stroke="#666" stroke-width=".8"/><path d="M0 -33 L-4 -23 L4 -23Z" fill="#fff"/></g>';
+    // jacks, top to bottom: 10A, VΩmA (red probe), COM (black probe)
+    [['10ADC', 248, '#d8322b'], ['VΩmA', 288, '#d8322b'], ['COM', 328, '#1c1c1c']].forEach(function (j) {
+      s += '<circle cx="186" cy="' + j[1] + '" r="9" fill="#111" stroke="' + j[2] + '" stroke-width="2.5"/>';
+      s += txt(186, j[1] - 13, j[0], 'mtrs', ' text-anchor="middle"');
     });
     s += '</g>';
     return s + leads(p, pts, ['#d8322b', '#1e1e1e'], true);
@@ -2849,8 +2858,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     var s = '<g transform="translate(' + x + ' ' + y + ')">';
     s += '<rect x="0" y="0" width="335" height="220" rx="12" fill="#2c8a43" filter="url(#fShadow)"/>';
     [[12, 12], [12, 208], [244, 12], [244, 208]].forEach(function (h) { s += '<circle cx="' + h[0] + '" cy="' + h[1] + '" r="7" fill="#e9e2c8"/><circle cx="' + h[0] + '" cy="' + h[1] + '" r="4" fill="#3b3b3b"/>'; });
-    s += '<rect x="68" y="-0.5" width="202" height="24" fill="#111"/>';
-    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0], q[1]]; }));
+    s += '<rect x="23" y="-0.5" width="202" height="24" fill="#111"/>';
+    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0], q[1]]; }), def.pins);
     s += '<rect x="280" y="6" width="22" height="9" rx="1" fill="#f1efe8"/>' + txt(281, 24, 'FAN', 'tiny');
     s += '<rect x="96" y="66" width="64" height="64" rx="4" fill="url(#gMetal)" stroke="#888"/>' + txt(128, 100, 'RASPBERRY PI', 'chip dark', ' text-anchor="middle"') + txt(128, 110, 'BCM2712', 'tiny dark', ' text-anchor="middle"');
     s += '<rect x="182" y="74" width="30" height="30" rx="2" fill="#1c1c1c"/>' + txt(197, 92, 'RP1', 'tiny', ' text-anchor="middle"');
@@ -2900,7 +2909,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     s += '<rect x="40" y="218" width="34" height="12" rx="2" fill="#f1efe8" stroke="#999"/><rect x="211" y="218" width="34" height="12" rx="2" fill="#f1efe8" stroke="#999"/><rect x="128" y="219" width="28" height="9" rx="4" fill="url(#gMetal)"/>';
     s += txt(46, 240, 'Grove', 'tiny' + (p.props.shell === 'white' ? ' dark' : '')) + txt(217, 240, 'Grove', 'tiny' + (p.props.shell === 'white' ? ' dark' : ''));
     s += '</g>';
-    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0] + p.x, q[1] + p.y]; }));
+    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0] + p.x, q[1] + p.y]; }), def.pins);
     def.pins.forEach(function (pin, i) {
       var q = def.pinPos[i];
       s += '<text x="' + f1(x + q[0] * U) + '" y="' + f1(y + q[1] * U + (q[1] < 28.9 ? -4.6 : 7.8)) + '" class="hdr" text-anchor="middle">' + pin.phys + '</text>';
@@ -3404,7 +3413,12 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
         var hid = h && hit && (hit.kind === 'hole' || hit.kind === 'end' || (hit.kind === 'body' && this.sim.occupancy()[h.id])) ? h.id : null;
         if (!this.stickyHi && hid !== this.hiHole) { this.hiHole = hid; this.renderUi(); }
         else if (this.wireStart) this.renderUi();
-        if (hid) this.showTip(hid, e.clientX, e.clientY); else this.hideTip();
+        if (hid) this.showTip(hid, e.clientX, e.clientY);
+        else {
+          // header pins of off-board parts (Pi, Wio, screens): show the pin's name and voltage
+          var pin = this.offPinAt(w, 0.6);
+          if (pin) this.showPinTip(pin, e.clientX, e.clientY); else this.hideTip();
+        }
         this.svg.style.cursor = hit && (hit.kind === 'body' || hit.kind === 'end' || hit.kind === 'hot') ? 'grab' : (this.tool === 'wire' ? 'crosshair' : 'default');
       }
       return;
@@ -3436,6 +3450,13 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
       if (d.kind === 'end') this.select(d.hit.id, true);
       this.hideLoupe();
+    }
+    // dragging something near the edge of the bench moves the view, so a far hole can be reached
+    if (d.kind === 'end' || d.kind === 'body' || d.kind === 'wire') {
+      var sz = this.size(), px = e.clientX - sz.left, py = e.clientY - sz.top, edge = 36, sx = 0, sy = 0;
+      if (px < edge) sx = (edge - px) / 3; else if (px > sz.w - edge) sx = -(px - sz.w + edge) / 3;
+      if (py < edge) sy = (edge - py) / 3; else if (py > sz.h - edge) sy = -(py - sz.h + edge) / 3;
+      if (sx || sy) { this.view.tx += sx; this.view.ty += sy; this.applyView(); w = this.toWorld(e.clientX, e.clientY); }
     }
     if (d.kind === 'pan') {
       this.view.tx = d.v0.tx + dx; this.view.ty = d.v0.ty + dy; this.applyView();
@@ -3583,6 +3604,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       this.select(hit.id);
       var pt = sim.pinPoints(sim.part(hit.id));
       if (hit.kind === 'end' && pt[hit.k].at && pt[hit.k].at.slice(0, 2) !== 'P:') this.app.onTapHole(pt[hit.k].at, true);
+      var op = hit.kind === 'body' ? this.offPinAt(d.w0, 0.5) : null; // tapped a header pin: say its name
+      if (op) this.showPinTip(op, e.clientX, e.clientY);
       return;
     }
     if (hit.kind === 'hole') {
@@ -3619,6 +3642,27 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     this.tip.hidden = false;
   };
   B.hideTip = function () { this.tip.hidden = true; };
+  // the off-board header pin under a world point, as 'P:<part>:<pin>'
+  B.offPinAt = function (w, r) {
+    var best = null, bd = r * r;
+    this.sim.state.parts.forEach(function (p) {
+      if (PARTS[p.type].kind !== 'offboard') return;
+      PARTS[p.type].pinPos.forEach(function (q, k) {
+        var d = (p.x + q[0] - w.x) * (p.x + q[0] - w.x) + (p.y + q[1] - w.y) * (p.y + q[1] - w.y);
+        if (d < bd) { bd = d; best = 'P:' + p.id + ':' + k; }
+      });
+    });
+    return best;
+  };
+  B.showPinTip = function (at, x, y) {
+    var b = at.split(':'), p = this.sim.part(b[1]), pin = PARTS[p.type].pins[+b[2]], res = this.sim.res;
+    var v = res && res.keyPowered[at] ? res.keyV[at] : null;
+    this.tip.innerHTML = '<b>' + (pin.phys ? 'Pin ' + pin.phys + ': ' : '') + pin.n + '</b> · ' + PARTS[p.type].name + '<br>' + (v === null ? '<span class="mut">No power here</span>' : '<b class="vv">' + v.toFixed(2) + ' V</b>');
+    var sz = this.size();
+    this.tip.style.left = Math.min(sz.left + sz.w - 190, Math.max(sz.left + 4, x + 14)) + 'px';
+    this.tip.style.top = Math.max(sz.top + 4, y - 64) + 'px';
+    this.tip.hidden = false;
+  };
   B.showLoupe = function (cx, cy, w, at) {
     if (!this.loupe || (this.drag && this.drag.ptype === 'mouse')) return;
     var R = 15; // world radius in pitch units shown in the loupe... adjusted for zoom
@@ -4346,6 +4390,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       };
       requestAnimationFrame(loop);
       window.addEventListener('resize', function () { if (self.sim) self.bench.renderUi(); });
+      $('#stage').addEventListener('pointerdown', function () { $('#toasts').innerHTML = ''; });
       document.addEventListener('pointerdown', function () { audio.init(); if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume(); }, true);
       document.addEventListener('keydown', function (e) {
         if (!self.sim || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
@@ -4459,6 +4504,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       $('#introTitle').textContent = def.title;
       $('#introPic').innerHTML = '<svg viewBox="0 0 320 180" class="ipic">' + def.intro.pic() + '</svg>';
       $('#introText').innerHTML = rich(def.intro.text);
+      // the first time: how to move around (shown here, not over the board)
+      $('#introTip').textContent = store.data.tipShown ? '' : (window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.');
+      store.data.tipShown = true; store.save();
       $('#introGo').textContent = again ? 'Back to the level' : 'Start';
       $('#introGo').onclick = function () { if (again) { self.show('play'); self.bench.renderUi(); } else self.beginLevel(def); };
       $('#introBack').onclick = function () { self.showHome(); };
@@ -4492,10 +4540,6 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
-      if (!store.data.tipShown) {
-        store.data.tipShown = true; store.save();
-        this.toast(window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.', 'info');
-      }
     },
     fitView: function () {
       if (this.mode === 'level' && this.level.def.view) {
@@ -4924,8 +4968,15 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     undo: function () {
       var s = this.undoStack.pop();
       if (!s) { this.toast('Nothing to undo.', 'info'); return; }
-      var st = JSON.parse(s);
-      st.parts.forEach(function (p) { p.st = p.st || {}; });
+      var st = JSON.parse(s), now = {};
+      this.sim.state.parts.forEach(function (p) { now[p.id] = p; });
+      // undo puts parts back where they were, but a burnt LED stays burnt (like on a real desk)
+      var KEEP = ['burnt', 'burntBy', 'burntSeg', 'dead', 'deadWhy', 'damaged', 'damageWhy', 'fuse'];
+      st.parts.forEach(function (p) {
+        p.st = p.st || {};
+        var cur = now[p.id]; if (!cur) return;
+        KEEP.forEach(function (k) { if (cur.st[k] !== undefined) p.st[k] = cur.st[k]; });
+      });
       this.sim.state.parts = st.parts;
       if (st.board.cols !== this.sim.board.cols || !!st.board.split !== !!this.sim.board.split) { this.sim.setBoard(st.board); this.bench.renderBoard(); }
       this.sim.dirty();
@@ -4940,7 +4991,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
     focusPart: function (p) {
       var bench = this.bench;
       if (this.mode === 'level') document.body.classList.add('goalmin');
-      if (bench.view.s * 10 < 19) bench.view.s = 2.2;
+      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
+      if (bench.view.s * 10 < 19 && !big) bench.view.s = 2.2;
+      if (big) { this.ensureVisible(p); return; }
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
       var pts = this.sim.pinPoints(p), r = this.sim.bodyRect(p);
       var cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
@@ -5213,12 +5266,16 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
       t.innerHTML = rich(text);
       $('#toasts').appendChild(t);
       var all = $('#toasts').children, max = window.innerWidth < 1100 ? 1 : 2; while (all.length > max) all[0].remove();
-      // phones: just under the goal card (or the top bar), never on top of the task text
+      // phones: above the toolbar; while a sheet is open, under the goal card instead.
+      // They never take taps, and the next touch on the bench clears them.
       var box = $('#toasts');
       if (window.innerWidth < 1100) {
-        var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
-        box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
-        box.style.bottom = 'auto';
+        var sheet = document.body.classList.contains('hassel') || document.body.classList.contains('trayopen');
+        if (sheet) {
+          var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
+          box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
+          box.style.bottom = 'auto';
+        } else { box.style.top = 'auto'; box.style.bottom = 'calc(74px + env(safe-area-inset-bottom, 0px))'; }
       } else { box.style.top = ''; box.style.bottom = ''; }
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },

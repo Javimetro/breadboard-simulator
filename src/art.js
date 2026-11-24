@@ -221,8 +221,10 @@
   function pinDots(pos, col) {
     return pos.map(function (q) { return '<rect x="' + f1(q[0] * U - 2.2) + '" y="' + f1(q[1] * U - 2.2) + '" width="4.4" height="4.4" rx=".8" fill="#1a1a1a"/><circle cx="' + f1(q[0] * U) + '" cy="' + f1(q[1] * U) + '" r="1.35" fill="' + (col || 'url(#gGold)') + '"/>'; }).join('');
   }
-  function headerPinsSvg(pos) {
-    return pos.map(function (q) { return '<rect x="' + f1(q[0] * U - 3.6) + '" y="' + f1(q[1] * U - 3.6) + '" width="7.2" height="7.2" rx="1" fill="#1d1d1d"/><rect x="' + f1(q[0] * U - 1.3) + '" y="' + f1(q[1] * U - 1.3) + '" width="2.6" height="2.6" fill="url(#gGold)"/>'; }).join('');
+  // pins: optional pin list; power pins get a coloured base (5V red, 3.3V orange, GND black) so they are easy to find
+  var PIN_COL = { v5: '#c8302a', v33: '#e08a1c', gnd: '#050505' };
+  function headerPinsSvg(pos, pins) {
+    return pos.map(function (q, i) { var c = pins && PIN_COL[pins[i].kind]; return '<rect x="' + f1(q[0] * U - 3.6) + '" y="' + f1(q[1] * U - 3.6) + '" width="7.2" height="7.2" rx="1" fill="' + (c || '#1d1d1d') + '"' + (pins && pins[i].kind === 'gnd' ? ' stroke="#9aa0a8" stroke-width=".6"' : '') + '/><rect x="' + f1(q[0] * U - 1.3) + '" y="' + f1(q[1] * U - 1.3) + '" width="2.6" height="2.6" fill="url(#gGold)"/>'; }).join('');
   }
 
   DRAW.button = function (p) {
@@ -302,7 +304,12 @@
       if (probe) {
         // a probe above the meter: the cable goes down out of the jack and round the side, not over the display
         var bx1 = (p.x + def.size[0]) * U, bx0 = p.x * U, by1 = (p.y + def.size[1]) * U, pbot = b.y + 39;
-        if (pbot < by1 && b.x > bx0 - 20 && b.x < bx1 + 20) {
+        if (b.x < bx0 - 10 || b.x > bx1 + 10) {
+          // probe off to the side: out of the jack to the right, under the meter, then up to the probe
+          var qx = a.x + 30 + k * 6, qy = by1 + 18 + k * 8;
+          d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x + 40) + ' ' + f1(a.y) + ' ' + f1(qx + 10) + ' ' + f1(qy - 30) + ' ' + f1(qx) + ' ' + f1(qy) +
+            ' C' + f1(qx - 60) + ' ' + f1(qy + 30) + ' ' + f1(b.x) + ' ' + f1(Math.max(pbot, qy) + 40) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+        } else if (pbot < by1) {
           var side = b.x > (bx0 + bx1) / 2 ? bx1 + 18 + k * 8 : bx0 - 18 - k * 8, sy = (a.y + pbot) / 2;
           d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x) + ' ' + f1(a.y + 50) + ' ' + f1(side) + ' ' + f1(a.y + 40) + ' ' + f1(side) + ' ' + f1(sy) +
             ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(b.x) + ' ' + f1(pbot + 30) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
@@ -327,21 +334,22 @@
     s += '<text x="184" y="98" class="lcdu" text-anchor="end">' + (m === 'off' ? '' : (v.unit || '')) + '</text>';
     if (p.st.fuse && m === 'A') s += '<text x="34" y="44" class="lcdu">FUSE</text>';
     s += txt(110, 122, 'DT-830B', 'mtrb', ' text-anchor="middle"');
-    // dial: OFF at the top; DCV, DCA, Ω and diode sections around it (like a DT-830B)
+    // dial (left) with OFF at the top and the DCV, DCA, Ω and diode sections; jacks stacked on the right (like a DT-830B)
+    var DX = 95, DY = 228;
     var ang = { off: 0, V: -70, A: 70, ohm: 140, diode: -140 }[m];
-    s += '<circle cx="110" cy="215" r="74" fill="#1d1e21" stroke="#444" stroke-width="1"/>';
-    [[-118, -22, '#e9e9e9'], [22, 118, '#e9e9e9'], [125, 160, '#e9e9e9']].forEach(function (seg) {
-      for (var t = seg[0]; t <= seg[1]; t += 12) { var aa = (t - 90) * Math.PI / 180; s += '<line x1="' + f1(110 + Math.cos(aa) * 66) + '" y1="' + f1(215 + Math.sin(aa) * 66) + '" x2="' + f1(110 + Math.cos(aa) * 71) + '" y2="' + f1(215 + Math.sin(aa) * 71) + '" stroke="' + seg[2] + '" stroke-width="1.4"/>'; }
+    s += '<circle cx="' + DX + '" cy="' + DY + '" r="70" fill="#1d1e21" stroke="#444" stroke-width="1"/>';
+    [[-118, -22], [22, 118], [125, 160]].forEach(function (seg) {
+      for (var t = seg[0]; t <= seg[1]; t += 12) { var aa = (t - 90) * Math.PI / 180; s += '<line x1="' + f1(DX + Math.cos(aa) * 62) + '" y1="' + f1(DY + Math.sin(aa) * 62) + '" x2="' + f1(DX + Math.cos(aa) * 67) + '" y2="' + f1(DY + Math.sin(aa) * 67) + '" stroke="#e9e9e9" stroke-width="1.4"/>'; }
     });
     [['OFF', 0], ['DCV', -70], ['DCA', 70], ['Ω', 140], ['→|', -140]].forEach(function (lb) {
       var aa = (lb[1] - 90) * Math.PI / 180;
-      s += '<text x="' + f1(110 + Math.cos(aa) * 54) + '" y="' + f1(215 + Math.sin(aa) * 54 + 4) + '" class="mtrl" text-anchor="middle">' + lb[0] + '</text>';
+      s += '<text x="' + f1(DX + Math.cos(aa) * 50) + '" y="' + f1(DY + Math.sin(aa) * 50 + 4) + '" class="mtrl" text-anchor="middle">' + lb[0] + '</text>';
     });
-    s += '<g transform="translate(110 215) rotate(' + ang + ')"><circle r="36" fill="#111" stroke="#555" stroke-width="1.4"/><rect x="-7" y="-38" width="14" height="76" rx="6" fill="#2c2c2c" stroke="#666" stroke-width=".8"/><path d="M0 -36 L-4 -26 L4 -26Z" fill="#fff"/></g>';
-    // jacks
-    [['10A', 50, '#d8322b'], ['COM', 138, '#1c1c1c'], ['VΩmA', 82, '#d8322b']].forEach(function (j) {
-      s += '<circle cx="' + j[1] + '" cy="345" r="9" fill="#111" stroke="' + j[2] + '" stroke-width="2.5"/>';
-      s += txt(j[1], 330, j[0], 'mtrs', ' text-anchor="middle"');
+    s += '<g transform="translate(' + DX + ' ' + DY + ') rotate(' + ang + ')"><circle r="33" fill="#111" stroke="#555" stroke-width="1.4"/><rect x="-7" y="-35" width="14" height="70" rx="6" fill="#2c2c2c" stroke="#666" stroke-width=".8"/><path d="M0 -33 L-4 -23 L4 -23Z" fill="#fff"/></g>';
+    // jacks, top to bottom: 10A, VΩmA (red probe), COM (black probe)
+    [['10ADC', 248, '#d8322b'], ['VΩmA', 288, '#d8322b'], ['COM', 328, '#1c1c1c']].forEach(function (j) {
+      s += '<circle cx="186" cy="' + j[1] + '" r="9" fill="#111" stroke="' + j[2] + '" stroke-width="2.5"/>';
+      s += txt(186, j[1] - 13, j[0], 'mtrs', ' text-anchor="middle"');
     });
     s += '</g>';
     return s + leads(p, pts, ['#d8322b', '#1e1e1e'], true);
@@ -437,8 +445,8 @@
     var s = '<g transform="translate(' + x + ' ' + y + ')">';
     s += '<rect x="0" y="0" width="335" height="220" rx="12" fill="#2c8a43" filter="url(#fShadow)"/>';
     [[12, 12], [12, 208], [244, 12], [244, 208]].forEach(function (h) { s += '<circle cx="' + h[0] + '" cy="' + h[1] + '" r="7" fill="#e9e2c8"/><circle cx="' + h[0] + '" cy="' + h[1] + '" r="4" fill="#3b3b3b"/>'; });
-    s += '<rect x="68" y="-0.5" width="202" height="24" fill="#111"/>';
-    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0], q[1]]; }));
+    s += '<rect x="23" y="-0.5" width="202" height="24" fill="#111"/>';
+    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0], q[1]]; }), def.pins);
     s += '<rect x="280" y="6" width="22" height="9" rx="1" fill="#f1efe8"/>' + txt(281, 24, 'FAN', 'tiny');
     s += '<rect x="96" y="66" width="64" height="64" rx="4" fill="url(#gMetal)" stroke="#888"/>' + txt(128, 100, 'RASPBERRY PI', 'chip dark', ' text-anchor="middle"') + txt(128, 110, 'BCM2712', 'tiny dark', ' text-anchor="middle"');
     s += '<rect x="182" y="74" width="30" height="30" rx="2" fill="#1c1c1c"/>' + txt(197, 92, 'RP1', 'tiny', ' text-anchor="middle"');
@@ -488,7 +496,7 @@
     s += '<rect x="40" y="218" width="34" height="12" rx="2" fill="#f1efe8" stroke="#999"/><rect x="211" y="218" width="34" height="12" rx="2" fill="#f1efe8" stroke="#999"/><rect x="128" y="219" width="28" height="9" rx="4" fill="url(#gMetal)"/>';
     s += txt(46, 240, 'Grove', 'tiny' + (p.props.shell === 'white' ? ' dark' : '')) + txt(217, 240, 'Grove', 'tiny' + (p.props.shell === 'white' ? ' dark' : ''));
     s += '</g>';
-    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0] + p.x, q[1] + p.y]; }));
+    s += headerPinsSvg(def.pinPos.map(function (q) { return [q[0] + p.x, q[1] + p.y]; }), def.pins);
     def.pins.forEach(function (pin, i) {
       var q = def.pinPos[i];
       s += '<text x="' + f1(x + q[0] * U) + '" y="' + f1(y + q[1] * U + (q[1] < 28.9 ? -4.6 : 7.8)) + '" class="hdr" text-anchor="middle">' + pin.phys + '</text>';

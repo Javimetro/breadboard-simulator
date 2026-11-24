@@ -637,7 +637,7 @@
     name: 'Multimeter', cat: 'tools', kind: 'module',
     desc: 'Measures voltage (V), current (A) and resistance (Ω). Red probe = +, black probe = COM (−).',
     pins: [{ n: 'red', d: 'Red probe (V Ω mA)' }, { n: 'black', d: 'Black probe (COM)' }],
-    size: [15.4, 26.6], leadFrom: [[5.74, 26.04], [9.66, 26.04]],
+    size: [15.4, 26.6], leadFrom: [[13.02, 20.16], [13.02, 22.96]], // VΩmA and COM jacks (drawing × 0.7)
     defaults: { mode: 'V' },
     props: [{ k: 'mode', label: 'Dial', type: 'seg', options: ['off', 'V', 'A', 'ohm', 'diode'], labels: ['OFF', 'DCV', 'DCA', 'Ω', '→|'] }],
     stamp: function (p, n) {
@@ -692,7 +692,7 @@
       p.st.reading = { m: m, text: read, unit: unit, val: val };
       p.vis = { text: read, unit: unit, m: m };
     },
-    hot: [{ id: 'dial', x: 7.7, y: 15.05, r: 4.6, kind: 'dial' }],
+    hot: [{ id: 'dial', x: 6.65, y: 15.96, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
       var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows the voltage an LED or {{diode}} needs, in mV. Red probe on the long leg (+). OL (over limit) = no current flows: backwards, or more than 2 V. Blue, white and bright-green LEDs need about 2.6–3 V, so this meter shows OL for them even when they are fine.', off: 'The meter is off.' }[p.props.mode];
@@ -729,7 +729,7 @@
   PARTS.pi5 = {
     name: 'Raspberry Pi 5', cat: 'boards', kind: 'offboard', mcu: 'pi5',
     desc: 'A full small computer. It is too big for the breadboard, so you connect its {{GPIO}} {{header pin|header pins}} with jumper wires. Its pins work at 3.3V. Pin names like GPIO17 are {{BCM}} numbers.',
-    pins: pp.pins, pinPos: pp.pos.map(function (q) { return [q[0] + 7.4, q[1] + 1.0]; }),
+    pins: pp.pins, pinPos: pp.pos.map(function (q) { return [q[0] + 2.9, q[1] + 1.0]; }), // pin 1 is about 7 mm from the left edge
     size: [33.5, 22],
     defaults: { usb: true, program: 'none' },
     props: [{ k: 'usb', label: 'Power supply plugged in', type: 'toggle' }],

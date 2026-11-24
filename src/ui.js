@@ -109,6 +109,7 @@
       };
       requestAnimationFrame(loop);
       window.addEventListener('resize', function () { if (self.sim) self.bench.renderUi(); });
+      $('#stage').addEventListener('pointerdown', function () { $('#toasts').innerHTML = ''; });
       document.addEventListener('pointerdown', function () { audio.init(); if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume(); }, true);
       document.addEventListener('keydown', function (e) {
         if (!self.sim || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
@@ -222,6 +223,9 @@
       $('#introTitle').textContent = def.title;
       $('#introPic').innerHTML = '<svg viewBox="0 0 320 180" class="ipic">' + def.intro.pic() + '</svg>';
       $('#introText').innerHTML = rich(def.intro.text);
+      // the first time: how to move around (shown here, not over the board)
+      $('#introTip').textContent = store.data.tipShown ? '' : (window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.');
+      store.data.tipShown = true; store.save();
       $('#introGo').textContent = again ? 'Back to the level' : 'Start';
       $('#introGo').onclick = function () { if (again) { self.show('play'); self.bench.renderUi(); } else self.beginLevel(def); };
       $('#introBack').onclick = function () { self.showHome(); };
@@ -255,10 +259,6 @@
       this.fitView();
       this.bench.render(true);
       this.onSelect(null);
-      if (!store.data.tipShown) {
-        store.data.tipShown = true; store.save();
-        this.toast(window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.', 'info');
-      }
     },
     fitView: function () {
       if (this.mode === 'level' && this.level.def.view) {
@@ -687,8 +687,15 @@
     undo: function () {
       var s = this.undoStack.pop();
       if (!s) { this.toast('Nothing to undo.', 'info'); return; }
-      var st = JSON.parse(s);
-      st.parts.forEach(function (p) { p.st = p.st || {}; });
+      var st = JSON.parse(s), now = {};
+      this.sim.state.parts.forEach(function (p) { now[p.id] = p; });
+      // undo puts parts back where they were, but a burnt LED stays burnt (like on a real desk)
+      var KEEP = ['burnt', 'burntBy', 'burntSeg', 'dead', 'deadWhy', 'damaged', 'damageWhy', 'fuse'];
+      st.parts.forEach(function (p) {
+        p.st = p.st || {};
+        var cur = now[p.id]; if (!cur) return;
+        KEEP.forEach(function (k) { if (cur.st[k] !== undefined) p.st[k] = cur.st[k]; });
+      });
       this.sim.state.parts = st.parts;
       if (st.board.cols !== this.sim.board.cols || !!st.board.split !== !!this.sim.board.split) { this.sim.setBoard(st.board); this.bench.renderBoard(); }
       this.sim.dirty();
@@ -703,7 +710,9 @@
     focusPart: function (p) {
       var bench = this.bench;
       if (this.mode === 'level') document.body.classList.add('goalmin');
-      if (bench.view.s * 10 < 19) bench.view.s = 2.2;
+      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
+      if (bench.view.s * 10 < 19 && !big) bench.view.s = 2.2;
+      if (big) { this.ensureVisible(p); return; }
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
       var pts = this.sim.pinPoints(p), r = this.sim.bodyRect(p);
       var cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
@@ -976,12 +985,16 @@
       t.innerHTML = rich(text);
       $('#toasts').appendChild(t);
       var all = $('#toasts').children, max = window.innerWidth < 1100 ? 1 : 2; while (all.length > max) all[0].remove();
-      // phones: just under the goal card (or the top bar), never on top of the task text
+      // phones: above the toolbar; while a sheet is open, under the goal card instead.
+      // They never take taps, and the next touch on the bench clears them.
       var box = $('#toasts');
       if (window.innerWidth < 1100) {
-        var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
-        box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
-        box.style.bottom = 'auto';
+        var sheet = document.body.classList.contains('hassel') || document.body.classList.contains('trayopen');
+        if (sheet) {
+          var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
+          box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
+          box.style.bottom = 'auto';
+        } else { box.style.top = 'auto'; box.style.bottom = 'calc(74px + env(safe-area-inset-bottom, 0px))'; }
       } else { box.style.top = ''; box.style.bottom = ''; }
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
