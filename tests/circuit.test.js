@@ -448,3 +448,13 @@ test('ECHO (5 V pulses, 2.9 % of the time) straight into ESP32 pin 33: flagged a
   for (let k = 0; k < 600; k++) sim.step(1 / 60);
   assert.ok(e.st.damaged['33'], 'dead after a while');
 });
+
+test('Speed: a USB Nano and the MB102 with GNDs NOT joined still converges fast (no solver cliff)', () => {
+  const sim = bench([['mb102', { x: 2, y: 0 }], ['nano', { x: 8, y: 5, props: { program: 'fade_knob' } }],
+    ['resistor', { props: { r: 220 }, ends: ['T+8', 'a8'] }], ['resistor', { props: { r: 220 }, ends: ['T+9', 'a9'] }], ['resistor', { props: { r: 220 }, ends: ['T+10', 'a10'] }]]);
+  for (let k = 0; k < 10; k++) sim.step(1 / 60);
+  const t0 = Date.now(); for (let k = 0; k < 50; k++) sim.step(1 / 60);
+  const ms = (Date.now() - t0) / 50;
+  assert.ok(sim.res.converged, 'converged');
+  assert.ok(ms < 6, `${ms.toFixed(2)} ms per step`);
+});

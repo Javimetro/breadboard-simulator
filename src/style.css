@@ -354,3 +354,5 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 #bench.dragleg g[data-id].active { opacity: 1; }
 /* touch screens: pinch zooms, so only the Fit button stays (it would cover holes otherwise) */
 @media (pointer: coarse) { #zoom [data-z=in], #zoom [data-z=out] { display: none; } }
+body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite; }
+@keyframes partspulse { 50% { background: #2a2516; color: var(--amber); box-shadow: 0 0 0 3px #ffb62755; } }

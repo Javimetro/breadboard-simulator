@@ -109,6 +109,10 @@
       };
       requestAnimationFrame(loop);
       window.addEventListener('resize', function () { if (self.sim) self.bench.renderUi(); });
+      // save the sandbox at once when the page is hidden (switching apps on a phone, closing the tab)
+      var saveNow = function () { if (self.mode === 'sandbox' && self.sim) { clearTimeout(self._saveT); store.data.sandbox = JSON.parse(self.serialize()); store.save(); } };
+      window.addEventListener('pagehide', saveNow);
+      document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); });
       $('#stage').addEventListener('pointerdown', function () { $('#toasts').innerHTML = ''; });
       document.addEventListener('pointerdown', function () { audio.init(); if (audio.ctx && audio.ctx.state === 'suspended') audio.ctx.resume(); }, true);
       document.addEventListener('keydown', function (e) {
@@ -139,7 +143,7 @@
         var b = e.target.closest('button'); if (!b) return;
         var a = b.dataset.act;
         if (a === 'move' || a === 'wire') self.setTool(a);
-        if (a === 'parts') document.body.classList.toggle('trayopen');
+        if (a === 'parts') { document.body.classList.toggle('trayopen'); document.body.classList.remove('pulseparts'); store.data.partsTip = true; store.save(); }
         if (a === 'undo') self.undo();
         if (a === 'flow') self.setFlow(!self.bench.showFlow);
         if (a === 'xray') self.setXray(!self.bench.xray);
@@ -157,6 +161,7 @@
         var b = e.target.closest('button'); if (!b) return;
         if (b.dataset.act === 'home') self.showHome();
         if (b.dataset.act === 'hint') self.hint();
+        if (b.dataset.act === 'restart') self.confirm('Start this level again? Your parts on the bench will be reset.', 'Restart', function () { self.beginLevel(self.level.def); });
         if (b.dataset.act === 'sound') self.toggleSound();
         if (b.dataset.act === 'info') self.showIntro(self.level.def, true);
         if (b.dataset.act === 'board') self.boardMenu();
@@ -205,7 +210,7 @@
       $('#score').textContent = total + ' / 36';
       $('#levels').onclick = function (e) {
         var b = e.target.closest('.lvl'); if (!b) return;
-        if (b.classList.contains('locked')) { self.toast('Finish the level before it first, or turn on “Unlock all levels” below.', 'info'); return; }
+        if (b.classList.contains('locked')) { self.toast('Finish the previous level first, or turn on “Unlock all levels” below.', 'info'); return; }
         self.startLevel(+b.dataset.i);
       };
       $('#sandboxBtn').onclick = function () { self.startSandbox(); };
@@ -254,6 +259,11 @@
       this.sim.res.issues.forEach(function (is) { self.level.baseline[is.kind] = true; });
       this.sim.events = [];
       this.level.ready = true;
+      this.sim.state.parts.forEach(function (q) { if (!q.deletable) q.keep = true; }); // parts the level gave you cannot be deleted (the tray cannot give them back)
+      // the first level that needs parts on a phone: show where they are
+      var hasTray = (def.tray || []).some(function (it) { return (typeof it === 'string' ? it : it.type) !== 'wire'; });
+      document.body.classList.toggle('pulseparts', hasTray && window.innerWidth < 1100 && !store.data.partsTip);
+      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { self2.toast('Your parts are in “Parts” (bottom bar). Tap it, then tap a part to add it.', 'info'); }, 400); }
       this.buildTray(def.tray);
       this.updateTop();
       this.renderGoal();
@@ -435,7 +445,7 @@
       var t = $('#topbar');
       var title = this.mode === 'level' ? 'Level ' + this.level.def.n + ': ' + esc(this.level.def.title) : 'Sandbox';
       var html = '<button data-act="home" class="ibtn" title="All levels">' + icon('back') + '</button><div class="ttl">' + title + '</div>';
-      if (this.mode === 'level') html += '<button data-act="hint" class="ibtn" title="Hint">' + icon('hint') + '</button>';
+      if (this.mode === 'level') html += '<button data-act="restart" class="ibtn" title="Start this level again">' + icon('rotate') + '</button><button data-act="hint" class="ibtn" title="Hint">' + icon('hint') + '</button>';
       if (this.mode === 'sandbox') html += '<button data-act="chal" class="ibtn chalbtn" title="Challenges">' + icon('star') + '</button><button data-act="board" class="ibtn" title="Board size">' + icon('board') + '</button><button data-act="clear" class="ibtn" title="Clear the bench">' + icon('trash') + '</button>';
       html += '<button data-act="sound" class="ibtn" title="Sound on/off">' + icon(audio.on ? 'sound' : 'mute') + '</button>';
       t.innerHTML = html;
@@ -534,7 +544,7 @@
       });
       var html = '<div class="trayhead"><b>Parts</b><span class="mut small">Tap to add</span><button class="ibtn closetray" title="Close">' + icon('close') + '</button></div>';
       if (!list.length) html += '<p class="small mut">No parts needed here. Just tap the holes.</p>';
-      if (items) { groups = { all: [].concat.apply([], Object.keys(cats).map(function (c) { return groups[c] || []; })) }; cats = { all: '' }; } // levels: one grid
+      if (items) { groups = { all: list.map(function (it) { return typeof it === 'string' ? { type: it } : it; }) }; cats = { all: '' }; } // levels: one grid, in the level's order
       Object.keys(cats).forEach(function (c) {
         if (!groups[c]) return;
         if (!items) html += '<h4>' + cats[c] + '</h4>';
@@ -634,7 +644,8 @@
       var tries = [];
       // batteries sit above the board, so their leads go straight down into the rails
       if (def.spot === 'above') for (var a = 0; a < 4; a++) tries.push({ x: b.x0 + 3 + a * (w + 2), y: b.y0 - h - 3 });
-      for (var k = 0; k < 12; k++) { tries.push({ x: b.x0 + k * (w + 2), y: b.y1 + 3 }); }
+      // below the board in a grid: 3 to a row, then the next row (not one endless line)
+      for (var rrow = 0; rrow < 6; rrow++) for (var k = 0; k < 3; k++) tries.push({ x: b.x0 + k * (Math.max(w, 12) + 2), y: b.y1 + 3 + rrow * 16 });
       for (var k2 = 0; k2 < 6; k2++) { tries.push({ x: b.x0 - w - 3, y: b.y0 + k2 * (h + 2) }); tries.push({ x: b.x1 + 3, y: b.y0 + k2 * (h + 2) }); }
       for (var j = 0; j < tries.length; j++) {
         var t = tries[j];
@@ -677,7 +688,7 @@
     },
     removePart: function (id, user) {
       var p = this.sim.part(id); if (!p) return;
-      if (p.locked && user) { this.toast('This part is fixed in this level.', 'info'); return; }
+      if ((p.locked || p.keep) && user) { this.toast('This part belongs to the level, so it cannot be deleted. Move it instead, or tap ⟳ to restart the level.', 'info'); return; }
       var u = user ? this.snapshot() : null;
       var sim = this.sim;
       // wires plugged into an off-board part's pins come loose
@@ -783,7 +794,7 @@
       if (p.st.burnt || (p.st.burntSeg && Object.keys(p.st.burntSeg).length)) acts += '<button class="primary" data-a="renew">New ' + (p.type === 'led' ? 'LED' : 'part') + '</button>';
       if (def.mcu && (p.st.dead || (p.st.damaged && Object.keys(p.st.damaged).length))) acts += '<button class="primary" data-a="renew">New board</button>';
       if (p.type === 'meter' && p.st.fuse) acts += '<button class="primary" data-a="fuse">New fuse</button>';
-      if (!p.locked) acts += '<button class="danger" data-a="del">' + icon('trash') + ' Delete</button>';
+      if (!p.locked && !p.keep) acts += '<button class="danger" data-a="del">' + icon('trash') + ' Delete</button>';
       ins.innerHTML = html;
       $('#acts').innerHTML = acts;
       this.refreshInspector();
@@ -1060,7 +1071,7 @@
       var a = +String(w.st.display[1] || '').replace(/\D/g, '');
       if (a > 600) f.hi = true; if (a < 300 && f.hi) f.lo = true; return f.hi && f.lo;
     } },
-    { id: 'nanoMB', title: 'Nano from the MB102.', text: 'Turn off the Nano’s USB cable (in its panel). Power it from a 5V rail: rail + → Nano 5V pin, rail − → Nano GND.', check: function (L) { return L.of('nano').some(function (n) { return n.props.usb === false && n.st.powered && n.st.extPowered; }); } },
+    { id: 'nanoMB', title: 'Nano from the MB102.', text: 'Unplug the Nano’s USB cable (switch USB off in its panel). Power it from a 5V rail: rail + → Nano 5V pin, rail − → Nano GND.', check: function (L) { return L.of('nano').some(function (n) { return n.props.usb === false && n.st.powered && n.st.extPowered; }); } },
     { id: 'cap', title: 'Charge a capacitor.', text: 'Put a 1000 µF capacitor (+ leg to +) in series with a 1 kΩ resistor on a 5V rail. Tap the capacitor and watch its voltage rise: after one {{time constant}} (1 kΩ × 1000 µF = 1 second) it has about 63 % of 5 V.', check: function (L, f) {
       // a real RC charge: from below 1 V to over 4.5 V, ending near 5 V (not 9 V), and slowly (a resistor in series)
       return L.of('capacitor').some(function (c) {

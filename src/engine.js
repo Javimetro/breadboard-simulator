@@ -98,6 +98,10 @@
     (circuit.refHints || []).forEach(function (h) { if (h < n && refOf[isl[h]] === undefined) refOf[isl[h]] = h; });
     els.forEach(function (e) { if (e.t === 'V' && refOf[isl[e.n]] === undefined) refOf[isl[e.n]] = e.n; });
     for (var q = 0; q < n; q++) if (refOf[isl[q]] === undefined) refOf[isl[q]] = q;
+    // other 0 V points in the same island (a second board's GND not wired to the first): tie them
+    // to the island's reference with 100 MΩ, so the maths stays well behaved (no real current flows)
+    var softTies = [];
+    (circuit.refHints || []).forEach(function (h) { if (h < n && refOf[isl[h]] !== h) softTies.push([h, refOf[isl[h]]]); });
     var isRef = new Uint8Array(n);
     Object.keys(refOf).forEach(function (k) { isRef[refOf[k]] = 1; });
 
@@ -131,6 +135,7 @@
       };
       var addI = function (node, cur) { var j = idx[node]; if (j >= 0) b[j] += cur; }; // current pushed into node
       for (var m = 0; m < n; m++) if (idx[m] >= 0) A[idx[m] * size + idx[m]] += GMIN;
+      for (var st2 = 0; st2 < softTies.length; st2++) addG(softTies[st2][0], softTies[st2][1], 1e-8);
       for (var e = 0; e < els.length; e++) {
         var el = els[e];
         switch (el.t) {

@@ -381,8 +381,12 @@
     s += '<rect x="-46" y="80" width="6" height="8" rx="1" fill="' + (on ? '#59ff6a' : '#245a2c') + '"/>' + (on ? '<circle cx="-43" cy="84" r="8" fill="#59ff6a" opacity=".35"/>' : '');
     s += txt(-36, 87, 'ON', 'mbs');
     // regulators (AMS1117)
-    s += '<rect x="-56" y="34" width="20" height="14" rx="1" fill="#1a1a1a" stroke="#444"/><rect x="-56" y="124" width="20" height="14" rx="1" fill="#1a1a1a" stroke="#444"/>';
-    s += '<rect x="-20" y="100" width="12" height="18" rx="5" fill="#1f2b63"/><rect x="-20" y="52" width="12" height="18" rx="5" fill="#1f2b63"/>';
+    // AMS1117 regulators (SOT-223: black body, wide metal tab) and electrolytic capacitors (round tops)
+    [42, 104].forEach(function (yy) {
+      s += '<rect x="-58" y="' + yy + '" width="20" height="12" rx="1" fill="#1a1a1a" stroke="#444" stroke-width=".5"/><rect x="-56" y="' + (yy - 4) + '" width="16" height="4" fill="url(#gMetal)"/>';
+      s += txt(-58, yy + 18, 'AMS1117', 'mbs');
+    });
+    [[-20, 62], [-20, 124]].forEach(function (c) { s += '<circle cx="' + c[0] + '" cy="' + c[1] + '" r="7" fill="#1f2b63" stroke="#0e1433"/><circle cx="' + c[0] + '" cy="' + c[1] + '" r="4.3" fill="url(#gMetal)"/><path d="M' + (c[0] - 7) + ' ' + (c[1] - 2) + ' a7 7 0 0 1 4 -5" stroke="#c9cfdb" stroke-width="2" fill="none"/>'; });
     // jumpers
     [['top', 20], ['bottom', 138]].forEach(function (j) {
       var sel = p.props[j[0]], yc = j[1], x0 = -31;
@@ -390,7 +394,7 @@
       for (var k = 0; k < 3; k++) s += '<rect x="' + (x0 - 1.4) + '" y="' + (yc - 7 + k * 7 - 1.4) + '" width="2.8" height="2.8" fill="url(#gGold)"/>';
       if (sel === '3.3') s += '<rect x="' + (x0 - 4.5) + '" y="' + (yc - 10.5) + '" width="9" height="13" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6"/>';
       else if (sel === '5') s += '<rect x="' + (x0 - 4.5) + '" y="' + (yc - 2.5) + '" width="9" height="13" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6"/>';
-      else s += '<rect x="' + (x0 + 8) + '" y="' + (yc - 6) + '" width="9" height="12" rx="1.6" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6" opacity=".9"/>';
+      else s += '<rect x="' + (x0 - 4.5) + '" y="' + (yc - 3.5) + '" width="9" height="7" rx="1.4" fill="#f2cf1d" stroke="#a88b00" stroke-width=".6"/>'; // OFF: the jumper sits on the middle pin only
       s += txt(x0 - 7, yc - 5, '3.3V', 'mbs', ' text-anchor="end"') + txt(x0 - 7, yc + 2, 'OFF', 'mbs', ' text-anchor="end"') + txt(x0 - 7, yc + 9, '5V', 'mbs', ' text-anchor="end"');
     });
     s += txt(-84, 186 - 8, 'MB102', 'mbs') + txt(-60, -4, 'Breadboard power', 'mbs');

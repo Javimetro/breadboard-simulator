@@ -56,6 +56,7 @@
     'BCM': 'The chip’s own number for a Raspberry Pi pin, like BCM17 (= GPIO17). It is not the same as the header pin number.',
     'DCV': 'DC volts: the meter setting for steady voltages, like a battery or a rail.',
     'DCA': 'DC amps: the meter setting for current. On this meter it shows mA.',
+    'LDR': 'Light Dependent Resistor: a light sensor. Its resistance goes down when more light falls on it.',
     'µF': 'Microfarad: the unit of a capacitor’s size. 1000 µF stores much more charge than 10 µF.',
     'kΩ': 'Kilo-ohm: 1000 ohms. 4.7 kΩ = 4700 Ω. MΩ (mega-ohm) = 1 000 000 Ω.',
     'VIN': 'Voltage in: the Nano pin for a 7–12 V supply (like a 9V battery). The board’s regulator turns it into 5 V.',
@@ -302,7 +303,7 @@
         A.add('led', { id: 'led-a', ends: ['T-9', 'c8'] });
         A.add('resistor', { props: { r: 470 }, ends: ['T+14', 'a14'], locked: true });
         A.add('led', { id: 'led-b', ends: ['b14', 'd14'] });
-        A.add('wire', { id: 'short', props: { color: 'yellow' }, ends: ['T+20', 'T-21'] });
+        A.add('wire', { id: 'short', props: { color: 'yellow' }, ends: ['T+20', 'T-21'] }).deletable = true; // removing it is the lesson
         A.add('resistor', { props: { r: 470 }, ends: ['T+26', 'a26'], locked: true });
         A.add('led', { id: 'led-c', ends: ['c26', 'T-27'] });
       },
@@ -475,7 +476,7 @@
         if (nk !== null && !L.alone(l, 1) && anyGndNet(L, n).indexOf(nk) < 0) return 'The LED’s short leg (−) is in a strip or rail that is not joined to the Nano’s GND. Current must flow back to the Nano. Add a wire from a GND pin to that rail.';
         return whyDark(L, l);
       },
-      hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it (h, i, j) are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
+      hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
       done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
@@ -490,7 +491,7 @@
       },
       steps: [
         { text: 'Connect the screen with 4 wires ({{I2C}}): GND → GND, {{VCC}} → 5V, SDA → A4, SCL → A5.', check: function (L) { var o = L.part('oled'); return !!o.st.mcu && (o.st.vcc || 0) > 4.5; }, ok: 'The screen is on. I2C uses just SDA (data) and SCL (clock).' },
-        { text: 'Build a {{voltage divider}}: LDR from 5V to A0, and 10 kΩ from A0 to GND. A0 is an {{analog}} pin.', check: function (L) { return dividerOk(L);
+        { text: 'Build a {{voltage divider}}: {{LDR}} from 5V to A0, and 10 kΩ from A0 to GND. A0 is an {{analog}} pin.', check: function (L) { return dividerOk(L);
         }, ok: 'Now A0 gets a voltage that follows the light.' },
         { text: 'Tap the light sensor and move its Light slider from bright to dark. Watch the number.', check: function (L) {
           var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0, a = Math.round(v / (n.st.vcc || 5) * 1023), f = L.flags;
@@ -518,7 +519,7 @@
     {
       id: 'sound', title: 'Clap → beep', icon: 'sound',
       intro: { pic: I.sound, text: 'A microphone module hears a clap. The Nano answers with a tone on a speaker. The speaker needs a resistor.' },
-      board: { cols: 30 }, view: [-0.8, -16, 46, 18.6], phone: [-0.8, -4, 24, 18.6], tray: ['mic', 'speaker', { type: 'resistor', props: { r: 220 } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -9, 44, 18.6], phone: [-0.8, -4, 24, 18.6], tray: ['mic', 'speaker', { type: 'resistor', props: { r: 220 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [
@@ -566,7 +567,7 @@
         { text: 'Connect {{TRIG}} to pin 21.', check: function (L) { var s = L.of('hcsr04')[0]; return s && s.st.trig; }, ok: 'The ESP32 now sends trigger pulses.' },
         { text: 'Build a {{voltage divider}} for {{ECHO}}: ECHO → 1 kΩ → a free middle column → 2.2 kΩ → GND (the − rail joined to GND).', check: function (L) {
           var s = L.of('hcsr04')[0], e = L.part('esp'); if (!s) return false;
-          var echo = L.net(s, 2), gnds = anyGndNet(L, e).concat([L.hnet('T-2'), L.hnet('B-2')]);
+          var echo = L.net(s, 2), gnds = anyGndNet(L, e);
           return L.of('resistor').some(function (r1) {
             var a = L.net(r1, 0), b = L.net(r1, 1); if (r1.props.r !== 1000 || (a !== echo && b !== echo)) return false;
             var mid = a === echo ? b : a;
@@ -576,7 +577,7 @@
         { text: 'Connect the middle column to pin 33 with a wire.', check: function (L) {
           var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0, s = L.of('hcsr04')[0];
           if (!s || !(v > 2.5 && v < 3.6) || (e.st.damaged && e.st.damaged['33'])) return false;
-          var echo = L.net(s, 2), p33 = mcuPinNet(L, e, '33'), gnds = anyGndNet(L, e).concat([L.hnet('T-2'), L.hnet('B-2')]);
+          var echo = L.net(s, 2), p33 = mcuPinNet(L, e, '33'), gnds = anyGndNet(L, e);
           var top = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 1000 && ((a === echo && b === p33) || (b === echo && a === p33)); });
           var bot = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 2200 && ((a === p33 && gnds.indexOf(b) >= 0) || (b === p33 && gnds.indexOf(a) >= 0)); });
           return top && bot && (e.st.serial || []).some(function (x) { return /^Distance/.test(x); });
@@ -585,6 +586,10 @@
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
+        // the 2.2 kΩ goes to a − rail that is not joined to GND: the divider has no bottom
+        var r22 = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];
+        if (r22 && anyGndNet(L, e).indexOf(L.net(r22, 0)) < 0 && anyGndNet(L, e).indexOf(L.net(r22, 1)) < 0 && [L.net(r22, 0), L.net(r22, 1)].some(function (x) { return x === L.hnet('T-2') || x === L.hnet('B-2'); }))
+          return 'The 2.2 kΩ goes to a − rail, but that rail is not joined to GND. Add a wire from the ESP32’s GND pin to that rail.';
         if (v > 3.6) return 'Danger! Pin 33 gets ' + v.toFixed(2) + ' V. The ESP32 takes 3.3 V (3.6 V at most). Use the two resistors as a divider.';
         if (v > 0.3 && v <= 2.47) return 'Pin 33 gets only ' + v.toFixed(2) + ' V. That is too low to read as HIGH (needs 2.5 V). Check the divider: 1 kΩ on top (from ECHO), 2.2 kΩ at the bottom (to GND).';
         return null;

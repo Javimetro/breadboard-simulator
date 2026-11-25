@@ -184,6 +184,9 @@
     pins.forEach(function (pin, i) { if (pin.kind === 'v5' || pin.kind === 'v33') { if (first[pin.kind] === undefined) first[pin.kind] = i; else n.R('p' + i, 'p' + first[pin.kind], 0.01); } });
     var usb = !st.dead && p.props.usb !== false && !st.usbTripped;
     var lv = st.lastV || {};
+    // USB plugged in AND 7–12 V on VIN: the regulator's 5.0 V is higher than USB's 4.7 V, so it wins (the USB diode blocks)
+    st.vinWins = def.mcu === 'nano' && usb && (lv.VIN || 0) > 6.5 && !(st.regOffUntil > ctx.t);
+    if (st.vinWins) usb = false;
     var via = usb || st.dead ? null : chooseVia(def, st, lv, ctx.t);
     st.extVia = via;
     st.extPowered = !!via;
@@ -218,7 +221,11 @@
     // the Nano's chip runs on whatever its 5V net has (4.7 V on USB, 5.0 V from the regulator)
     var vcc = def.mcu === 'nano' ? (usb ? 4.7 : Math.max(4.3, Math.min(5.3, lv['5V'] || 5))) : cfg.vcc;
     st.vcc = st.powered ? vcc : 0;
-    if (st.powered) e.vcc = n.V(vccNode, g, vcc); else n.R(vccNode, g, 1);
+    // the chip's own supply rail: a regulator that cannot take current back. Current pushed in through a
+    // pin's protection diode raises it (back-powering). Without power, the chip is a light load (~2 kΩ).
+    if (st.powered) e.srcs.push(Object.assign(limSrc(n, st, 'vdd', g, vccNode, vcc, 0.05, 2.0), { label: 'chip supply', what: 'vdd' }));
+    else n.R(vccNode, g, 2000);
+    e.vccNode = vccNode;
     // power pins also have protection diodes from GND: a supply connected backwards drives a big current through them
     pins.forEach(function (pin, i) { if (pin.kind === 'v5' || pin.kind === 'v33' || pin.kind === 'vin') { var dz = n.D(g, 'p' + i, SILICON.is * 1000, SILICON.nvt); if (n.flag) n.flag(dz, 'clamp'); } });
     var io = st.io || {};
@@ -333,6 +340,13 @@
       if (c.off && c.v > src.V + 0.15 && src.what === 'usb' && def.mcu === 'nano' && c.v < 5.6) {
         // the Nano's USB diode blocks current going back to the computer: this is safe
         ctx.issue(p, 'usbdiode', 'info', 'The Nano now runs from the outside 5 V', 'Another supply gives ' + fmtV(c.v) + ' on the 5V pin. The small diode after the USB plug stops current flowing back into your computer, so this is safe.', src.idx);
+      } else if (c.off && c.v > src.V + 0.15 && src.what === 'vdd') {
+        // find the pin that pushes current in
+        var worst = null;
+        def.pins.forEach(function (q, k) { var pe2 = e.pin[q.n]; if (pe2 && pe2.cHi !== undefined) { var ic = r.i(pe2.cHi); if (!worst || ic > worst.i) worst = { n: q.n, i: ic, k: k }; } });
+        ctx.issue(p, 'backpower', 'danger', 'Pin ' + (worst ? worst.n : '?') + ' pushes the chip’s supply up to ' + fmtV(c.v),
+          'Too high a voltage on pin ' + (worst ? worst.n : '?') + ' sends current through its {{protection diode}} into the chip’s own ' + src.V + ' V supply, and pulls it up. This can break the chip. Use a voltage divider or a resistor.', worst ? worst.k : undefined);
+        if (c.v > cfg.absMax + 0.1) { st.pwrHeat = (st.pwrHeat || 0) + ctx.dt; if (st.pwrHeat > 1.5) { st.dead = true; st.deadWhy = 'A pin pushed its supply up to ' + fmtV(c.v) + '.'; st.smoke = ctx.t; ctx.event(p, 'damage', worst ? worst.n : ''); ctx.dirty(); } }
       } else if (c.off && c.v > src.V + 0.15) {
         ctx.issue(p, 'fight', 'danger', 'Another power source pushes into the ' + src.label + ' pin', 'The board makes ' + src.V + ' V on its ' + src.label + ' pin, but another source pushes it to ' + fmtV(c.v) + '. A ' + (src.what === 'usb' ? 'USB port' : 'regulator') + ' cannot take current back, so the voltage rises. Use one power source only.', src.idx);
       }
