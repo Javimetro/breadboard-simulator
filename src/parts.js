@@ -165,8 +165,8 @@
   // Without USB: which pin powers the board (from the last readings)? VIN has priority on the
   // Nano: when its regulator runs, the 5V pin is the regulator's output, not an input.
   function chooseVia(def, st, lv, t) {
-    if (def.mcu === 'nano') return (lv.VIN || 0) > 5.6 && !(st.regOffUntil > t) ? 'VIN' : (lv['5V'] || 0) > 4.3 ? '5V' : null;
-    if (def.mcu === 'esp32') return (lv.USB || 0) > 3.6 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 3.0 ? 'BAT' : null;
+    if (def.mcu === 'nano') return (lv.VIN || 0) > 4.8 && !(st.regOffUntil > t) ? 'VIN' : (lv['5V'] || 0) > 4.3 ? '5V' : null;
+    if (def.mcu === 'esp32') return (lv.USB || 0) > 3.6 ? '5V' : (lv['3V'] || 0) > 3.0 ? '3V' : (lv.BAT || 0) > 2.9 ? 'BAT' : null;
     return (lv['5V'] || 0) > 4.3 && !(st.brownUntil > t) ? '5V' : null;
   }
   // Electrical model shared by all microcontroller boards.
@@ -223,11 +223,16 @@
     pins.forEach(function (pin, i) { if (pin.kind === 'v5' || pin.kind === 'v33' || pin.kind === 'vin') { var dz = n.D(g, 'p' + i, SILICON.is * 1000, SILICON.nvt); if (n.flag) n.flag(dz, 'clamp'); } });
     var io = st.io || {};
     pins.forEach(function (pin, i) {
-      if (pin.kind !== 'gpio') { if (pin.kind === 'rst' || pin.kind === 'nc') n.R('p' + i, g, 1e8); return; }
+      if (pin.kind !== 'gpio') {
+        // RST / EN have a pull-up inside: left alone they read HIGH; pulled to GND the board stops
+        if (pin.kind === 'rst') n.R('p' + i, st.powered ? vccNode : g, st.powered ? 40000 : 1e8);
+        else if (pin.kind === 'nc') n.R('p' + i, g, 1e8);
+        return;
+      }
       var cfgPin = io[pin.n];
       var dmg = st.damaged && st.damaged[pin.n];
       var rec;
-      if (!st.powered || !cfgPin || dmg) rec = { el: n.R('p' + i, g, 1e8), mode: 'in' };
+      if (!st.powered || !cfgPin || dmg || st.inReset) rec = { el: n.R('p' + i, g, 1e8), mode: 'in' };
       else if (cfgPin.mode === 'out') {
         var level = cfgPin.level;
         if (cfgPin.pwm !== undefined) level = ctx.pwmHigh ? (ctx.pwmHigh(cfgPin.pwm) ? 1 : 0) : 1;
@@ -253,6 +258,11 @@
       st.lastV[pin.n] = Math.max(v, st.lastV[pin.n] === undefined ? -1e9 : st.lastV[pin.n]);
       st.lastVpeak[pin.n] = Math.max(vp, st.lastVpeak[pin.n] === undefined ? -1e9 : st.lastVpeak[pin.n]);
     });
+    // RST (or EN on the ESP32) pulled LOW: the chip is held in reset, the program stops
+    var wasReset = !!st.inReset;
+    st.inReset = !!st.powered && def.pins.some(function (q, i) { return q.kind === 'rst' && (r.pinV(i) - r.v(e.g)) < 0.8; });
+    if (wasReset !== st.inReset) ctx.dirty();
+    if (st.inReset) ctx.issue(p, 'reset', 'info', 'The board is held in reset', 'A ' + (def.mcu === 'esp32' ? 'RST or EN' : 'RST') + ' pin is pulled to GND, so the chip stops and all its pins let go. Remove that wire and the program starts again.', def.pins.findIndex(function (q, i) { return q.kind === 'rst' && (r.pinV(i) - r.v(e.g)) < 0.8; }));
     // a new supply voltage arrived: step again so the board can switch on (or off) now
     var usbNow = !st.dead && p.props.usb !== false && !st.usbTripped;
     if (!usbNow && !st.dead && chooseVia(def, st, st.lastV, ctx.t) !== st.extVia) ctx.dirty();
@@ -270,7 +280,7 @@
       }
       if (v > PKILL[pin.kind]) {
         st.pwrHeat = (st.pwrHeat || 0) + ctx.dt;
-        var tip = pin.kind === 'v5' && def.mcu === 'nano' ? 'To power the Nano from 7–12 V (like a 9V battery), use the VIN pin: its regulator makes 5 V.'
+        var tip = pin.kind === 'v5' && def.mcu === 'nano' ? 'To power the Nano from 7–12 V (like a 9V battery), use the VIN pin: its {{regulator}} makes 5 V.'
           : pin.kind === 'v33' ? 'Feed a 3.3V pin only from a 3.3 V supply.' : pin.kind === 'bat' ? 'BAT is for one {{LiPo}} cell (3.7–4.2 V).' : '';
         ctx.issue(p, 'overvolt', 'danger', 'Too much voltage on the ' + pin.n + ' pin: ' + fmtV(v), 'The ' + pin.n + ' pin takes at most ' + { v5: '5.5', v33: '3.6', vin: '20', bat: '4.3' }[pin.kind] + ' V (it breaks above about ' + PKILL[pin.kind] + ' V). ' + tip, i);
         if (st.pwrHeat > 0.5) { st.dead = true; st.deadWhy = 'Its ' + pin.n + ' pin got ' + fmtV(v) + '.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
@@ -298,9 +308,9 @@
       var low = null;
       def.pins.forEach(function (q, i) {
         var v = r.pinV(i) - r.v(e.g);
-        if ((q.kind === 'v5' && v > 0.5 && v <= 4.3) || (q.kind === 'vin' && v > 0.5 && v <= 5.6) || (q.kind === 'v33' && v > 0.5 && v <= 3.0)) low = low || { n: q.n, v: v, k: q.kind, i: i };
+        if ((q.kind === 'v5' && v > 0.5 && v <= 4.3) || (q.kind === 'vin' && v > 0.5 && v <= 5.6) || (q.kind === 'v33' && v > 0.5 && v <= 3.0) || (q.kind === 'bat' && v > 0.5 && v <= 2.9)) low = low || { n: q.n, v: v, k: q.kind, i: i };
       });
-      if (low) ctx.issue(p, 'lowpower', 'info', 'The ' + cfg.name + ' stays off', 'Its ' + low.n + ' pin gets only ' + fmtV(low.v) + '. ' + (low.k === 'vin' ? 'VIN needs about 7–12 V (the regulator inside uses up about 1–2 V).' : low.k === 'v33' ? 'It needs 3.3 V.' : 'It needs about 5 V.'), low.i);
+      if (low) ctx.issue(p, 'lowpower', 'info', 'The ' + cfg.name + ' stays off', 'Its ' + low.n + ' pin gets only ' + fmtV(low.v) + '. ' + (low.k === 'vin' ? 'VIN needs about 7–12 V (the regulator inside uses up about 1–2 V).' : low.k === 'v33' ? 'It needs 3.3 V.' : low.k === 'bat' ? 'A LiPo cell is empty below about 3 V.' : 'It needs about 5 V.'), low.i);
     }
     if (e.reg !== undefined) {
       // the regulator: current limit and heat. It burns (VIN − 5V) × current as heat.
@@ -311,11 +321,11 @@
       var heatW = Math.max(0, (vin - v5) * ireg);
       if (heatW > 1.0) st.regHeat = (st.regHeat || 0) + ctx.dt * heatW / 3; else st.regHeat = Math.max(0, (st.regHeat || 0) - ctx.dt * 0.3);
       if (st.regHeat > 1) { st.regOffUntil = ctx.t + 4; st.regHeat = 0; st.regLim = false; ctx.dirty(); }
-      if (e.regLim) ctx.issue(p, 'short', 'danger', 'Too much current from the 5V pin (on VIN power)', 'The Nano’s regulator gives at most about 0.8 A, so the 5V pin falls to ' + fmtV(v5) + '. Something joins 5V to GND with too little resistance. Remove it.', e.v5Idx);
+      if (e.regLim) ctx.issue(p, 'short', 'danger', 'Too much current from the 5V pin (on VIN power)', 'The Nano’s {{regulator}} gives at most about 0.8 A, so the 5V pin falls to ' + fmtV(v5) + '. Something joins 5V to GND with too little resistance. Remove it.', e.v5Idx);
       else if (heatW > 0.6) ctx.issue(p, 'reghot', 'warn', 'The Nano’s regulator is getting hot', 'It turns the extra voltage into heat: (' + fmtV(vin) + ' − 5 V) × ' + fmtI(ireg) + ' = ' + fmtP(heatW) + '. This small chip takes about 1 W. Draw less current from 5V, or use a lower VIN (7–9 V).', e.vinIdx);
     }
     if (st.regOffUntil > ctx.t) ctx.issue(p, 'reghot', 'danger', 'The Nano’s regulator switched off: too hot', 'It got too hot and protects itself. It will try again in a few seconds. Draw less current from the 5V pin, or feed 5 V straight into the 5V pin from a 5 V supply.', def.pins.findIndex(function (q) { return q.kind === 'vin'; }));
-    if (e.reg !== undefined && (st.lastV.VIN || 0) < 6.5) ctx.issue(p, 'lowvin', 'info', 'VIN is a bit low: ' + fmtV(st.lastV.VIN), 'The regulator needs about 7 V on VIN to make a steady 5 V. Now the board gets only ' + fmtV(st.lastV['5V']) + '.', def.pins.findIndex(function (q) { return q.kind === 'vin'; }));
+    if (e.reg !== undefined && (st.lastV.VIN || 0) < 6.5) ctx.issue(p, 'lowvin', 'info', 'VIN is a bit low: ' + fmtV(st.lastV.VIN), 'The {{regulator}} needs about 7 V on VIN to make a steady 5 V. Now the board gets only ' + fmtV(st.lastV['5V']) + '.', def.pins.findIndex(function (q) { return q.kind === 'vin'; }));
     // power outputs: current limit, back-feeding, and the USB port's fuse
     e.srcs.forEach(function (src) {
       var c = srcState(src, r, st, ctx);
@@ -356,7 +366,9 @@
       }
       if (inj > 0.001) {
         var lowSide = pe.cLo !== undefined && r.iPeak(pe.cLo) > 0.001;
-        if (inj > 0.005) st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * inj / 0.005;
+        // heat follows the AVERAGE current (short pulses heat less): above about 1 mA the chip slowly gets hurt
+        var injAvg = Math.max(pe.cHi !== undefined ? Math.abs(r.i(pe.cHi)) : 0, pe.cLo !== undefined ? Math.abs(r.i(pe.cLo)) : 0);
+        if (injAvg > 0.001) st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * Math.min(20, injAvg / 0.001) / 30;
         ctx.issue(p, 'overvolt', 'danger', lowSide ? 'Pin ' + pin.n + ' is pulled below GND' : 'Pin ' + pin.n + ' gets ' + fmtV(v) + '. That is too much!',
           (lowSide ? 'A pin must stay between GND and ' + cfg.vcc + ' V. Check that + and − are not swapped. ' :
             'The ' + cfg.name + ' works at ' + cfg.vcc + ' V' + (st.powered ? '' : ' (and now it has no power at all)') + '. ' + fmtI(inj) + ' is pushed into the pin through its {{protection diode}}. More than about 1 mA can break the chip. ') +
@@ -366,7 +378,8 @@
       if (st.damaged[pin.n]) return;
       if (pe.mode === 'out') {
         if (peak > cfg.pinMax) {
-          st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * (peak / cfg.pinMax);
+          // a little over the limit survives for seconds; a dead short much sooner
+          st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * (peak / cfg.pinMax - 0.8) / 3;
           ctx.issue(p, 'pin', 'danger', 'Too much current from pin ' + pin.n + ': ' + fmtI(peak),
             'A pin of the ' + cfg.name + ' can give about ' + fmtI(cfg.pinSafe) + ' safely (' + fmtI(cfg.pinMax) + ' at most). More current damages the chip. Add a resistor (for an LED, 220 Ω or more).', i);
           if (st.pinHeat[pin.n] > 1.0) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It had to give ' + fmtI(peak) + ', far more than the ' + fmtI(cfg.pinMax) + ' it can give.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
@@ -448,7 +461,7 @@
           'Both legs are in the same strip (or joined by a wire). The current goes around the LED, not through it. Put the legs in two different strips.');
       } else if (vrev > 1.0 && supplied) {
         ctx.issue(p, 'reversed', 'warn', 'The LED is in backwards',
-          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”.' + (vrev > 5 ? ' (LEDs are only rated for 5 V backwards. With a resistor in the loop almost no current flows, so it survives.)' : ''));
+          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”. (If several LEDs look backwards, check that the battery’s red wire is in the + rail.)' + (vrev > 5 ? ' (LEDs are only rated for 5 V backwards. With a resistor in the loop almost no current flows, so it survives.)' : ''));
       } else if (i > 0.001) {
         // LEDs side by side on one resistor: the one with the lower voltage takes most current
         var na = ctx.netOfPin(p, 0), nk = ctx.netOfPin(p, 1);
@@ -580,6 +593,12 @@
   function battAfter(p, r, ctx, limit, name) {
     var i = r.i(p._e); p._i = i;
     p.vis = { hot: Math.abs(i) > limit };
+    // red lead in a − rail (or black in a + rail): the whole board is upside down
+    var rail = function (e) { return e && e.at && /^[TB][+-]/.test(e.at) ? e.at[1] : null; };
+    if (rail(p.ends[0]) === '-' || rail(p.ends[1]) === '+') {
+      p.st.swapped = true;
+      ctx.issue(p, 'battrev', 'danger', 'The battery is connected backwards', 'The red wire (+) goes to a blue − rail, or the black wire (−) to a red + rail. Now + and − are swapped for everything on the board, so LEDs look “backwards”. Put red in the + rail and black in the − rail.');
+    } else p.st.swapped = false;
     // a real fight: current is pushed backwards into the battery by a stronger source
     if (i < -0.02) {
       ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting',
@@ -657,10 +676,10 @@
         var L = st.lastLim || {};
         ctx.issue(p, 'short', 'danger', st.tripped ? 'The MB102 switched off: it got too hot' : 'Short circuit on the ' + L.side + ' rails',
           (st.tripped ? 'A short circuit made its regulator too hot, so it shut down. It tries again in a moment. ' :
-            'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 0.7 A). The rail voltage falls to ' + fmtV(L.v) + ', and the regulator gets very hot. ') +
+            'Something joins the ' + L.side + ' + rail to the − rail with almost no resistance. The MB102 gives as much as it can (about 0.7 A). The rail voltage falls to ' + fmtV(L.v) + ', and the {{regulator}} gets very hot. ') +
           'Remove the wire or part that joins + to −.');
       } else if (tot > 0.7) {
-        ctx.issue(p, 'overload', 'warn', 'The MB102 gives ' + fmtI(tot), 'It is made for 700 mA at most. Its regulators get hot.');
+        ctx.issue(p, 'overload', 'warn', 'The MB102 gives ' + fmtI(tot), 'It is made for 700 mA at most. Its {{regulator|regulators}} get hot.');
       }
     },
     hot: [{ id: 'jtop', x: -3.1, y: 2.0, r: 1.6, kind: 'jumper', side: 'top' }, { id: 'jbot', x: -3.1, y: 13.8, r: 1.6, kind: 'jumper', side: 'bottom' }, { id: 'sw', x: -6.7, y: 8.5, r: 1.6, kind: 'switch' }],
@@ -680,7 +699,7 @@
     stamp: function (p, n) {
       var m = p.props.mode;
       p._e = { m: m };
-      if (m === 'V') p._e.el = n.R('p0', 'p1', 10e6);
+      if (m === 'V') p._e.el = n.R('p0', 'p1', 1e6); // a DT-830B has about 1 MΩ inside in volts mode
       else if (m === 'A') p._e.el = p.st.fuse ? n.R('p0', 'p1', 1e9) : n.R('p0', 'p1', 1.0);
       else if (m === 'ohm') { var s = n.node(); p._e.src = n.V(s, 'p1', 1.0); p._e.el = n.R(s, 'p0', 1000); }
       else if (m === 'diode') { var sd = n.node(); p._e.src = n.V(sd, 'p1', 3.0); p._e.el = n.R(sd, 'p0', 2200); } // about 1 mA test current
@@ -732,7 +751,7 @@
     hot: [{ id: 'dial', x: 6.65, y: 15.96, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
-      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows the voltage an LED or {{diode}} needs, in mV. Red probe on the long leg (+). OL (over limit) = no current flows: backwards, or more than 2 V. Blue, white and bright-green LEDs need about 2.6–3 V, so this meter shows OL for them even when they are fine.', off: 'The meter is off.' }[p.props.mode];
+      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows how many mV an LED or {{diode}} needs. Put the red probe on the long leg (+). “1” or OL means no current flows: it is backwards, or it needs more than 2 V. Blue and white LEDs need about 3 V, so they show OL even when they are fine.', off: 'The meter is off.' }[p.props.mode];
       return [['Reading', (rd.text || '—') + ' ' + (rd.unit || '')], ['Mode', help], ['Range', 'Here the meter picks the best range for you. On your DT-830B, turn the dial to the smallest range that is bigger than what you expect (for 5 V: the 20 range). A “1” on the left of the display means over range: pick a bigger range.']];
     }
   };

@@ -27,6 +27,7 @@ def new_page(browser, w, h, touch=False, scale=1):
     page.on('pageerror', lambda e: errors.append(f'{w}px pageerror: {e}'))
     page.goto(URL)
     page.wait_for_timeout(300)
+    page.evaluate("BB.app.doneDelay = 300")  # the real app waits 1.8 s so the player sees the result first
     return page
 
 
@@ -51,7 +52,7 @@ def solve_all_levels(page, tag):
             ov = page.evaluate("(() => { const w = innerWidth; const bad = []; ['#topbar', '#tb', '#stage', '#goal'].forEach(s => { const r = document.querySelector(s).getBoundingClientRect(); if (r.right > w + 0.5) bad.push(s + ' ' + Math.round(r.right)); }); if (document.documentElement.scrollWidth > w) bad.push('page ' + document.documentElement.scrollWidth); return bad; })()")
             check(not ov, f'{tag}: level {i + 1} fits in 375 px' + (f' — overflow {ov}' if ov else ''))
         if tag == 'desktop' or i in (0, 2, 8, 11):
-            page.click('#modal [data-m=stay]') if page.is_visible('#modal [data-m=stay]') else None
+            (page.wait_for_timeout(650), page.click('#modal [data-m=stay]')) if page.is_visible('#modal [data-m=stay]') else None
             page.wait_for_timeout(250)
             shot(page, f'{tag}-level{i + 1:02d}-{lid}')
         if page.is_visible('#modal'):
@@ -155,7 +156,7 @@ def ui_level3_by_pointer(page, tag):
     page.wait_for_timeout(500)
     shot(page, f'{tag}-level03-pointer-done')
     if page.is_visible('#modal [data-m=stay]'):
-        page.click('#modal [data-m=stay]')
+        (page.wait_for_timeout(650), page.click('#modal [data-m=stay]'))
 
 
 def ui_misc(page, tag):
@@ -188,14 +189,12 @@ def ui_misc(page, tag):
     check(page.evaluate('BB.app.level.done'), f'{tag}: level 1 finished by tapping')
     if page.is_visible('#modal'):
         shot(page, f'{tag}-level01-done-modal')
-        page.click('#modal [data-m=stay]')
+        (page.wait_for_timeout(650), page.click('#modal [data-m=stay]'))
     # level 9: choose the program with the real menu in the inspector
     page.evaluate("BB.app.startLevel(8)"); page.click('#introGo'); page.wait_for_timeout(200)
     page.evaluate("BB.app.actions().add('nano', {x: 8, y: 5}); BB.app.actions().wait(0.1)")
     page.evaluate("BB.app.bench.select(BB.app.sim.state.parts[0].id)")
     page.wait_for_timeout(200)
-    if tag == 'mobile':
-        page.click('#inspector .insmore'); page.wait_for_timeout(250)
     page.select_option('#inspector select[data-prog]', 'blink')
     page.wait_for_timeout(300)
     check(page.evaluate("BB.app.sim.state.parts[0].props.program") == 'blink' and page.evaluate("BB.app.level.step") == 2, f'{tag}: program chosen with the real menu (level 9 step 2 done)')
@@ -221,16 +220,19 @@ def ui_misc(page, tag):
     n1 = page.evaluate("BB.app.sim.state.parts.length")
     check(n1 == n0 + 1, f'{tag}: wire tool made a wire by two taps')
     # zoom with the wheel (desktop) / buttons
-    s0 = page.evaluate("BB.app.bench.view.s")
-    page.click('#zoom [data-z=in]')
-    s1 = page.evaluate("BB.app.bench.view.s")
-    check(s1 > s0, f'{tag}: zoom in button works')
+    if tag == 'desktop':  # on touch screens only Fit is shown (pinch zooms)
+        s0 = page.evaluate("BB.app.bench.view.s")
+        page.click('#zoom [data-z=in]')
+        s1 = page.evaluate("BB.app.bench.view.s")
+        check(s1 > s0, f'{tag}: zoom in button works')
+    else:
+        check(page.is_visible('#zoom [data-z=fit]') and not page.is_visible('#zoom [data-z=in]'), f'{tag}: only the Fit button on a touch screen')
     # current overlay
     page.evaluate("BB.app.startLevel(2)"); page.click('#introGo'); page.wait_for_timeout(100)
     page.evaluate("BB.LEVELS[2].solve(BB.app.actions())")
     page.wait_for_timeout(500)
     if page.is_visible('#modal [data-m=stay]'):
-        page.click('#modal [data-m=stay]')
+        (page.wait_for_timeout(650), page.click('#modal [data-m=stay]'))
     page.click('#tb [data-act=flow]')
     page.wait_for_timeout(400)
     nflow = page.evaluate("document.querySelectorAll('.flow path').length")
@@ -273,7 +275,7 @@ with sync_playwright() as pw:
     browser = pw.chromium.launch()
     # desktop
     page = new_page(browser, 1440, 900)
-    page.evaluate("localStorage.clear()"); page.reload(); page.wait_for_timeout(300)
+    page.evaluate("localStorage.clear()"); page.reload(); page.wait_for_timeout(300); page.evaluate("BB.app.doneDelay = 300")
     shot(page, 'desktop-home')
     touch_targets(page, 'desktop home')
     solve_all_levels(page, 'desktop')
@@ -290,7 +292,7 @@ with sync_playwright() as pw:
     page.context.close()
     # mobile
     page = new_page(browser, 375, 812, touch=True, scale=2)
-    page.evaluate("localStorage.clear()"); page.reload(); page.wait_for_timeout(300)
+    page.evaluate("localStorage.clear()"); page.reload(); page.wait_for_timeout(300); page.evaluate("BB.app.doneDelay = 300")
     shot(page, 'mobile-home')
     touch_targets(page, 'mobile home')
     solve_all_levels(page, 'mobile')

@@ -427,3 +427,24 @@ test('Resistor with both legs in one strip: warning (it does nothing)', () => {
   for (let k = 0; k < 3; k++) sim.step(1 / 60);
   assert.ok(sim.res.issues.some(i => i.kind === 'samerow' && /resistor/.test(i.title)));
 });
+
+test('Nano RST wired to GND: held in reset, Blink stops, the LED stays dark', () => {
+  const sim = bench([['nano', { x: 8, y: 5, props: { program: 'blink' } }], ['resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }],
+    ['led', { ends: ['i3', 'B-4'] }], ['wire', { ends: ['h21', 'B-20'] }], ['wire', { ends: ['i20', 'j21'] }]]); // RST (bottom index 12 → col 20) to GND (col 21)
+  let maxI = 0;
+  for (let k = 0; k < 90; k++) { sim.step(1 / 60); maxI = Math.max(maxI, byType(sim, 'led')[0]._i); }
+  assert.ok(maxI < 1e-6, 'LED dark while in reset');
+  assert.ok(sim.res.issues.some(i => i.kind === 'reset'));
+});
+
+test('ECHO (5 V pulses, 2.9 % of the time) straight into ESP32 pin 33: flagged at once, but the pin takes seconds (not ms) to die', () => {
+  const parts = [['esp32', { x: 6, y: 4, props: { program: 'distance' } }], ['hcsr04', { x: 24, y: 3 }], ['wire', { ends: ['j12', 'b24'] }],
+    ['wire', { ends: ['a9', 'T-9'] }], ['wire', { ends: ['T-27', 'b27'] }], ['wire', { ends: ['a21', 'b25'] }], ['wire', { ends: ['c26', 'i16'] }]];
+  const sim = bench(parts);
+  for (let k = 0; k < 30; k++) sim.step(1 / 60);
+  const e = byType(sim, 'esp32')[0];
+  assert.ok(sim.res.issues.some(i => i.kind === 'overvolt'), 'flagged within half a second');
+  assert.ok(!e.st.damaged['33'], 'not dead yet after 0.5 s');
+  for (let k = 0; k < 600; k++) sim.step(1 / 60);
+  assert.ok(e.st.damaged['33'], 'dead after a while');
+});

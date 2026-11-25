@@ -84,6 +84,20 @@
   function mcuPinNet(L, mcu, label) { var def = BB.PARTS[mcu.type]; var k = def.pins.findIndex(function (q) { return q.n === label; }); return L.net(mcu, k); }
   function anyGndNet(L, mcu) { var def = BB.PARTS[mcu.type], out = []; def.pins.forEach(function (q, k) { if (q.kind === 'gnd') out.push(L.net(mcu, k)); }); return out; }
 
+  // level 10: is the light-sensor divider (LDR + 10 kΩ) built between 5V, A0 and GND?
+  function dividerOk(L) {
+          var n = L.part('nano'), ldr = L.of('ldr')[0], r = L.of('resistor')[0];
+          if (!ldr || !r) return false;
+          var a0 = mcuPinNet(L, n, 'A0'), v5 = mcuPinNet(L, n, '5V'), gnd = anyGndNet(L, n);
+          var ln = [L.net(ldr, 0), L.net(ldr, 1)], rn = [L.net(r, 0), L.net(r, 1)];
+          var isG = function (x) { return gnd.indexOf(x) >= 0; };
+          // LDR on top (more light → bigger number) or upside down (more light → smaller number): both are real dividers
+          var normal = ln.indexOf(a0) >= 0 && ln.indexOf(v5) >= 0 && rn.indexOf(a0) >= 0 && (isG(rn[0]) || isG(rn[1]));
+          var flipped = ln.indexOf(a0) >= 0 && (isG(ln[0]) || isG(ln[1])) && rn.indexOf(a0) >= 0 && rn.indexOf(v5) >= 0;
+          L.flags.flipped = flipped && !normal;
+          return normal || flipped;
+  }
+
   // Why is this LED dark? A plain explanation, or null.
   function whyDark(L, led) {
     if (!led || lit(led) || led.st.burnt) return null;
@@ -227,7 +241,7 @@
       board: { cols: 30 }, view: [-0.6, -1.6, 17, 18.6], phone: [-0.6, -1.6, 15, 18.6], tray: [], tools: ['xray'],
       steps: [
         { text: 'Tap any hole in the middle area (rows a–j).', tap: function (L, h) { var o = L.sim.board.byId[h]; if (o.kind === 'term') return { ok: true, msg: 'See the 5 holes that light up? They share one metal strip.' }; return { ok: false, msg: 'That is a power rail. Tap a hole in rows a–j.' }; } },
-        { text: 'Tap 🔍 X-ray to see the metal strips inside.', check: function (L) { return L.xray; }, ok: 'Each strip joins 5 holes in a column.' },
+        { text: 'Tap X-ray (the magnifier in the bottom bar) to see the metal strips inside.', check: function (L) { return L.xray; }, ok: 'Each strip joins 5 holes in a column.' },
         { text: 'Tap a hole that is connected to c8.', tap: function (L, h) {
           if (h === 'c8') return { ok: false, msg: 'That is c8 itself. Tap another hole on the same strip.' };
           if (!/^[a-j]/.test(h)) return { ok: false, count: true, msg: h + ' is in a power rail, not in column 8. Strips go up and down: a8 to e8.' };
@@ -251,11 +265,11 @@
         { text: 'Is the + hole at column 26 connected to the + hole at column 38?', ready: function (t) { return t['T+26'] && t['T+38']; }, readyText: 'Tap the top + hole at column 26, then the one at column 38, and watch the light.', choices: [
           { label: 'Yes', ok: false, why: 'Tap them both. The light stops at the gap in the red line.' },
           { label: 'No', ok: true, why: 'Right. On this board each rail is cut in the middle. Look for the gap in the red and blue lines.' }] },
-        { text: 'Tap ✏️ Wire, then tap a + hole on the left and a + hole on the right of the gap.', check: function (L) { return L.connected('T+26', 'T+38') && !L.connected('T+26', 'T-26'); }, ok: 'The two halves of the + rail are joined now.' },
+        { text: 'Tap Wire (bottom bar), then tap a + hole on the left and a + hole on the right of the gap.', check: function (L) { return L.connected('T+26', 'T+38') && !L.connected('T+26', 'T-26'); }, ok: 'The two halves of the + rail are joined now.' },
         { text: 'Now join the two halves of the top blue − rail too.', check: function (L) { return L.connected('T-26', 'T-38') && L.connected('T+26', 'T+38') && !L.connected('T+26', 'T-26'); }, ok: 'Both rails now run along the whole board.' }
       ],
       explain: function (L) { if (L.connected('T+26', 'T-26')) return 'A wire now joins the + rail to the − rail. With power on, that is a {{short circuit}}! Tap that wire and press Delete.'; return null; },
-      hints: ['The gap is between column 30 and column 32. Look at the red line.', 'Tap ✏️ Wire. Tap the + hole at column 30, then the + hole at column 32.', 'Do the same in the blue − row: column 30 to column 32.'],
+      hints: ['The gap is between column 30 and column 32. Look at the red line.', 'Tap Wire (bottom bar). Tap the + hole at column 30, then the + hole at column 32.', 'Do the same in the blue − row: column 30 to column 32.'],
       done: 'Rails carry power along the board. If a long board splits them, two short wires join the halves.',
       solve: function (A) { A.tap('T+20'); A.tap('T+26'); A.tap('T+38'); A.choose(1); A.wire('T+30', 'T+32'); A.wire('T-30', 'T-32'); }
     },
@@ -336,7 +350,7 @@
     {
       id: 'dimmer', title: 'Dimmer knob', icon: 'knob',
       intro: { pic: I.dimmer, text: 'A {{potentiometer}} is a knob that changes its {{resistance}}. Use it to make an LED brighter or dimmer.' },
-      board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], phone: [1, -9, 24, 18.6], tray: ['pot', 'wire'],
+      board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], phone: [1, -9, 24, 18.6], lock: ['r'], tray: ['pot', 'wire'],
       setup: function (A) {
         A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['a14', 'a18'], locked: true });
@@ -376,13 +390,20 @@
         { text: 'Set the top rails to 5V and the bottom rails to 3.3V. Tap the yellow {{jumper}}s.', check: function (L) { var m = L.part('mb'); return m.props.top === '5' && m.props.bottom === '3.3'; }, ok: 'Top rails 5V, bottom rails 3.3V.' },
         { text: 'Turn the power on: tap the white button on the MB102.', check: function (L) { var m = L.part('mb'); return m.props.on && m.props.top === '5'; }, ok: 'Power is on. The green light shows it.' },
         { text: 'Light a red LED from the top 5V rail. Pick the resistor that gives about 15 mA.', check: function (L) {
-          return L.of('led').some(function (l) { return (l._i || 0) > 0.008 && safe(l) && L.of('resistor').some(function (r) { return inSeries(l, r) && (Math.abs(L.pinV(r, 0) - 5) < 0.15 || Math.abs(L.pinV(r, 1) - 5) < 0.15); }); });
+          // the order in the loop does not matter (resistor first or LED first): the loop must use the top + rail
+          var top = L.hnet('T+20');
+          return L.of('led').some(function (l) {
+            if (!((l._i || 0) > 0.008 && safe(l))) return false;
+            return L.of('resistor').some(function (r) { return inSeries(l, r) && [L.net(l, 0), L.net(r, 0), L.net(r, 1)].indexOf(top) >= 0; });
+          });
         }, ok: '(5 − 2) V ÷ 220 Ω ≈ 14 mA. Just right!' }
       ],
       explain: function (L) {
         var l = L.of('led')[0], r = L.of('resistor').find(function (q) { return l && inSeries(l, q); });
         if (l && r && r.props.r === 10000) return 'The LED only glows a little: (5 V − 2 V) ÷ 10 000 Ω = 0.3 mA. It needs about 15 mA. Use a smaller resistor.';
         if (l && l.st.burnt) return 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω.';
+        if (l && lit(l) && r && [L.net(l, 0), L.net(r, 0), L.net(r, 1)].indexOf(L.hnet('T+20')) < 0) return 'The LED is on, but from the bottom rails (3.3V). This step wants the top rails (5V).';
+        if (l && lit(l) && !r) return 'The LED is on, but there is no resistor in its loop. Put the resistor in the loop.';
         return whyDark(L, l);
       },
       hints: ['Ohm’s law: R = V ÷ I. The resistor gets 5 V − 2 V = 3 V. For 15 mA: 3 ÷ 0.015 = 200 Ω.', 'The closest one is 220 Ω (red, red, brown bands).', 'Resistor from the top + rail to a hole (like a12). LED long leg in that column, short leg in the top − rail.'],
@@ -406,7 +427,7 @@
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail. Set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the top + rail. Tap the meter and set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
@@ -469,21 +490,11 @@
       },
       steps: [
         { text: 'Connect the screen with 4 wires ({{I2C}}): GND → GND, {{VCC}} → 5V, SDA → A4, SCL → A5.', check: function (L) { var o = L.part('oled'); return !!o.st.mcu && (o.st.vcc || 0) > 4.5; }, ok: 'The screen is on. I2C uses just SDA (data) and SCL (clock).' },
-        { text: 'Build a {{voltage divider}}: LDR from 5V to A0, and 10 kΩ from A0 to GND. A0 is an {{analog}} pin.', check: function (L) {
-          var n = L.part('nano'), ldr = L.of('ldr')[0], r = L.of('resistor')[0];
-          if (!ldr || !r) return false;
-          var a0 = mcuPinNet(L, n, 'A0'), v5 = mcuPinNet(L, n, '5V'), gnd = anyGndNet(L, n);
-          var ln = [L.net(ldr, 0), L.net(ldr, 1)], rn = [L.net(r, 0), L.net(r, 1)];
-          var isG = function (x) { return gnd.indexOf(x) >= 0; };
-          // LDR on top (more light → bigger number) or upside down (more light → smaller number): both are real dividers
-          var normal = ln.indexOf(a0) >= 0 && ln.indexOf(v5) >= 0 && rn.indexOf(a0) >= 0 && (isG(rn[0]) || isG(rn[1]));
-          var flipped = ln.indexOf(a0) >= 0 && (isG(ln[0]) || isG(ln[1])) && rn.indexOf(a0) >= 0 && rn.indexOf(v5) >= 0;
-          L.flags.flipped = flipped && !normal;
-          return normal || flipped;
+        { text: 'Build a {{voltage divider}}: LDR from 5V to A0, and 10 kΩ from A0 to GND. A0 is an {{analog}} pin.', check: function (L) { return dividerOk(L);
         }, ok: 'Now A0 gets a voltage that follows the light.' },
         { text: 'Tap the light sensor and move its Light slider from bright to dark. Watch the number.', check: function (L) {
           var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0, a = Math.round(v / (n.st.vcc || 5) * 1023), f = L.flags;
-          if (!L.part('oled').st.mcu) return false;
+          if (!L.part('oled').st.mcu || !dividerOk(L)) return false; // the divider must still be there
           // either way round: the number must swing from big to small (or small to big) as the light changes
           if (a > 600) f.hi = true; if (a < 300) f.lo = true;
           return f.hi && f.lo;

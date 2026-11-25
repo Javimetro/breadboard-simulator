@@ -173,6 +173,7 @@
       $('#banner').addEventListener('click', function () { $('#banner').classList.toggle('open'); });
     },
     setTool: function (t) {
+      this.bench.hideTip(); this.bench.stickyHi = false;
       this.bench.tool = t; this.bench.wireStart = null;
       document.querySelectorAll('#tb .tool').forEach(function (b) { b.classList.toggle('on', b.dataset.act === t); });
       document.body.classList.toggle('wiretool', t === 'wire');
@@ -232,8 +233,8 @@
     },
 
     // ---------- levels ----------
-    startLevel: function (i) { this.showIntro(LEVELS[i]); },
-    clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; },
+    startLevel: function (i) { this.clearToasts(); this.showIntro(LEVELS[i]); },
+    clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; $('#modal').hidden = true; },
     beginLevel: function (def) {
       this.clearToasts();
       this.mode = 'level';
@@ -333,7 +334,10 @@
       if (lv.hints) why.push('you used ' + lv.hints + ' hint' + (lv.hints > 1 ? 's' : ''));
       if (lv.mistakes) why.push('something burned or shorted ' + lv.mistakes + ' time' + (lv.mistakes > 1 ? 's' : ''));
       if (lv.wrong) why.push('you gave ' + lv.wrong + ' wrong answer' + (lv.wrong > 1 ? 's' : ''));
-      setTimeout(function () {
+      // first let the player see the result (the LED lighting up); never open under a finger that is still down
+      var showDone = function () {
+        if (Object.keys(self.bench.pointers).length) { setTimeout(showDone, 250); return; }
+        if (self.level !== lv) return;
         self.modal('<div class="done"><div class="bigstars">' + [1, 2, 3].map(function (k) { return '<span style="animation-delay:' + (k * 0.18) + 's">' + icon('star', k <= stars ? 'on' : '') + '</span>'; }).join('') + '</div>' +
           '<h2>Level ' + lv.def.n + ' done!</h2><p class="learned">' + rich(lv.def.done) + '</p>' +
           (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned parts and no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
@@ -342,8 +346,9 @@
           if (a === 'next') self.startLevel(lv.def.n);
           if (a === 'home') self.showHome();
           if (a === 'sand') self.startSandbox();
-        });
-      }, 450);
+        }, 'bottom');
+      };
+      setTimeout(showDone, this.doneDelay === undefined ? 1800 : this.doneDelay);
     },
     renderGoal: function () {
       var lv = this.level, def = lv.def, self = this;
@@ -561,7 +566,8 @@
       var bodies = sim.state.parts.filter(function (q) { return q.type !== 'wire'; }).map(function (q) { return sim.bodyRect(q); });
       var overlaps = function (r) { return bodies.some(function (o) { return r.x0 < o.x1 - 0.2 && r.x1 > o.x0 + 0.2 && r.y0 < o.y1 - 0.2 && r.y1 > o.y0 + 0.2; }); };
       var p = null;
-      var byDist = b.holes.filter(function (h) { return h.kind === 'term'; }).sort(function (a, d) { return Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(d.x - c.x, d.y - c.y); });
+      // leads parts go in rows c–h, away from the rails (their bodies would hide the rail holes)
+      var byDist = b.holes.filter(function (h) { return h.kind === 'term' && (def.kind !== 'leads' || (h.y >= 5 && h.y <= 12)); }).sort(function (a, d) { return Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(d.x - c.x, d.y - c.y); });
       if (def.kind === 'leads') {
         var span = { led: 1, resistor: 4, capacitor: 1, ldr: 2 }[type] || 2;
         for (var i = 0; i < byDist.length && !p; i++) {
@@ -571,7 +577,7 @@
             if (!overlaps(sim.bodyRect(cand))) p = cand;
           }
         }
-        if (!p) p = BB.newPart(type, { props: props, ends: [{ x: c.x, y: b.y1 + 2 }, { x: c.x + span, y: b.y1 + 2 }] });
+        if (!p) { var ls = this.freeSpot({ size: [span + 2, 3] }); p = BB.newPart(type, { props: props, ends: [{ x: ls.x + 1, y: ls.y + 2 }, { x: ls.x + 1 + span, y: ls.y + 2 }] }); }
       } else if (def.kind === 'rigid' && this.mode === 'level' && (this.level.def.placeFree || []).indexOf(type) >= 0) {
         // where to put it IS the lesson here: it starts next to the board, the player plugs it in
         var r0 = BB.newPart(type, { props: props, x: 0, y: 0 }), br = sim.bodyRect(r0);
@@ -590,7 +596,11 @@
           var onBoard = type === 'mb102' || (tr.x0 >= b.x0 - 0.5 && tr.x1 <= b.x1 + 0.5); // do not hang off the end of the board
           if (onBoard && pts.every(function (q) { return free(q.at); }) && (type === 'mb102' || !overlaps(tr))) p = test;
         }
-        if (!p) p = BB.newPart(type, { props: props, x: b.x1 + 4, y: 2, free: true });
+        if (!p) {
+          // no room on the board: put it next to the board, where nothing else lies
+          var bd = def.body, sp = this.freeSpot({ size: [bd[2] - bd[0], bd[3] - bd[1]] });
+          p = BB.newPart(type, { props: props, x: sp.x - bd[0], y: sp.y - bd[1], free: true });
+        }
       } else {
         // modules and off-board parts go next to the board
         var spot = this.freeSpot(def);
@@ -716,10 +726,11 @@
     // phones: make the selected part big enough to work on, and keep it above the sheet
     focusPart: function (p) {
       var bench = this.bench;
-      if (this.mode === 'level') document.body.classList.add('goalmin');
       var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
+      // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
+      if (this.mode === 'level' && !big && !PARTS[p.type].mcu) document.body.classList.add('goalmin');
       if (bench.view.s * 10 < 19 && !big) bench.view.s = 2.2;
-      if (big) { this.ensureVisible(p); return; }
+      if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
       var pts = this.sim.pinPoints(p), r = this.sim.bodyRect(p);
       var cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
@@ -743,6 +754,7 @@
       var p = this.sim.part(id), def = PARTS[p.type];
       var lock = this.mode === 'level' ? (this.level.def.lock || []) : [];
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
+      if (def.mcu) html += '<div class="ctls progfirst">' + this.programUi(p, lock.indexOf('program') >= 0) + '</div>'; // the program comes first: steps ask for it
       html += '<div class="vals" id="vals"></div>';
       html += '<div class="acts" id="acts"></div>';
       html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴') + '</button>';
@@ -761,7 +773,7 @@
         else if (pr.type === 'swatch') ctrls += '<span class="sw">' + pr.options.map(function (o) { return '<button data-k="' + pr.k + '" data-s="' + o + '" style="background:' + BB.WIRE_RGB[o] + '" class="' + (o === v ? 'on' : '') + '" title="' + o + '"></button>'; }).join('') + '</span>';
         ctrls += '</label>';
       });
-      if (def.mcu) ctrls += this.programUi(p, lock.indexOf('program') >= 0);
+
       html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';
@@ -1006,11 +1018,13 @@
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },
-    modal: function (html, cb) {
-      var m = $('#modal');
+    modal: function (html, cb, where) {
+      var m = $('#modal'), opened = Date.now();
       m.innerHTML = '<div class="mbox">' + html + '</div>';
+      m.className = where === 'bottom' ? 'bottom' : '';
       m.hidden = false;
       m.onclick = function (e) {
+        if (Date.now() - opened < 500) return; // a tap that started before the box opened
         var b = e.target.closest('[data-m]');
         if (b) { m.hidden = true; if (cb) cb(b.dataset.m); }
         else if (e.target === m) { m.hidden = true; if (cb) cb(null); }
@@ -1048,7 +1062,12 @@
     } },
     { id: 'nanoMB', title: 'Nano from the MB102.', text: 'Turn off the Nano’s USB cable (in its panel). Power it from a 5V rail: rail + → Nano 5V pin, rail − → Nano GND.', check: function (L) { return L.of('nano').some(function (n) { return n.props.usb === false && n.st.powered && n.st.extPowered; }); } },
     { id: 'cap', title: 'Charge a capacitor.', text: 'Put a 1000 µF capacitor (+ leg to +) in series with a 1 kΩ resistor on a 5V rail. Tap the capacitor and watch its voltage rise: after one {{time constant}} (1 kΩ × 1000 µF = 1 second) it has about 63 % of 5 V.', check: function (L, f) {
-      return L.of('capacitor').some(function (c) { var v = (c.vis && c.vis.v) || 0; if (v < 1 && c.props.c >= 1000e-6) f.low = true; return f.low && v > 4.5; });
+      // a real RC charge: from below 1 V to over 4.5 V, ending near 5 V (not 9 V), and slowly (a resistor in series)
+      return L.of('capacitor').some(function (c) {
+        var v = (c.vis && c.vis.v) || 0, t = L.sim.t;
+        if (v < 1 && c.props.c >= 1000e-6) { f.low = true; f.t0 = t; }
+        return f.low && v > 4.5 && v < 5.2 && t - f.t0 > 0.8;
+      });
     } },
     { id: 'espMB', title: 'ESP32 from a 3.3V rail.', text: 'Set one MB102 side to 3.3V. Unplug the ESP32’s USB, then feed its 3V pin from that rail (and GND to −). Never feed 5V into 3V!', check: function (L) { return L.of('esp32').some(function (n) { return n.props.usb === false && n.st.powered && Math.abs(((n.st.lastV || {})['3V'] || 0) - 3.3) < 0.15 && !Object.keys(n.st.damaged || {}).length; }); } }
   ];

@@ -294,7 +294,9 @@
   // flying leads from a module body to their ends
   function leads(p, pts, cols, probe) {
     var def = BB.PARTS[p.type], s = '';
-    pts.forEach(function (q, k) {
+    // draw the black (−) lead first, so the red (+) one is always on top and easy to see
+    pts.map(function (q, k) { return [q, k]; }).reverse().forEach(function (qk) {
+      var q = qk[0], k = qk[1];
       var a = { x: (p.x + def.leadFrom[k][0]) * U, y: (p.y + def.leadFrom[k][1]) * U }, b = pt(q);
       // the lead leaves the body in its own direction, and arrives at its end from the body's side
       var out = def.leadOut || [def.leadFrom[k][0] <= 0.5 ? -1 : 1, 0];

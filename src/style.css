@@ -348,3 +348,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .bsel { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14.5px; color: var(--mut); }
 .bsel select { min-height: 44px; flex: 1; max-width: 70%; border-radius: 10px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 0 8px; font-size: 15px; }
 .bands .primary { min-height: 46px; border-radius: 12px; border: 0; }
+#modal.bottom { background: #0006; align-items: end; padding-bottom: calc(80px + var(--safe-b)); }
+#modal.bottom .mbox { max-height: 55vh; overflow: auto; }
+#bench.dragleg g[data-id] { opacity: .45; transition: opacity .15s; }
+#bench.dragleg g[data-id].active { opacity: 1; }
+/* touch screens: pinch zooms, so only the Fit button stays (it would cover holes otherwise) */
+@media (pointer: coarse) { #zoom [data-z=in], #zoom [data-z=out] { display: none; } }

@@ -158,6 +158,8 @@
       io[label] = { mode: r.mode, pull: r.pull, level: 0 };
     });
     var lv = st.lastV || {};
+    // logic thresholds follow the chip's real supply (a USB Nano runs at 4.7 V: HIGH from 0.6 × 4.7 = 2.82 V)
+    var k = def.mcu === 'nano' && st.vcc ? st.vcc / cfg.vcc : 1, hiTh = cfg.hiTh * k, loTh = cfg.loTh * k;
     var api = {
       t: ctx.t - (st.t0 || 0), adcMax: cfg.adcMax, mem: st.mem,
       out: function (role, level) { var o = io[pinFor(p, role)]; if (o) { o.level = level ? 1 : 0; delete o.pwm; } },
@@ -167,14 +169,14 @@
       voltsPeak: function (role) { return (st.lastVpeak || {})[pinFor(p, role)] || 0; },
       digitalPeak: function (role) { // for short pulses: the highest voltage during the step
         var v = (st.lastVpeak || {})[pinFor(p, role)] || 0;
-        if (v >= cfg.hiTh) return 1; if (v <= cfg.loTh) return 0; return null;
+        if (v >= hiTh) return 1; if (v <= loTh) return 0; return null;
       },
       pulse: function (role) { var o = io[pinFor(p, role)]; if (o) { o.pwm = 0.0002; o.level = 1; } },
       digital: function (role) {
         if (st.floating && st.floating[pinFor(p, role)]) return Math.random() < 0.5 ? 1 : 0;
         var v = lv[pinFor(p, role)] || 0;
-        if (v >= cfg.hiTh) return 1;
-        if (v <= cfg.loTh) return 0;
+        if (v >= hiTh) return 1;
+        if (v <= loTh) return 0;
         return null;
       },
       analog: function (role) {
@@ -217,7 +219,7 @@
     var ioKey = Object.keys(io).map(function (k) { return k + io[k].mode + (io[k].pull || ''); }).join('|');
     var settled = st.lastV && st.ioKey === ioKey;
     st.ioKey = ioKey;
-    if (st.powered && !st.dead && settled) prog.step(api);
+    if (st.powered && !st.dead && !st.inReset && settled) prog.step(api);
     st.io = st.powered ? io : {};
     // Wio Terminal: its own screen shows what the program shows, or the serial output.
   }

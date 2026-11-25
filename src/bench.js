@@ -216,12 +216,15 @@
       }).join('');
     }
     // voltage tags: one per powered net, at its first used hole
-    var tags = {}, out = '', boxes = [];
+    var tags = {}, out = '', boxes = [], used = {};
+    // how many pins touch each net: header pins with no wire get no tag (a Pi has 40 of them)
+    sim.state.parts.forEach(function (p) { sim.pinPoints(p).forEach(function (q, k) { var kk = sim.keyOf(q, p, k); if (kk[0] !== 'F') { var nn = res.nets.find(kk); used[nn] = (used[nn] || 0) + 1; } }); });
     sim.state.parts.forEach(function (p) {
       sim.pinPoints(p).forEach(function (q, k) {
         var key2 = sim.keyOf(q, p, k);
         if (key2[0] === 'F' || !res.keyPowered[key2]) return;
         var net = res.nets.find(key2);
+        if (key2.slice(0, 2) === 'P:' && used[net] < 2) return;
         if (tags[net]) return;
         tags[net] = 1;
         var v = res.keyV[key2];
@@ -408,6 +411,12 @@
       if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id, true); } }
       if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
       if (d.kind === 'end') this.select(d.hit.id, true);
+      this.hideTip();
+      // while placing a leg or wire, other parts turn see-through so the holes under them show
+      if (d.kind === 'end' || d.kind === 'wire') {
+        this.svg.classList.add('dragleg');
+        if (d.kind === 'end' && this.partEls[d.hit.id]) this.partEls[d.hit.id].classList.add('active');
+      }
       this.hideLoupe();
     }
     // dragging something near the edge of the bench moves the view, so a far hole can be reached
@@ -503,8 +512,13 @@
     sim.dirty();
     this.render();
   };
+  B.endDragLook = function () {
+    this.svg.classList.remove('dragleg');
+    var a = this.svg.querySelector('g.active'); if (a) a.classList.remove('active');
+  };
   B.up = function (e) {
     var d = this.drag;
+    this.endDragLook();
     delete this.pointers[e.pointerId];
     this.hideLoupe();
     if (!d) return;
@@ -534,7 +548,8 @@
     if (d.kind === 'hot' && d.undo) this.app.commit(d.undo);
     this.renderUi();
   };
-  B.cancel = function (e) { delete this.pointers[e.pointerId]; this.hideLoupe(); this.releasePress(); if (this.drag && this.drag.undo && this.drag.moved) this.app.commit(this.drag.undo); this.drag = null; };
+  B.cancel = function (e) {
+    this.endDragLook(); delete this.pointers[e.pointerId]; this.hideLoupe(); this.releasePress(); if (this.drag && this.drag.undo && this.drag.moved) this.app.commit(this.drag.undo); this.drag = null; };
   B.releasePress = function () {
     var self = this;
     this.sim.state.parts.forEach(function (p) { if (p.type === 'button' && p.st.pressed && !p.st.latched) { p.st.pressed = false; self.sim.dirty(); self.app.onInteract('release', p); } });
@@ -572,7 +587,7 @@
       this.hiHole = hit.hole; this.stickyHi = true;
       this.app.onTapHole(hit.hole);
       this.renderUi();
-      if (e.pointerType !== 'mouse') { var sc = this.toScreen(sim.board.byId[hit.hole].x, sim.board.byId[hit.hole].y), sz = this.size(); this.showTip(hit.hole, sc.x + sz.left, sc.y + sz.top); }
+      if (e.pointerType !== 'mouse') this.showTip(hit.hole, 0, 0, true); // docked in a corner, so it does not hide the lit holes
       return;
     }
     this.select(null);
@@ -588,7 +603,7 @@
   };
 
   // ---------- tooltip & loupe ----------
-  B.showTip = function (holeId, x, y) {
+  B.showTip = function (holeId, x, y, docked) {
     var sim = this.sim, h = sim.board.byId[holeId];
     var st = sim.board.strips[h.strip];
     var v = sim.holeVoltage(holeId);
@@ -596,6 +611,14 @@
     if (occ) { var p = sim.part(occ.id), pin = PARTS[p.type].pins[occ.k]; what = '<br>' + PARTS[p.type].name + (pin && pin.n ? ' · ' + pin.n : ''); }
     this.tip.innerHTML = '<b>' + sim.board.label(holeId) + '</b> · ' + st.label + what + '<br>' + (v === null ? '<span class="mut">No power here</span>' : '<b class="vv">' + v.toFixed(2) + ' V</b>');
     var sz = this.size();
+    if (docked) {
+      // bottom-left corner of the bench, above the toolbar
+      this.tip.style.left = (sz.left + 8) + 'px';
+      this.tip.style.top = (sz.top + sz.h - 8 - (this.tip.offsetHeight || 60)) + 'px';
+      this.tip.hidden = false;
+      this.tip.style.top = (sz.top + sz.h - 8 - this.tip.offsetHeight) + 'px';
+      return;
+    }
     this.tip.style.left = Math.min(sz.left + sz.w - 190, Math.max(sz.left + 4, x + 14)) + 'px';
     this.tip.style.top = Math.max(sz.top + 4, y - 64) + 'px';
     this.tip.hidden = false;
