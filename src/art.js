@@ -364,7 +364,7 @@
       s += txt(186, j[1] - 13, j[0], 'mtrs', ' text-anchor="middle"');
     });
     s += '</g>';
-    return s + leads(p, pts, ['#d8322b', '#1e1e1e'], true);
+    return s + '<!--under-->' + leads(p, pts, ['#d8322b', '#1e1e1e'], true); // bench.js draws the probe leads under the board's parts
   };
 
   DRAW.mb102 = function (p, pts) {

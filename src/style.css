@@ -163,7 +163,8 @@ body.notray #tb .partsbtn { display: none; }
 #loupe svg { width: 100%; height: 100%; display: block; }
 #loupe span { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font: 700 12px system-ui; color: #fff; text-shadow: 0 1px 3px #000; }
 #loupe::after { content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border: 2px solid #fff; border-radius: 50%; }
-.term { background: none; border: 0; padding: 0; color: inherit; font: inherit; border-bottom: 2px dotted var(--cyan); cursor: help; line-height: 1.15; }
+.term { background: none; border: 0; padding: 0; color: inherit; font: inherit; border-bottom: 2px dotted var(--cyan); cursor: help; line-height: 1.15; position: relative; }
+.term::after { content: ''; position: absolute; left: -4px; right: -4px; top: -12px; bottom: -12px; } /* a finger-sized tap area around a short word */
 #pop { position: fixed; z-index: 40; background: #0e1216; border: 1px solid var(--cyan); border-radius: 12px; padding: 10px 12px; font-size: 15px; box-shadow: 0 8px 30px #000c; }
 #pop b { display: block; color: var(--cyan); margin-bottom: 2px; }
 #modal { position: fixed; inset: 0; z-index: 50; background: #000a; display: grid; place-items: center; padding: 16px; }
@@ -348,7 +349,13 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .bands { display: grid; gap: 6px; margin: 8px 0; }
 .bigres { width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
 @media (max-width: 1099px) { body.bandstep #goal { max-height: 60%; } .bigres { max-height: 46px; } .bands > .mut { display: none; } }
-.bslots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bslots { display: grid; grid-template-columns: repeat(3, 1fr) 1.2fr; gap: 6px; margin-top: 4px; }
+.bslots button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+.bslots button small { font-size: 11px; color: var(--mut); }
+.bslots button.bad { border-color: #ff5a5a; box-shadow: 0 0 0 2px #ff5a5a55; }
+.bslots .primary { min-height: 44px; border-radius: 10px; border: 0; font-weight: 700; }
+.bnote { margin: 4px 0 6px; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+.bnote.bad { background: #3a1717; border: 1px solid #a33; } .bnote.info { background: #13303a; border: 1px solid #2c5d6d; } .bnote.good { background: #123a22; border: 1px solid #2e8a4e; }
 .bslots button { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-size: 14px; }
 .bslots button.on { border-color: #4cc9f0; box-shadow: 0 0 0 2px #4cc9f055; }
 .chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }

@@ -171,7 +171,8 @@ body.notray #tb .partsbtn { display: none; }
 #loupe svg { width: 100%; height: 100%; display: block; }
 #loupe span { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font: 700 12px system-ui; color: #fff; text-shadow: 0 1px 3px #000; }
 #loupe::after { content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border: 2px solid #fff; border-radius: 50%; }
-.term { background: none; border: 0; padding: 0; color: inherit; font: inherit; border-bottom: 2px dotted var(--cyan); cursor: help; line-height: 1.15; }
+.term { background: none; border: 0; padding: 0; color: inherit; font: inherit; border-bottom: 2px dotted var(--cyan); cursor: help; line-height: 1.15; position: relative; }
+.term::after { content: ''; position: absolute; left: -4px; right: -4px; top: -12px; bottom: -12px; } /* a finger-sized tap area around a short word */
 #pop { position: fixed; z-index: 40; background: #0e1216; border: 1px solid var(--cyan); border-radius: 12px; padding: 10px 12px; font-size: 15px; box-shadow: 0 8px 30px #000c; }
 #pop b { display: block; color: var(--cyan); margin-bottom: 2px; }
 #modal { position: fixed; inset: 0; z-index: 50; background: #000a; display: grid; place-items: center; padding: 16px; }
@@ -356,7 +357,13 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .bands { display: grid; gap: 6px; margin: 8px 0; }
 .bigres { width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
 @media (max-width: 1099px) { body.bandstep #goal { max-height: 60%; } .bigres { max-height: 46px; } .bands > .mut { display: none; } }
-.bslots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bslots { display: grid; grid-template-columns: repeat(3, 1fr) 1.2fr; gap: 6px; margin-top: 4px; }
+.bslots button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+.bslots button small { font-size: 11px; color: var(--mut); }
+.bslots button.bad { border-color: #ff5a5a; box-shadow: 0 0 0 2px #ff5a5a55; }
+.bslots .primary { min-height: 44px; border-radius: 10px; border: 0; font-weight: 700; }
+.bnote { margin: 4px 0 6px; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+.bnote.bad { background: #3a1717; border: 1px solid #a33; } .bnote.info { background: #13303a; border: 1px solid #2c5d6d; } .bnote.good { background: #123a22; border: 1px solid #2e8a4e; }
 .bslots button { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-size: 14px; }
 .bslots button.on { border-color: #4cc9f0; box-shadow: 0 0 0 2px #4cc9f055; }
 .chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
@@ -1235,7 +1242,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
           'An LED can take about 20 mA. With no resistor (or one that is too small, or one with both legs in the same strip) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED”.');
       } else if (i > 0.0305) {
-        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. At this current it gets hot and wears out fast. Use a bigger resistor.');
+        var left = i > 0.04 ? Math.max(1, Math.ceil((1 - (p.st.heat || 0)) / ((i / 0.04) / 6))) : 0; // seconds until heat() burns it
+        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. ' + (left ? 'It is getting hot and will burn out in about ' + left + ' s. ' : 'At this current it gets hot and wears out fast. ') + 'Use a bigger resistor.');
       } else if (i > 0.0205) {
         ctx.issue(p, 'overI', 'warn', 'A bit too much current: ' + fmtI(i), 'An LED takes 20 mA at most (10–15 mA is best). Above that it gets hot and wears out fast. Use a slightly bigger resistor.');
       } else if (sameNet && ctx.nodeSupplied(p, 0)) {
@@ -2563,9 +2571,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     if (id === 'blink') return 'void setup() {\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(' + a('led') + ', HIGH);\n  delay(500);\n  digitalWrite(' + a('led') + ', LOW);\n  delay(500);\n}';
     if (id === 'button_led') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);  // button to GND\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool pressed = digitalRead(' + a('button') + ') == LOW;\n  digitalWrite(' + a('led') + ', pressed ? HIGH : LOW);\n}';
     if (id === 'fade_knob') return 'void setup() {\n  pinMode(' + a('fade') + ', OUTPUT);\n}\n\nvoid loop() {\n  int knob = analogRead(' + an('knob') + ');   // 0 to ' + BB.BOARDS[mcu].adcMax + '\n  analogWrite(' + a('fade') + ', map(knob, 0, ' + BB.BOARDS[mcu].adcMax + ', 0, 255));  // PWM\n}';
-    if (id === 'light_meter') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + SCR[1] + '\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.println(light);\n' + SCR[2](['"LIGHT METER"', '"Light: " + String(light)']) + '\n  delay(200);\n}';
-    if (id === 'thermometer') return '#include <DHT.h>\n' + SCR[0] + '\nDHT dht(' + a('dht') + ', DHT11);  // DATA needs a 10k pull-up to VCC\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n' + SCR[1] + '\n}\n\nvoid loop() {\n  float t = dht.readTemperature();\n  float h = dht.readHumidity();\n  if (isnan(t) || isnan(h)) { Serial.println("DHT11 error"); delay(2000); return; }\n  Serial.print("Temp: "); Serial.print(t); Serial.print(" C  Humidity: "); Serial.println(h);\n' + SCR[2](['"Temp: " + String(t, 0) + " C"', '"Humidity: " + String(h, 0) + " %"']) + '\n  delay(2000);\n}';
-    if (id === 'distance') return 'void setup() {\n  Serial.begin(9600);\n  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH);  // how long ECHO stays HIGH\n  Serial.print("Distance: ");\n  Serial.print(us / 58);   // 58 µs = 1 cm\n  Serial.println(" cm");\n  delay(60);\n}';
+    if (id === 'light_meter') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + SCR[1] + '\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.print("Light: ");\n  Serial.println(light);\n  String bar = "[";   // a bar of 10 marks\n  int marks = (light * 20L / ' + BB.BOARDS[mcu].adcMax + ' + 1) / 2;   // 0 to 10, rounded\n  for (int i = 0; i < 10; i++) bar += (i < marks) ? "#" : ".";\n  bar += "]";\n' + SCR[2](['"LIGHT METER"', '"Light: " + String(light)', 'bar']) + '\n  delay(200);\n}';
+    if (id === 'thermometer') return '#include <DHT.h>\n' + SCR[0] + '\nDHT dht(' + a('dht') + ', DHT11);  // DATA needs a 10k pull-up to VCC\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n' + SCR[1] + '\n}\n\nvoid loop() {\n  float t = dht.readTemperature();\n  float h = dht.readHumidity();\n  if (isnan(t) || isnan(h)) { Serial.println("DHT11 error"); delay(2000); return; }\n  Serial.print("Temp: "); Serial.print(t); Serial.print(" C  Humidity: "); Serial.println(h);\n' + SCR[2](['"THERMOMETER"', '"Temp: " + String(t, 0) + " C"', '"Humidity: " + String(h, 0) + " %"']) + '\n  delay(2000);\n}';
+    if (id === 'distance') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + SCR[1] + '\n  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH, 30000);  // how long ECHO stays HIGH (0 = no echo)\n  String txt = "No echo";\n  if (us) txt = "Distance: " + String(us / 58) + " cm";   // 58 µs = 1 cm\n  Serial.println(txt);\n' + SCR[2](['"DISTANCE"', 'txt']) + '\n  delay(60);\n}';
     if (id === 'motion_alarm') return 'void setup() {\n  pinMode(' + a('pir') + ', INPUT);\n  pinMode(' + a('buzzer') + ', OUTPUT);\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool motion = digitalRead(' + a('pir') + ') == HIGH;\n  digitalWrite(' + a('buzzer') + ', motion);\n  digitalWrite(' + a('led') + ', motion);\n}';
     if (id === 'clap_beep') return 'void setup() {}\n\nvoid loop() {\n  int sound = analogRead(' + an('mic') + ');\n  if (sound > ' + Math.round(0.8 * BB.BOARDS[mcu].adcMax) + ') {     // a loud sound\n    tone(' + a('speaker') + ', 1000, 500);  // 1 kHz for half a second\n    delay(500);\n  }\n}';
     if (id === 'tone_button') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);\n}\n\nvoid loop() {\n  if (digitalRead(' + a('button') + ') == LOW) tone(' + a('speaker') + ', 440);  // the note A\n  else noTone(' + a('speaker') + ');\n}';
@@ -2944,7 +2952,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       s += txt(186, j[1] - 13, j[0], 'mtrs', ' text-anchor="middle"');
     });
     s += '</g>';
-    return s + leads(p, pts, ['#d8322b', '#1e1e1e'], true);
+    return s + '<!--under-->' + leads(p, pts, ['#d8322b', '#1e1e1e'], true); // bench.js draws the probe leads under the board's parts
   };
 
   DRAW.mb102 = function (p, pts) {
@@ -3281,7 +3289,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   };
   B.size = function () { var r = this.svg.getBoundingClientRect(); return { w: r.width || 1, h: r.height || 1, left: r.left, top: r.top }; };
   // Fit a world rectangle into the view. insetTop keeps it below an overlay (the goal card).
-  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight) {
+  // alignTop: put spare height below the rect, not above (phones: the work sits right under the task card)
+  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight, alignTop) {
     var sz = this.size(); pad = pad === undefined ? 16 : pad; insetTop = insetTop || 0; insetRight = insetRight || 0;
     var w = (x1 - x0) * U, h = (y1 - y0) * U;
     var aw = sz.w - insetRight, ah = sz.h - insetTop;
@@ -3289,7 +3298,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     s = Math.max(0.25, Math.min(8, s));
     this.view.s = s;
     this.view.tx = (aw - w * s) / 2 - x0 * U * s;
-    this.view.ty = insetTop + (ah - h * s) / 2 - y0 * U * s;
+    this.view.ty = insetTop + (alignTop ? Math.min(pad + 16, (ah - h * s) / 2) : (ah - h * s) / 2) - y0 * U * s;
     this.applyView();
   };
   B.fitAll = function () {
@@ -3323,20 +3332,25 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   };
   B.render = function (force) {
     var sim = this.sim, self = this, now = sim.t;
-    var parts = sim.state.parts.slice().sort(function (a, b) {
-      var la = self.layerOf(a), lb = self.layerOf(b);
-      if (la !== lb) return la - lb;
-      return (a.id === self.sel) - (b.id === self.sel);
-    });
-    var seen = {};
-    parts.forEach(function (p, idx) {
-      seen[p.id] = true;
+    // one entry per drawn layer piece; the meter's probe leads (after <!--under-->) go under the
+    // board's parts, so a cable never hides a resistor's bands
+    var items = [];
+    sim.state.parts.forEach(function (p) {
       var pts = sim.pinPoints(p);
       var svg = DRAW[p.type](p, pts, now, p.id === self.sel);
       if (p.free && PARTS[p.type].kind === 'rigid') svg = '<g opacity=".93" transform="translate(0 -3)">' + svg + '</g>';
-      var g = self.partEls[p.id];
-      if (!g) { g = el('g', { 'data-id': p.id, 'data-type': p.type }); self.partEls[p.id] = g; }
-      if (force || self.partKeys[p.id] !== svg) { g.innerHTML = svg; self.partKeys[p.id] = svg; }
+      var cut = svg.indexOf('<!--under-->'), la = self.layerOf(p), on = p.id === self.sel ? 1 : 0;
+      if (cut >= 0) { items.push({ key: p.id + ':under', p: p, svg: svg.slice(cut), layer: 0.5, on: 0 }); svg = svg.slice(0, cut); }
+      items.push({ key: p.id, p: p, svg: svg, layer: la, on: on });
+    });
+    items.sort(function (a, b) { return a.layer - b.layer || a.on - b.on; });
+    var seen = {};
+    items.forEach(function (it, idx) {
+      var p = it.p, svg = it.svg, key = it.key;
+      seen[key] = true;
+      var g = self.partEls[key];
+      if (!g) { g = el('g', { 'data-id': p.id, 'data-type': p.type }); self.partEls[key] = g; }
+      if (force || self.partKeys[key] !== svg) { g.innerHTML = svg; self.partKeys[key] = svg; }
       if (self.gParts.childNodes[idx] !== g) self.gParts.insertBefore(g, self.gParts.childNodes[idx] || null);
     });
     Object.keys(this.partEls).forEach(function (id) { if (!seen[id]) { self.partEls[id].remove(); delete self.partEls[id]; delete self.partKeys[id]; } });
@@ -3652,7 +3666,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       // while placing a leg or wire, other parts turn see-through so the holes under them show
       if (d.kind === 'end' || d.kind === 'wire') {
         this.svg.classList.add('dragleg');
-        if (d.kind === 'end' && this.partEls[d.hit.id]) this.partEls[d.hit.id].classList.add('active');
+        if (d.kind === 'end') [d.hit.id, d.hit.id + ':under'].forEach(function (k) { if (this.partEls[k]) this.partEls[k].classList.add('active'); }, this);
       }
       this.hideLoupe();
     }
@@ -3751,7 +3765,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   };
   B.endDragLook = function () {
     this.svg.classList.remove('dragleg');
-    var a = this.svg.querySelector('g.active'); if (a) a.classList.remove('active');
+    this.svg.querySelectorAll('g.active').forEach(function (a) { a.classList.remove('active'); });
   };
   B.up = function (e) {
     var d = this.drag;
@@ -4321,7 +4335,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
       intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part. To measure current, you put the meter into the loop ({{series}}).' },
-      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 42], tray: [],
+      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [1.5, -2.5, 31, 48.5], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
@@ -4373,7 +4387,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 12 mA.' }
+        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 11 mA.' }
       ],
       explain: function (L) {
         var l = L.of('led')[0], n = L.of('nano')[0];
@@ -4385,12 +4399,12 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
       done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
-      solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
+      solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'red' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
       id: 'screen', title: 'Light meter on a screen', icon: 'oled',
       intro: { pic: I.screen, text: 'A light sensor changes its resistance with light. The Nano turns this into a number and shows it on a small screen.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], phone: [3, -1.6, 25, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], phone: [-0.8, -1.6, 31.5, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) {
         A.add('nano', { id: 'nano', x: 8, y: 5, props: { program: 'light_meter' }, locked: true });
@@ -4466,7 +4480,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [3, -6, 31.5, 26], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [-3.5, -6, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
@@ -4540,6 +4554,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       return '<button class="term" data-term="' + esc(term) + '">' + esc(shown || term) + '</button>';
     });
   }
+  // plain text (glossary words not tappable): for places right above real controls
+  function plain(s) { return esc(s).replace(/\{\{([^}|]+)(\|([^}]+))?\}\}/g, function (m, term, x, shown) { return shown || term; }); }
   var ICON = {
     back: '<path d="M15 5l-7 7 7 7" />',
     move: '<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/>',
@@ -4811,12 +4827,13 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       this.onSelect(null);
     },
     fitView: function () {
+      this._viewBefore = this._viewFocus = null;
       if (this.mode === 'level' && this.level.def.view) {
         var v = this.level.def.view, b = this.sim.board, bench = this.bench;
         var mobile = window.innerWidth < 1100, g = $('#goal');
         var top = mobile && g.offsetHeight ? g.offsetHeight + 12 : 0, right = mobile ? 0 : 54;
         // phones: a tighter view (where the work happens) so holes are big enough for a finger
-        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top, right); return; }
+        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top, right, true); return; }
         bench.fitRect(v[0], v[1], v[2], v[3], 8, top, right);
         if (mobile) return;
         var s0 = bench.view.s;
@@ -4862,7 +4879,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     },
     stepTaskHtml: function () {
       var lv = this.level;
-      return this.mode === 'level' && lv && !lv.done && lv.def.steps[lv.step] ? '<p class="steptask"><b>Step ' + (lv.step + 1) + ':</b> ' + rich(lv.def.steps[lv.step].text) + '</p>' : '';
+      return this.mode === 'level' && lv && !lv.done && lv.def.steps[lv.step] ? '<p class="steptask"><b>Step ' + (lv.step + 1) + ':</b> ' + plain(lv.def.steps[lv.step].text) + '</p>' : '';
     },
     stepDone: function (msg) {
       var lv = this.level;
@@ -4872,7 +4889,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       this.saveSandbox(); // also saves the level in progress
       audio.blip(880, 0.12, 'sine', 0.06); setTimeout(function () { audio.blip(1320, 0.18, 'sine', 0.05); }, 90);
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
-      this.toast('✓ ' + (msg || 'Done!'), 'good');
+      // the band picker shows the good news inside the card, so nothing covers the resistor below it
+      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')]; else this.toast('✓ ' + (msg || 'Done!'), 'good');
       this.renderGoal();
     },
     finishLevel: function () {
@@ -4938,7 +4956,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (b.dataset.act === 'hint') self.hint();
         if (b.dataset.act === 'bands') self.checkBands();
         if (b.dataset.slot !== undefined) { lv.bandSlot = +b.dataset.slot; self.redrawBands(); }
-        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
+        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if (lv.bandBad) lv.bandBad = lv.bandBad.filter(function (x) { return x !== (lv.bandSlot || 0); }); if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
@@ -4980,26 +4998,31 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
             (c ? '' : '<text x="' + x + '" y="38" font-size="16" text-anchor="middle" fill="#6b5a40">?</text>') +
             (k === slot ? '<path d="M' + (x - 9) + ' 63 L' + x + ' 56 L' + (x + 9) + ' 63Z" fill="#4cc9f0"/>' : '');
         }).join('') + '<rect x="214" y="9" width="12" height="46" fill="' + RGB.gold + '"/></svg>';
-      var slots = '<div class="bslots">' + ['1st', '2nd', '3rd'].map(function (n, k) { return '<button data-slot="' + k + '" class="' + (k === slot ? 'on' : '') + '">' + n + (pick[k] ? ': ' + pick[k] : '') + '</button>'; }).join('') + '</div>';
-      var opts = slot < 2 ? digit.map(function (c, k) { return [c, String(k)]; }) : [['black', '× 1'], ['brown', '× 10'], ['red', '× 100'], ['orange', '× 1k'], ['yellow', '× 10k']];
+      var bad = lv.bandBad || [];
+      var slots = '<div class="bslots">' + ['1st', '2nd', '3rd'].map(function (n, k) { return '<button data-slot="' + k + '" class="' + (k === slot ? 'on' : '') + (bad.indexOf(k) >= 0 ? ' bad' : '') + '">' + n + (pick[k] ? '<small>' + pick[k] + '</small>' : '') + '</button>'; }).join('') + '<button class="primary" data-act="bands">Check</button></div>';
+      var note = lv.bandNote ? '<p class="bnote ' + lv.bandNote[0] + '">' + rich(lv.bandNote[1]) + '</p>' : '';
+      var opts = slot < 2 ? digit.map(function (c, k) { return [c, String(k)]; }) : [['black', '×1'], ['brown', '×10'], ['red', '×100'], ['orange', '×1k'], ['yellow', '×10k']];
       var chips = '<div class="chips">' + opts.map(function (o) { return '<button data-chip="' + o[0] + '" title="' + o[0] + '" class="' + (pick[slot] === o[0] ? 'on' : '') + '" style="background:' + RGB[o[0]] + ';color:' + (light[o[0]] ? '#111' : '#fff') + '"><b>' + o[1] + '</b><small>' + o[0] + '</small></button>'; }).join('') + '</div>';
       var val = '';
       if (pick[0] && pick[1] && pick[2]) {
         var ohm = (digit.indexOf(pick[0]) * 10 + digit.indexOf(pick[1])) * Math.pow(10, digit.indexOf(pick[2]));
         val = '<p class="small">Your answer: ' + digit.indexOf(pick[0]) + digit.indexOf(pick[1]) + ' × ' + Math.pow(10, digit.indexOf(pick[2])) + ' = <b>' + (ohm >= 1000 ? ohm / 1000 + ' kΩ' : ohm + ' Ω') + '</b></p>';
       }
-      return svg + slots + '<p class="small mut">' + (slot < 2 ? 'Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the multiplier. Tap its colour:') + '</p>' + chips + val + '<button class="primary" data-act="bands">Check</button>';
+      return note + svg + slots + '<p class="small mut">' + (slot < 2 ? 'Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the multiplier. Tap its colour:') + '</p>' + chips + val;
     },
     redrawBands: function () { var el = document.querySelector('#goal .bands'); if (el) el.innerHTML = this.bandsHtml(); },
     checkBands: function (picked) {
       var lv = this.level, step = lv.def.steps[lv.step]; if (!step || !step.bands) return;
       picked = picked || (lv.bandPick || [null, null, null]).slice();
-      if (picked.some(function (x) { return !x; })) { this.toast('Pick a colour for each of the 3 bands.', 'info'); return; }
-      var want = step.bands.want, bad = [];
-      for (var k = 0; k < 3; k++) if (picked[k] !== want[k]) bad.push(['1st', '2nd', '3rd'][k]);
-      if (!bad.length) { this.stepDone(step.bands.ok); return; }
+      // feedback goes in the picker itself (a toast would cover the zoomed resistor the player must look at)
+      if (picked.some(function (x) { return !x; })) { lv.bandNote = ['info', 'Pick a colour for each of the 3 bands.']; lv.bandSlot = picked.findIndex(function (x) { return !x; }); this.redrawBands(); return; }
+      var want = step.bands.want, bad = [], names = ['1st', '2nd', '3rd'];
+      for (var k = 0; k < 3; k++) if (picked[k] !== want[k]) bad.push(k);
+      if (!bad.length) { lv.bandNote = null; lv.bandBad = null; this.stepDone(step.bands.ok); return; }
       lv.wrong = (lv.wrong || 0) + 1;
-      this.toast((bad.length === 1 ? 'One band is' : bad.length + ' bands are') + ' not right. Zoom in on the resistor and look again: ' + step.bands.tip, 'bad');
+      lv.bandBad = bad; lv.bandSlot = bad[0];
+      lv.bandNote = ['bad', (bad.length === 1 ? 'The ' + names[bad[0]] + ' band is' : 'The ' + bad.map(function (b) { return names[b]; }).join(' and ') + ' bands are') + ' not right. ' + (bad[0] < 2 ? 'Bands 1 and 2 are digits: read them from the end away from the gold band.' : 'The 3rd band says how many zeros.')];
+      this.redrawBands();
       audio.blip(220, 0.18, 'sawtooth', 0.04);
     },
     hint: function () {
@@ -5329,8 +5352,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
       if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
-      if (bench.view.s * 10 < 19 && !big) bench.view.s = 2.2;
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
+      if (!this._viewBefore) this._viewBefore = Object.assign({}, bench.view); // put back when the sheet closes
+      if (bench.view.s * 10 < 19) bench.view.s = 2.2;
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
       var pts = this.sim.pinPoints(p), r = this.sim.bodyRect(p);
       var cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
@@ -5340,6 +5364,14 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       bench.view.tx = sz.w / 2 - cx * 10 * bench.view.s;
       bench.view.ty = (top + bottom) / 2 - cy * 10 * bench.view.s;
       bench.applyView(); bench.renderUi();
+      this._viewFocus = Object.assign({}, bench.view);
+    },
+    // the sheet closed: go back to the view from before the part was zoomed in, unless the player moved it since
+    restoreView: function () {
+      var vb = this._viewBefore, vf = this._viewFocus, v = this.bench.view;
+      this._viewBefore = this._viewFocus = null;
+      if (!vb || !vf || Math.abs(v.s - vf.s) > 1e-6 || Math.abs(v.tx - vf.tx) > 1 || Math.abs(v.ty - vf.ty) > 1) return;
+      Object.assign(v, vb); this.bench.applyView(); this.bench.renderUi();
     },
     onSelect: function (id, quiet) {
       var ins = $('#inspector'), self = this;
@@ -5348,6 +5380,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       document.body.classList.toggle('hassel', !!id && !quiet);
       if (id && !quiet && window.innerWidth < 1100) { var sp = this.sim.part(id); if (sp) this.focusPart(sp); }
       if (!id) {
+        this.restoreView();
         ins.innerHTML = '<p class="mut small empty">' + icon('info') + ' Tap a part to see its values here. Tap a hole to see what is connected to it.</p>';
         return;
       }

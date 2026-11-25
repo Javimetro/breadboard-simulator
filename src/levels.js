@@ -417,7 +417,7 @@
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
       intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part. To measure current, you put the meter into the loop ({{series}}).' },
-      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 42], tray: [],
+      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [1.5, -2.5, 31, 48.5], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
@@ -469,7 +469,7 @@
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 12 mA.' }
+        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 11 mA.' }
       ],
       explain: function (L) {
         var l = L.of('led')[0], n = L.of('nano')[0];
@@ -481,12 +481,12 @@
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
       done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
-      solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'green' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
+      solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'red' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
       id: 'screen', title: 'Light meter on a screen', icon: 'oled',
       intro: { pic: I.screen, text: 'A light sensor changes its resistance with light. The Nano turns this into a number and shows it on a small screen.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], phone: [3, -1.6, 25, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 32], phone: [-0.8, -1.6, 31.5, 32], tray: [{ type: 'ldr' }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) {
         A.add('nano', { id: 'nano', x: 8, y: 5, props: { program: 'light_meter' }, locked: true });
@@ -562,7 +562,7 @@
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [3, -6, 31.5, 26], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [-3.5, -6, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [

@@ -54,7 +54,8 @@
   };
   B.size = function () { var r = this.svg.getBoundingClientRect(); return { w: r.width || 1, h: r.height || 1, left: r.left, top: r.top }; };
   // Fit a world rectangle into the view. insetTop keeps it below an overlay (the goal card).
-  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight) {
+  // alignTop: put spare height below the rect, not above (phones: the work sits right under the task card)
+  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight, alignTop) {
     var sz = this.size(); pad = pad === undefined ? 16 : pad; insetTop = insetTop || 0; insetRight = insetRight || 0;
     var w = (x1 - x0) * U, h = (y1 - y0) * U;
     var aw = sz.w - insetRight, ah = sz.h - insetTop;
@@ -62,7 +63,7 @@
     s = Math.max(0.25, Math.min(8, s));
     this.view.s = s;
     this.view.tx = (aw - w * s) / 2 - x0 * U * s;
-    this.view.ty = insetTop + (ah - h * s) / 2 - y0 * U * s;
+    this.view.ty = insetTop + (alignTop ? Math.min(pad + 16, (ah - h * s) / 2) : (ah - h * s) / 2) - y0 * U * s;
     this.applyView();
   };
   B.fitAll = function () {
@@ -96,20 +97,25 @@
   };
   B.render = function (force) {
     var sim = this.sim, self = this, now = sim.t;
-    var parts = sim.state.parts.slice().sort(function (a, b) {
-      var la = self.layerOf(a), lb = self.layerOf(b);
-      if (la !== lb) return la - lb;
-      return (a.id === self.sel) - (b.id === self.sel);
-    });
-    var seen = {};
-    parts.forEach(function (p, idx) {
-      seen[p.id] = true;
+    // one entry per drawn layer piece; the meter's probe leads (after <!--under-->) go under the
+    // board's parts, so a cable never hides a resistor's bands
+    var items = [];
+    sim.state.parts.forEach(function (p) {
       var pts = sim.pinPoints(p);
       var svg = DRAW[p.type](p, pts, now, p.id === self.sel);
       if (p.free && PARTS[p.type].kind === 'rigid') svg = '<g opacity=".93" transform="translate(0 -3)">' + svg + '</g>';
-      var g = self.partEls[p.id];
-      if (!g) { g = el('g', { 'data-id': p.id, 'data-type': p.type }); self.partEls[p.id] = g; }
-      if (force || self.partKeys[p.id] !== svg) { g.innerHTML = svg; self.partKeys[p.id] = svg; }
+      var cut = svg.indexOf('<!--under-->'), la = self.layerOf(p), on = p.id === self.sel ? 1 : 0;
+      if (cut >= 0) { items.push({ key: p.id + ':under', p: p, svg: svg.slice(cut), layer: 0.5, on: 0 }); svg = svg.slice(0, cut); }
+      items.push({ key: p.id, p: p, svg: svg, layer: la, on: on });
+    });
+    items.sort(function (a, b) { return a.layer - b.layer || a.on - b.on; });
+    var seen = {};
+    items.forEach(function (it, idx) {
+      var p = it.p, svg = it.svg, key = it.key;
+      seen[key] = true;
+      var g = self.partEls[key];
+      if (!g) { g = el('g', { 'data-id': p.id, 'data-type': p.type }); self.partEls[key] = g; }
+      if (force || self.partKeys[key] !== svg) { g.innerHTML = svg; self.partKeys[key] = svg; }
       if (self.gParts.childNodes[idx] !== g) self.gParts.insertBefore(g, self.gParts.childNodes[idx] || null);
     });
     Object.keys(this.partEls).forEach(function (id) { if (!seen[id]) { self.partEls[id].remove(); delete self.partEls[id]; delete self.partKeys[id]; } });
@@ -425,7 +431,7 @@
       // while placing a leg or wire, other parts turn see-through so the holes under them show
       if (d.kind === 'end' || d.kind === 'wire') {
         this.svg.classList.add('dragleg');
-        if (d.kind === 'end' && this.partEls[d.hit.id]) this.partEls[d.hit.id].classList.add('active');
+        if (d.kind === 'end') [d.hit.id, d.hit.id + ':under'].forEach(function (k) { if (this.partEls[k]) this.partEls[k].classList.add('active'); }, this);
       }
       this.hideLoupe();
     }
@@ -524,7 +530,7 @@
   };
   B.endDragLook = function () {
     this.svg.classList.remove('dragleg');
-    var a = this.svg.querySelector('g.active'); if (a) a.classList.remove('active');
+    this.svg.querySelectorAll('g.active').forEach(function (a) { a.classList.remove('active'); });
   };
   B.up = function (e) {
     var d = this.drag;
