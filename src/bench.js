@@ -108,7 +108,7 @@
       var svg = DRAW[p.type](p, pts, now, p.id === self.sel);
       if (p.free && PARTS[p.type].kind === 'rigid') svg = '<g opacity=".93" transform="translate(0 -3)">' + svg + '</g>';
       var g = self.partEls[p.id];
-      if (!g) { g = el('g', { 'data-id': p.id }); self.partEls[p.id] = g; }
+      if (!g) { g = el('g', { 'data-id': p.id, 'data-type': p.type }); self.partEls[p.id] = g; }
       if (force || self.partKeys[p.id] !== svg) { g.innerHTML = svg; self.partKeys[p.id] = svg; }
       if (self.gParts.childNodes[idx] !== g) self.gParts.insertBefore(g, self.gParts.childNodes[idx] || null);
     });

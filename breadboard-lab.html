@@ -224,8 +224,8 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #stage { order: 2; }
   #goal { position: static; max-height: none; box-shadow: none; background: var(--panel2); flex: none; }
   #tray, #inspector { flex: none; }
-  #toasts { top: 64px; bottom: auto; }
-  body.hassel #toasts { top: 64px; }
+  #toasts { top: auto; bottom: 84px; } /* desktop: low in the bench, away from the board's top rails */
+  body.hassel #toasts { top: auto; bottom: 84px; }
   body:not(.insfull) #inspector .desc { display: block; }
   body.sandmode #goal { display: block; order: 2; } body.sandmode #tray { order: 1; } /* sandbox: parts first */
   #goal .steps li.todo, #goal .steps li.done { display: list-item; }
@@ -364,6 +364,9 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 @media (pointer: coarse) { #zoom [data-z=in], #zoom [data-z=out] { display: none; } }
 body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite; }
 @keyframes partspulse { 50% { background: #2a2516; color: var(--amber); box-shadow: 0 0 0 3px #ffb62755; } }
+/* modules that hang over the rails: see-through while wiring, so the rail holes under them show */
+body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic], body.wiretool #bench g[data-type=dht11], body.wiretool #bench g[data-type=pot] { opacity: .4; }
+#inspector { padding-bottom: calc(24px + var(--safe-b)); }
 </style>
 </head>
 <body>
@@ -883,11 +886,11 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
   //   'lim' gives its maximum current iLim (current limit: the voltage drops)
   //   'off' cannot take current back: if another source pushes harder, it lets go and the
   //         voltage rises to whatever that other source makes.
-  function limSrc(n, st, key, g, out, V, rn, iLim) {
+  function limSrc(n, st, key, g, out, V, rn, iLim, offLoad) {
     var mode = (st.mode || (st.mode = {}))[key] || 'v';
     var src = { key: key, V: V, iLim: iLim, out: out, g: g, mode: mode, el: null };
     if (mode === 'lim') src.el = n.I(g, out, iLim);
-    else if (mode === 'off') n.R(out, g, 1e7);
+    else if (mode === 'off') n.R(out, g, offLoad || 1e7);
     else { var s = n.node(); src.el = n.V(s, g, V); n.R(s, out, rn); }
     if (src.el !== null && n.mark) n.mark(src.el);
     return src;
@@ -973,7 +976,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     st.vcc = st.powered ? vcc : 0;
     // the chip's own supply rail: a regulator that cannot take current back. Current pushed in through a
     // pin's protection diode raises it (back-powering). Without power, the chip is a light load (~2 kΩ).
-    if (st.powered) e.srcs.push(Object.assign(limSrc(n, st, 'vdd', g, vccNode, vcc, 0.05, 2.0), { label: 'chip supply', what: 'vdd' }));
+    if (st.powered) e.srcs.push(Object.assign(limSrc(n, st, 'vdd', g, vccNode, vcc, 0.05, 2.0, def.mcu === 'nano' ? 250 : 100), { label: 'chip supply', what: 'vdd' }));
     else n.R(vccNode, g, 2000);
     e.vccNode = vccNode;
     // power pins also have protection diodes from GND: a supply connected backwards drives a big current through them
@@ -1096,7 +1099,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
         def.pins.forEach(function (q, k) { var pe2 = e.pin[q.n]; if (pe2 && pe2.cHi !== undefined) { var ic = r.i(pe2.cHi); if (!worst || ic > worst.i) worst = { n: q.n, i: ic, k: k }; } });
         ctx.issue(p, 'backpower', 'danger', 'Pin ' + (worst ? worst.n : '?') + ' pushes the chip’s supply up to ' + fmtV(c.v),
           'Too high a voltage on pin ' + (worst ? worst.n : '?') + ' sends current through its {{protection diode}} into the chip’s own ' + src.V + ' V supply, and pulls it up. This can break the chip. Use a voltage divider or a resistor.', worst ? worst.k : undefined);
-        if (c.v > cfg.absMax + 0.1) { st.pwrHeat = (st.pwrHeat || 0) + ctx.dt; if (st.pwrHeat > 1.5) { st.dead = true; st.deadWhy = 'A pin pushed its supply up to ' + fmtV(c.v) + '.'; st.smoke = ctx.t; ctx.event(p, 'damage', worst ? worst.n : ''); ctx.dirty(); } }
+        if (c.v > cfg.absMax + 0.1) { st.pwrHeat = (st.pwrHeat || 0) + ctx.dt; if (st.pwrHeat > 0.5) { st.dead = true; st.deadWhy = 'A pin pushed its supply up to ' + fmtV(c.v) + '.'; st.smoke = ctx.t; ctx.event(p, 'damage', worst ? worst.n : ''); ctx.dirty(); } }
       } else if (c.off && c.v > src.V + 0.15) {
         ctx.issue(p, 'fight', 'danger', 'Another power source pushes into the ' + src.label + ' pin', 'The board makes ' + src.V + ' V on its ' + src.label + ' pin, but another source pushes it to ' + fmtV(c.v) + '. A ' + (src.what === 'usb' ? 'USB port' : 'regulator') + ' cannot take current back, so the voltage rises. Use one power source only.', src.idx);
       }
@@ -1154,7 +1157,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
         // an input with nothing driving it "floats": it picks up noise and reads random values
         st.floating = st.floating || {};
         st.floating[pin.n] = true;
-        ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing sets this input HIGH or LOW (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a pull-up or pull-down resistor.', i);
+        ctx.issue(p, 'floating', 'info', 'Pin ' + pin.n + ' is floating', 'Nothing sets this input HIGH or LOW (it has no path to + or GND), so it picks up electrical noise and reads random values. Connect the sensor to it, or add a {{pull-up resistor|pull-up}} or {{pull-down resistor|pull-down}} resistor.', i);
       }
       if (st.floating && (pe.mode !== 'in' || !ctx.pinFloating(p, i))) delete st.floating[pin.n];
     });
@@ -1217,7 +1220,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
           'An LED can take about 20 mA. With no resistor (or one that is too small, or one with both legs in the same strip) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED”.');
       } else if (i > 0.0305) {
-        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. At this current it gets hot, wears out fast and can burn out. Use a bigger resistor.');
+        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. At this current it gets hot and wears out fast. Use a bigger resistor.');
       } else if (i > 0.0205) {
         ctx.issue(p, 'overI', 'warn', 'A bit too much current: ' + fmtI(i), 'An LED takes 20 mA at most (10–15 mA is best). Above that it gets hot and wears out fast. Use a slightly bigger resistor.');
       } else if (sameNet && ctx.nodeSupplied(p, 0)) {
@@ -1359,7 +1362,8 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     p.vis = { hot: Math.abs(i) > limit };
     // red lead in a − rail (or black in a + rail): the whole board is upside down
     var rail = function (e) { return e && e.at && /^[TB][+-]/.test(e.at) ? e.at[1] : null; };
-    if (rail(p.ends[0]) === '-' || rail(p.ends[1]) === '+') {
+    var stacked = ctx.parts.some(function (q) { return q !== p && (q.type === 'battery9' || q.type === 'aa') && ((ctx.netOfPin(q, 0) !== null && ctx.netOfPin(q, 0) === ctx.netOfPin(p, 1)) || (ctx.netOfPin(q, 1) !== null && ctx.netOfPin(q, 1) === ctx.netOfPin(p, 0))); });
+    if (!stacked && (rail(p.ends[0]) === '-' || rail(p.ends[1]) === '+')) {
       p.st.swapped = true;
       ctx.issue(p, 'battrev', 'danger', 'The battery is connected backwards', 'The red wire (+) goes to a blue − rail, or the black wire (−) to a red + rail. Now + and − are swapped for everything on the board, so LEDs look “backwards”. Put red in the + rail and black in the − rail.');
     } else p.st.swapped = false;
@@ -1488,7 +1492,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
         if (it < 1e-10 || !connected || vp / it > 2e6) { read = 'OL'; unit = 'Ω'; val = Infinity; }
         else {
           val = vp / it;
-          if (val < 0) { read = '-' + 'OL'; unit = 'Ω'; }
+          if (val < 0) { read = 'OL'; unit = ''; }
           else if (val >= 999.5e3) { read = (val / 1e6).toFixed(2); unit = 'MΩ'; }
           else if (val >= 999.95) { read = (val / 1e3).toFixed(2); unit = 'kΩ'; }
           else { read = val.toFixed(1); unit = 'Ω'; }
@@ -1515,8 +1519,18 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     hot: [{ id: 'dial', x: 6.65, y: 15.96, r: 4.6, kind: 'dial' }],
     info: function (p) {
       var rd = p.st.reading || {};
-      var help = { V: 'Volts between the red and black probe. Put the probes across a part.', A: 'Current through the meter in mA. The meter must be IN the path (open the loop and put it in the gap).', ohm: 'Resistance of a part with no power. OL (over limit) = too big, or nothing connected.', diode: 'Diode test: shows how many mV an LED or {{diode}} needs. Put the red probe on the long leg (+). “1” or OL means no current flows: it is backwards, or it needs more than 2 V. Blue and white LEDs need about 3 V, so they show OL even when they are fine.', off: 'The meter is off.' }[p.props.mode];
-      return [['Reading', (rd.text || '—') + ' ' + (rd.unit || '')], ['Mode', help], ['Range', 'Here the meter picks the best range for you. On your DT-830B, turn the dial to the smallest range that is bigger than what you expect (for 5 V: the 20 range). A “1” on the left of the display means over range: pick a bigger range.']];
+      var help = {
+        V: ['Volts between the red and black probe.', 'Put the probes across a part.'],
+        A: ['Current through the meter, in mA.', 'The meter must be IN the loop: open the loop and put the probes in the gap.', 'Put the probes in place first, then turn the dial (in DCA the meter is like a wire).'],
+        ohm: ['Resistance of a part with no power.'],
+        diode: ['Shows how many mV an LED or {{diode}} needs.', 'Red probe on the long leg (+).', 'Blue and white LEDs need about 3 V: too much for this meter, so they show “1”.'],
+        off: ['The meter is off.']
+      }[p.props.mode] || [];
+      var rows = [['Reading', rd.text === 'OL' ? '1 (over range)' : (rd.text || '—') + ' ' + (rd.unit || '')]];
+      help.forEach(function (h, k) { rows.push([k ? '' : 'How', h]); });
+      rows.push(['Over range', 'A “1” on the left of the display: the value is too big for the range.']);
+      rows.push(['Range', 'Here the meter picks the range for you. On your DT-830B, pick the smallest range above what you expect (for 5 V: 20).']);
+      return rows;
     }
   };
 
@@ -1524,7 +1538,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
   var np = nanoPins();
   PARTS.nano = {
     name: 'Arduino Nano', cat: 'boards', kind: 'rigid', mcu: 'nano',
-    desc: 'A small Arduino board (ATmega328P chip). It works at 5V. Put it across the middle gap so each pin has its own strip. Power: USB, 5V on the 5V pin, or 7–12 V on {{VIN}}. On USB its 5V pin gives about 4.7 V (a small diode protects your computer).',
+    desc: 'A small Arduino board ({{ATmega328P}} chip). It works at 5V. Put it across the middle gap so each pin has its own strip. Power: USB, 5V on the 5V pin, or 7–12 V on {{VIN}}. On USB its 5V pin gives about 4.7 V (a small diode protects your computer).',
     pins: np.pins, pinPos: np.pos,
     body: [-2.0, -0.6, 15.0, 6.6], covers: true,
     defaults: { usb: true, program: 'none' },
@@ -2800,8 +2814,9 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
       // the lead leaves the body in its own direction, and arrives at its end from the body's side
       var out = def.leadOut || [def.leadFrom[k][0] <= 0.5 ? -1 : 1, 0];
       var c1 = probe ? { x: a.x, y: a.y + 40 } : { x: a.x + out[0] * 30, y: a.y + out[1] * 30 };
-      var c2 = probe ? { x: b.x, y: b.y + 60 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
-      var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 18 : 0));
+      var c2 = probe ? { x: b.x + (k === 0 ? -18 : 18), y: b.y + 70 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
+      var pe = { x: b.x + (k === 0 ? -12 : 12), y: b.y + 37 }; // bottom end of the (leaning) probe body
+      var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(probe ? pe.x : b.x) + ' ' + f1(probe ? pe.y : b.y);
       if (probe) {
         // a probe above the meter: the cable goes down out of the jack and round the side, not over the display
         var bx1 = (p.x + def.size[0]) * U, bx0 = p.x * U, by1 = (p.y + def.size[1]) * U, pbot = b.y + 39;
@@ -2809,17 +2824,18 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
           // probe off to the side: out of the jack to the right, under the meter, then up to the probe
           var qx = a.x + 30 + k * 6, qy = by1 + 18 + k * 8;
           d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x + 40) + ' ' + f1(a.y) + ' ' + f1(qx + 10) + ' ' + f1(qy - 30) + ' ' + f1(qx) + ' ' + f1(qy) +
-            ' C' + f1(qx - 60) + ' ' + f1(qy + 30) + ' ' + f1(b.x) + ' ' + f1(Math.max(pbot, qy) + 40) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+            ' C' + f1(qx - 60) + ' ' + f1(qy + 30) + ' ' + f1(pe.x) + ' ' + f1(Math.max(pbot, qy) + 40) + ' ' + f1(pe.x) + ' ' + f1(pe.y);
         } else if (pbot < by1) {
           var side = b.x > (bx0 + bx1) / 2 ? bx1 + 18 + k * 8 : bx0 - 18 - k * 8, sy = (a.y + pbot) / 2;
           d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x) + ' ' + f1(a.y + 50) + ' ' + f1(side) + ' ' + f1(a.y + 40) + ' ' + f1(side) + ' ' + f1(sy) +
-            ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(b.x) + ' ' + f1(pbot + 30) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+            ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(pe.x) + ' ' + f1(pbot + 30) + ' ' + f1(pe.x) + ' ' + f1(pe.y);
         }
       }
       s += '<path d="' + d + '" fill="none" stroke="#00000044" stroke-width="4.4" transform="translate(0 1.5)"/>';
       s += '<path d="' + d + '" fill="none" stroke="' + cols[k] + '" stroke-width="' + (probe ? 3.6 : 3) + '" stroke-linecap="round"/>';
       if (probe) {
-        s += '<g transform="translate(' + f1(b.x) + ' ' + f1(b.y) + ')"><rect x="-3.4" y="5" width="6.8" height="34" rx="2.6" fill="' + cols[k] + '" stroke="#00000066" stroke-width=".5"/><rect x="-4.6" y="11" width="9.2" height="3" rx="1.4" fill="' + cols[k] + '"/><path d="M-1 5 L0 -0.5 L1 5Z" fill="#d9dde2" stroke="#777" stroke-width=".3"/></g>';
+        // the two probe bodies lean apart (red left, black right), so their tips never hide each other
+        s += '<g transform="translate(' + f1(b.x) + ' ' + f1(b.y) + ') rotate(' + (k === 0 ? 18 : -18) + ')"><rect x="-3.4" y="5" width="6.8" height="34" rx="2.6" fill="' + cols[k] + '" stroke="#00000066" stroke-width=".5"/><rect x="-4.6" y="11" width="9.2" height="3" rx="1.4" fill="' + cols[k] + '"/><path d="M-1 5 L0 -0.5 L1 5Z" fill="#d9dde2" stroke="#777" stroke-width=".3"/></g>';
       } else s += tip(b, '#d9dde2');
     });
     return s;
@@ -3249,7 +3265,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
       var svg = DRAW[p.type](p, pts, now, p.id === self.sel);
       if (p.free && PARTS[p.type].kind === 'rigid') svg = '<g opacity=".93" transform="translate(0 -3)">' + svg + '</g>';
       var g = self.partEls[p.id];
-      if (!g) { g = el('g', { 'data-id': p.id }); self.partEls[p.id] = g; }
+      if (!g) { g = el('g', { 'data-id': p.id, 'data-type': p.type }); self.partEls[p.id] = g; }
       if (force || self.partKeys[p.id] !== svg) { g.innerHTML = svg; self.partKeys[p.id] = svg; }
       if (self.gParts.childNodes[idx] !== g) self.gParts.insertBefore(g, self.gParts.childNodes[idx] || null);
     });
@@ -3871,7 +3887,10 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     'BAT': 'On the ESP32 Feather: the pin for one LiPo battery cell (3.7–4.2 V).',
     'EN': 'Enable: pull this pin to GND and the ESP32 Feather turns off.',
     'RST': 'Reset: pull this pin to GND and the board restarts its program.',
-    'OL': 'Over limit: the meter cannot measure it. For Ω it means the resistance is too big (or nothing is connected).',
+    'OL': 'Over limit: the value is too big for the range. A DT-830B shows this as a single “1” on the left (other meters show “OL”).',
+    'pull-down resistor': 'A resistor from a pin to GND. When nothing else drives the pin, it keeps the pin LOW instead of floating.',
+    'hFE': 'A setting on many meters for testing transistors. This game does not use it.',
+    'ATmega328P': 'The chip on the Arduino Nano: the small computer that runs your program.',
     'time constant': 'R × C: how fast a capacitor charges. After one time constant it has about 63 % of the voltage. 1 kΩ × 1000 µF = 1 second.',
     'voltage rating': 'The highest voltage a part can take, printed on it (like 16 V on a capacitor).',
     'AO': 'Analog out: a pin whose voltage goes up and down with the signal (here: how loud the sound is).',
@@ -4222,7 +4241,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
       intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part. To measure current, you put the meter into the loop ({{series}}).' },
-      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 34], tray: [],
+      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 42], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
@@ -4236,8 +4255,8 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail. Tap the meter and set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
-        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
+        { text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first, then set the dial to {{DCA}} (mA). (In DCA the meter is like a wire: across the rails its fuse blows.)', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
@@ -4521,6 +4540,10 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
       this.bench = new BB.Bench($('#bench'), this);
       this.buildChrome();
       this.showHome();
+      // after a reload, go back to the level (its intro) or the sandbox the player was in
+      var w = store.data.where;
+      if (w && w.sandbox) this.startSandbox();
+      else if (w && LEVELS[w.level]) this.startLevel(w.level);
       var self = this, last = performance.now();
       var loop = function (now) {
         var dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000)); last = now;
@@ -4615,6 +4638,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
       var self = this;
       audio.tones({});
       this.clearToasts();
+      if (this.mode) { store.data.where = null; store.save(); }
       this.mode = null; this.level = null; this.sim = null;
       this.show('home');
       var stars = store.data.stars, unlocked = 1;
@@ -4662,6 +4686,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; $('#modal').hidden = true; },
     beginLevel: function (def) {
       this.clearToasts();
+      store.data.where = { level: def.n - 1 }; store.save();
       this.mode = 'level';
       this.level = { def: def, step: 0, flags: {}, hints: 0, mistakes: 0, done: false, msgs: {}, stepFlags: {}, issueSeen: {} };
       var state = { board: Object.assign({}, def.board), parts: [] };
@@ -4683,7 +4708,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
       // the first level that needs parts on a phone: show where they are
       var hasTray = (def.tray || []).some(function (it) { return (typeof it === 'string' ? it : it.type) !== 'wire'; });
       document.body.classList.toggle('pulseparts', hasTray && window.innerWidth < 1100 && !store.data.partsTip);
-      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { self2.toast('Your parts are in “Parts” (bottom bar). Tap it, then tap a part to add it.', 'info'); }, 400); }
+      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { if (self2.level && !self2.level.done && !store.data.partsTip) self2.toast('Your parts are in “Parts” (bottom bar). Tap it, then tap a part to add it.', 'info'); }, 400); }
       this.buildTray(def.tray);
       this.updateTop();
       this.renderGoal();
@@ -4751,6 +4776,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
     },
     finishLevel: function () {
       var lv = this.level, self = this;
+      $('#toasts').innerHTML = ''; document.body.classList.remove('pulseparts');
       lv.done = true;
       var stars = 3 - (lv.hints > 0 ? 1 : 0) - (lv.mistakes + (lv.wrong || 0) > 0 ? 1 : 0);
       stars = Math.max(1, stars);
@@ -4873,6 +4899,7 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
 
     // ---------- sandbox ----------
     startSandbox: function () {
+      store.data.where = { sandbox: true }; store.save();
       this.mode = 'sandbox'; this.level = null;
       var saved = store.data.sandbox;
       var state = saved && saved.parts ? saved : { board: { cols: 30 }, parts: [] };

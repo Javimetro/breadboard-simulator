@@ -63,7 +63,10 @@
     'BAT': 'On the ESP32 Feather: the pin for one LiPo battery cell (3.7–4.2 V).',
     'EN': 'Enable: pull this pin to GND and the ESP32 Feather turns off.',
     'RST': 'Reset: pull this pin to GND and the board restarts its program.',
-    'OL': 'Over limit: the meter cannot measure it. For Ω it means the resistance is too big (or nothing is connected).',
+    'OL': 'Over limit: the value is too big for the range. A DT-830B shows this as a single “1” on the left (other meters show “OL”).',
+    'pull-down resistor': 'A resistor from a pin to GND. When nothing else drives the pin, it keeps the pin LOW instead of floating.',
+    'hFE': 'A setting on many meters for testing transistors. This game does not use it.',
+    'ATmega328P': 'The chip on the Arduino Nano: the small computer that runs your program.',
     'time constant': 'R × C: how fast a capacitor charges. After one time constant it has about 63 % of the voltage. 1 kΩ × 1000 µF = 1 second.',
     'voltage rating': 'The highest voltage a part can take, printed on it (like 16 V on a capacitor).',
     'AO': 'Analog out: a pin whose voltage goes up and down with the signal (here: how loud the sound is).',
@@ -414,7 +417,7 @@
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
       intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part. To measure current, you put the meter into the loop ({{series}}).' },
-      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 34], tray: [],
+      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [5, -2.5, 29, 42], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
@@ -428,8 +431,8 @@
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail. Tap the meter and set the dial to {{DCV}} (volts). Put the red probe in the + rail. Put the black probe in the − rail.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
-        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap, then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
+        { text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
+        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first, then set the dial to {{DCA}} (mA). (In DCA the meter is like a wire: across the rails its fuse blows.)', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],

@@ -301,8 +301,9 @@
       // the lead leaves the body in its own direction, and arrives at its end from the body's side
       var out = def.leadOut || [def.leadFrom[k][0] <= 0.5 ? -1 : 1, 0];
       var c1 = probe ? { x: a.x, y: a.y + 40 } : { x: a.x + out[0] * 30, y: a.y + out[1] * 30 };
-      var c2 = probe ? { x: b.x, y: b.y + 60 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
-      var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(b.x) + ' ' + f1(b.y + (probe ? 18 : 0));
+      var c2 = probe ? { x: b.x + (k === 0 ? -18 : 18), y: b.y + 70 } : { x: b.x, y: b.y + (a.y < b.y ? -30 : 30) };
+      var pe = { x: b.x + (k === 0 ? -12 : 12), y: b.y + 37 }; // bottom end of the (leaning) probe body
+      var d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(c1.x) + ' ' + f1(c1.y) + ' ' + f1(c2.x) + ' ' + f1(c2.y) + ' ' + f1(probe ? pe.x : b.x) + ' ' + f1(probe ? pe.y : b.y);
       if (probe) {
         // a probe above the meter: the cable goes down out of the jack and round the side, not over the display
         var bx1 = (p.x + def.size[0]) * U, bx0 = p.x * U, by1 = (p.y + def.size[1]) * U, pbot = b.y + 39;
@@ -310,17 +311,18 @@
           // probe off to the side: out of the jack to the right, under the meter, then up to the probe
           var qx = a.x + 30 + k * 6, qy = by1 + 18 + k * 8;
           d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x + 40) + ' ' + f1(a.y) + ' ' + f1(qx + 10) + ' ' + f1(qy - 30) + ' ' + f1(qx) + ' ' + f1(qy) +
-            ' C' + f1(qx - 60) + ' ' + f1(qy + 30) + ' ' + f1(b.x) + ' ' + f1(Math.max(pbot, qy) + 40) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+            ' C' + f1(qx - 60) + ' ' + f1(qy + 30) + ' ' + f1(pe.x) + ' ' + f1(Math.max(pbot, qy) + 40) + ' ' + f1(pe.x) + ' ' + f1(pe.y);
         } else if (pbot < by1) {
           var side = b.x > (bx0 + bx1) / 2 ? bx1 + 18 + k * 8 : bx0 - 18 - k * 8, sy = (a.y + pbot) / 2;
           d = 'M' + f1(a.x) + ' ' + f1(a.y) + ' C' + f1(a.x) + ' ' + f1(a.y + 50) + ' ' + f1(side) + ' ' + f1(a.y + 40) + ' ' + f1(side) + ' ' + f1(sy) +
-            ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(b.x) + ' ' + f1(pbot + 30) + ' ' + f1(b.x) + ' ' + f1(b.y + 18);
+            ' C' + f1(side) + ' ' + f1(pbot + 10) + ' ' + f1(pe.x) + ' ' + f1(pbot + 30) + ' ' + f1(pe.x) + ' ' + f1(pe.y);
         }
       }
       s += '<path d="' + d + '" fill="none" stroke="#00000044" stroke-width="4.4" transform="translate(0 1.5)"/>';
       s += '<path d="' + d + '" fill="none" stroke="' + cols[k] + '" stroke-width="' + (probe ? 3.6 : 3) + '" stroke-linecap="round"/>';
       if (probe) {
-        s += '<g transform="translate(' + f1(b.x) + ' ' + f1(b.y) + ')"><rect x="-3.4" y="5" width="6.8" height="34" rx="2.6" fill="' + cols[k] + '" stroke="#00000066" stroke-width=".5"/><rect x="-4.6" y="11" width="9.2" height="3" rx="1.4" fill="' + cols[k] + '"/><path d="M-1 5 L0 -0.5 L1 5Z" fill="#d9dde2" stroke="#777" stroke-width=".3"/></g>';
+        // the two probe bodies lean apart (red left, black right), so their tips never hide each other
+        s += '<g transform="translate(' + f1(b.x) + ' ' + f1(b.y) + ') rotate(' + (k === 0 ? 18 : -18) + ')"><rect x="-3.4" y="5" width="6.8" height="34" rx="2.6" fill="' + cols[k] + '" stroke="#00000066" stroke-width=".5"/><rect x="-4.6" y="11" width="9.2" height="3" rx="1.4" fill="' + cols[k] + '"/><path d="M-1 5 L0 -0.5 L1 5Z" fill="#d9dde2" stroke="#777" stroke-width=".3"/></g>';
       } else s += tip(b, '#d9dde2');
     });
     return s;

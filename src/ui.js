@@ -101,6 +101,10 @@
       this.bench = new BB.Bench($('#bench'), this);
       this.buildChrome();
       this.showHome();
+      // after a reload, go back to the level (its intro) or the sandbox the player was in
+      var w = store.data.where;
+      if (w && w.sandbox) this.startSandbox();
+      else if (w && LEVELS[w.level]) this.startLevel(w.level);
       var self = this, last = performance.now();
       var loop = function (now) {
         var dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000)); last = now;
@@ -195,6 +199,7 @@
       var self = this;
       audio.tones({});
       this.clearToasts();
+      if (this.mode) { store.data.where = null; store.save(); }
       this.mode = null; this.level = null; this.sim = null;
       this.show('home');
       var stars = store.data.stars, unlocked = 1;
@@ -242,6 +247,7 @@
     clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; $('#modal').hidden = true; },
     beginLevel: function (def) {
       this.clearToasts();
+      store.data.where = { level: def.n - 1 }; store.save();
       this.mode = 'level';
       this.level = { def: def, step: 0, flags: {}, hints: 0, mistakes: 0, done: false, msgs: {}, stepFlags: {}, issueSeen: {} };
       var state = { board: Object.assign({}, def.board), parts: [] };
@@ -263,7 +269,7 @@
       // the first level that needs parts on a phone: show where they are
       var hasTray = (def.tray || []).some(function (it) { return (typeof it === 'string' ? it : it.type) !== 'wire'; });
       document.body.classList.toggle('pulseparts', hasTray && window.innerWidth < 1100 && !store.data.partsTip);
-      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { self2.toast('Your parts are in “Parts” (bottom bar). Tap it, then tap a part to add it.', 'info'); }, 400); }
+      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { if (self2.level && !self2.level.done && !store.data.partsTip) self2.toast('Your parts are in “Parts” (bottom bar). Tap it, then tap a part to add it.', 'info'); }, 400); }
       this.buildTray(def.tray);
       this.updateTop();
       this.renderGoal();
@@ -331,6 +337,7 @@
     },
     finishLevel: function () {
       var lv = this.level, self = this;
+      $('#toasts').innerHTML = ''; document.body.classList.remove('pulseparts');
       lv.done = true;
       var stars = 3 - (lv.hints > 0 ? 1 : 0) - (lv.mistakes + (lv.wrong || 0) > 0 ? 1 : 0);
       stars = Math.max(1, stars);
@@ -453,6 +460,7 @@
 
     // ---------- sandbox ----------
     startSandbox: function () {
+      store.data.where = { sandbox: true }; store.save();
       this.mode = 'sandbox'; this.level = null;
       var saved = store.data.sandbox;
       var state = saved && saved.parts ? saved : { board: { cols: 30 }, parts: [] };
