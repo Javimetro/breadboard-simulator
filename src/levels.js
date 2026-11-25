@@ -281,7 +281,7 @@
       id: 'first', title: 'First light', icon: 'led',
       intro: { pic: I.first, text: 'An {{LED}} needs a {{resistor}} to limit the {{current}}. Without one, it burns out.' },
       board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], phone: [0, -15.5, 19, 18.6], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 470 } }, 'wire'],
-      setup: function (A) { A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true }); },
+      setup: function (A) { A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-4'], locked: true }); },
       steps: [
         { text: 'Light the LED. Put the resistor in the loop so the LED does not burn.', check: function (L) {
           return L.of('led').some(function (l) { return lit(l) && safe(l) && L.of('resistor').some(function (r) { return inSeries(l, r); }); });
@@ -301,14 +301,14 @@
       intro: { pic: I.mistakes, text: 'This {{circuit}} has three common mistakes. Find them and fix them.' },
       board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], phone: [1, -4, 29, 18.6], tray: ['wire'],
       setup: function (A) {
-        A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
+        A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-4'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['T+8', 'a8'], locked: true });
-        A.add('led', { id: 'led-a', ends: ['T-9', 'c8'] });
+        A.add('led', { id: 'led-a', props: { color: 'red' }, ends: ['T-9', 'c8'] });
         A.add('resistor', { props: { r: 470 }, ends: ['T+14', 'a14'], locked: true });
-        A.add('led', { id: 'led-b', ends: ['b14', 'd14'] });
+        A.add('led', { id: 'led-b', props: { color: 'yellow' }, ends: ['b14', 'd14'] });
         A.add('wire', { id: 'short', props: { color: 'yellow' }, ends: ['T+20', 'T-21'] }).deletable = true; // removing it is the lesson
         A.add('resistor', { props: { r: 470 }, ends: ['T+26', 'a26'], locked: true });
-        A.add('led', { id: 'led-c', ends: ['c26', 'T-27'] });
+        A.add('led', { id: 'led-c', props: { color: 'blue' }, ends: ['c26', 'T-27'] });
       },
       steps: [
         { text: 'Remove the short circuit.', check: function (L) { return !L.connected('T+20', 'T-20'); }, ok: 'No more short circuit. The battery can push current again.' },
@@ -319,7 +319,7 @@
         var dark = L.of('led').filter(function (l) { return !lit(l); });
         return dark.length ? whyDark(L, dark[0]) : null;
       },
-      hints: ['First the short circuit: the yellow wire goes from + to −. Tap it and press Delete.', 'One LED is backwards (long leg toward −). Tap it and press Flip.', 'One LED has both legs in column 14. Drag its short leg to the blue − rail.'],
+      hints: ['First the short circuit: the yellow wire goes from + to −. Tap it and press Delete.', 'The red LED is backwards (long leg toward −). Tap it and press Flip.', 'The yellow LED has both legs in column 14. Drag its short leg to the blue − rail.'],
       done: 'Three mistakes you will meet on your desk: a short circuit, an LED backwards, and both legs in one strip.',
       solve: function (A) { A.del('short'); A.flip('led-a'); A.moveEnd('led-b', 1, 'T-16'); A.wait(0.3); }
     },
@@ -328,7 +328,7 @@
       intro: { pic: I.button, text: 'A push button closes a gap while you press it. Put it across the middle gap of the board.' },
       board: { cols: 30 }, view: [-3, -15.5, 21, 18.6], phone: [0, -15.5, 19, 18.6], placeFree: ['button'], tray: ['button', 'wire'],
       setup: function (A) {
-        A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
+        A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-4'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['T+8', 'a8'], locked: true });
         A.add('led', { ends: ['a10', 'T-11'], locked: true });
       },
@@ -356,7 +356,7 @@
       intro: { pic: I.dimmer, text: 'A {{potentiometer}} is a knob that changes its {{resistance}}. Use it to make an LED brighter or dimmer.' },
       board: { cols: 30 }, view: [-3, -15.5, 31.5, 18.6], phone: [1, -9, 24, 18.6], lock: ['r'], tray: ['pot', 'wire'],
       setup: function (A) {
-        A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-3'], locked: true });
+        A.add('battery9', { x: 4, y: -13.5, ends: ['T+3', 'T-4'], locked: true });
         A.add('resistor', { props: { r: 470 }, ends: ['a14', 'a18'], locked: true });
         A.add('led', { ends: ['b18', 'T-20'], locked: true });
       },
@@ -455,7 +455,7 @@
     {
       id: 'nano', title: 'Arduino Nano: blink', icon: 'nano',
       intro: { pic: I.nano, text: 'The Arduino Nano is a {{microcontroller}} board. Put it across the middle gap, then let a {{pin}} blink an LED.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 31.5, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'green' } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 31.5, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'red' } }, 'wire'],
       lock: ['r', 'color'],
       steps: [
         { text: 'Put the Arduino Nano across the middle gap.', check: function (L) { var n = L.of('nano')[0]; return n && !n.free; }, ok: 'Each Nano pin now has its own strip of free holes.' },
@@ -469,7 +469,7 @@
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 11 mA.' }
+        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 12 mA.' }
       ],
       explain: function (L) {
         var l = L.of('led')[0], n = L.of('nano')[0];
@@ -522,7 +522,7 @@
     {
       id: 'sound', title: 'Clap → beep', icon: 'sound',
       intro: { pic: I.sound, text: 'A microphone module hears a clap. The Nano answers with a tone on a speaker. The speaker needs a resistor.' },
-      board: { cols: 30 }, view: [-0.8, -9, 44, 18.6], phone: [-0.8, -4, 24, 18.6], tray: ['mic', 'speaker', { type: 'resistor', props: { r: 220 } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -9, 44, 18.6], phone: [-0.8, -6, 31.5, 26], tray: ['mic', 'speaker', { type: 'resistor', props: { r: 220 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [

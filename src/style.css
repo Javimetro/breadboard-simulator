@@ -130,7 +130,8 @@ body.notray #tb .partsbtn { display: none; }
 .toggle i { width: 30px; height: 30px; border-radius: 50%; background: #4a5563; transition: background .15s; }
 .toggle.on i { background: var(--good); }
 .sw { display: flex; gap: 6px; flex-wrap: wrap; } .sw button { width: 44px; height: 44px; border-radius: 50%; border: 2px solid #0006; } .sw button.on { outline: 3px solid var(--cyan); }
-.acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.acts { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.acts:empty { display: none; }
 .acts button { display: inline-flex; align-items: center; gap: 6px; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); }
 .acts button .ico { width: 18px; height: 18px; }
 .holdbtn.on { background: #14303b !important; border-color: var(--cyan) !important; }
@@ -345,8 +346,16 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 @media (min-width: 1100px) { .chalbtn { display: none !important; } }
 .lockq { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px dashed #3c6c80; color: #bfe6f5; font-size: 15px; }
 .bands { display: grid; gap: 6px; margin: 8px 0; }
-.bsel { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14.5px; color: var(--mut); }
-.bsel select { min-height: 44px; flex: 1; max-width: 70%; border-radius: 10px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); padding: 0 8px; font-size: 15px; }
+.bigres { width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
+@media (max-width: 1099px) { body.bandstep #goal { max-height: 60%; } .bigres { max-height: 46px; } .bands > .mut { display: none; } }
+.bslots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.bslots button { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); font-size: 14px; }
+.bslots button.on { border-color: #4cc9f0; box-shadow: 0 0 0 2px #4cc9f055; }
+.chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.chips button { min-height: 48px; border-radius: 10px; border: 2px solid #0006; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; padding: 2px; }
+.chips button b { font-size: 17px; }
+.chips button small { font-size: 10.5px; opacity: .85; }
+.chips button.on { border-color: #4cc9f0; box-shadow: 0 0 0 3px #4cc9f088; }
 .bands .primary { min-height: 46px; border-radius: 12px; border: 0; }
 #modal.bottom { background: #0006; align-items: end; padding-bottom: calc(80px + var(--safe-b)); }
 #modal.bottom .mbox { max-height: 55vh; overflow: auto; }

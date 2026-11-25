@@ -235,10 +235,20 @@
   }
   function ardAnalog(label) { var m = /^D\d\/(A\d)$/.exec(label); return m ? m[1] : label; }
   function piPin(label) { return label.replace('GPIO', ''); }
-  function code(p, id) {
+  // sim (optional): used to pick the screen library (Wio: its own TFT; an LCD 1602 on the bench: LiquidCrystal_I2C).
+  function code(p, id, sim) {
     var mcu = PARTS[p.type].mcu, P2 = function (role) { return pinFor(p, role); };
     var pi = mcu === 'pi5';
-    var L = [];
+    var scr = mcu === 'wio' ? 'tft' : sim && sim.state.parts.some(function (q) { return q.type === 'lcd'; }) && !sim.state.parts.some(function (q) { return q.type === 'oled'; }) ? 'lcd' : 'oled';
+    // screen code for the light meter and the thermometer: [include + object, setup line, lines → code]
+    var SCR = {
+      oled: ['#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 screen(128, 64, &Wire);', '  screen.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n  screen.setTextColor(WHITE);',
+        function (ls) { return '  screen.clearDisplay();\n' + ls.map(function (l, i) { return '  screen.setCursor(0, ' + i * 12 + ');\n  screen.print(' + l + ');'; }).join('\n') + '\n  screen.display();'; }],
+      lcd: ['#include <LiquidCrystal_I2C.h>\nLiquidCrystal_I2C lcd(0x27, 16, 2);  // the backpack is often 0x27 (or 0x3F)', '  lcd.init();\n  lcd.backlight();',
+        function (ls) { return '  lcd.clear();\n' + ls.slice(0, 2).map(function (l, i) { return '  lcd.setCursor(0, ' + i + ');\n  lcd.print(' + l + ');'; }).join('\n'); }],
+      tft: ['#include <TFT_eSPI.h>   // the Wio\'s own screen\nTFT_eSPI tft;', '  tft.begin();\n  tft.setRotation(3);\n  tft.setTextSize(3);',
+        function (ls) { return '  tft.fillScreen(TFT_BLACK);\n' + ls.map(function (l, i) { return '  tft.drawString(' + l + ', 10, ' + (10 + i * 40) + ');'; }).join('\n'); }]
+    }[scr];
     if (id === 'none') return pi ? '# No program: the pins do nothing.' : '// No program: the pins do nothing.\nvoid setup() {}\nvoid loop() {}';
     if (pi) {
       var g = function (role) { return piPin(P2(role)); };
@@ -247,7 +257,7 @@
       if (id === 'motion_alarm') return 'from gpiozero import MotionSensor, Buzzer, LED\nfrom signal import pause\n\npir = MotionSensor(' + g('pir') + ')\nbuzzer = Buzzer(' + g('buzzer') + ')\nled = LED(' + g('led') + ')\npir.when_motion = lambda: (buzzer.on(), led.on())\npir.when_no_motion = lambda: (buzzer.off(), led.off())\npause()';
       if (id === 'tone_button') return 'from gpiozero import TonalBuzzer, Button\nfrom gpiozero.tones import Tone\nfrom signal import pause\n\nspeaker = TonalBuzzer(' + g('speaker') + ')\nbutton = Button(' + g('button') + ')\nbutton.when_pressed = lambda: speaker.play(Tone("A4"))\nbutton.when_released = speaker.stop\npause()';
       if (id === 'distance') return 'from gpiozero import DistanceSensor\nfrom time import sleep\n\n# ECHO gives 5 V: use a 1k / 2.2k divider before GPIO' + g('echo') + '!\nsensor = DistanceSensor(echo=' + g('echo') + ', trigger=' + g('trig') + ')\nwhile True:\n    print("Distance:", round(sensor.distance * 100), "cm")\n    sleep(0.5)';
-      if (id === 'thermometer') return 'import adafruit_dht, board\nfrom time import sleep\n\ndht = adafruit_dht.DHT11(board.D' + g('dht') + ')\nwhile True:\n    print("Temp:", dht.temperature, "C  Humidity:", dht.humidity, "%")\n    sleep(2)';
+      if (id === 'thermometer') return '# pip install adafruit-circuitpython-dht   (on a Pi 5 this DHT library\n# can miss readings: the RP1 chip times the pulses less tightly)\nimport adafruit_dht, board\nfrom time import sleep\n\ndht = adafruit_dht.DHT11(board.D' + g('dht') + ')\nwhile True:\n    try:\n        print("Temp:", dht.temperature, "C  Humidity:", dht.humidity, "%")\n    except RuntimeError as err:   # a missed reading is normal for a DHT11\n        print("Try again:", err)\n    sleep(2)';
       if (id === 'counter') return 'from gpiozero import LEDBoard\nfrom time import sleep\n\nsegs = LEDBoard(' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (r) { return g(r); }).join(', ') + ')  # a..g\nDIGITS = ["1111110", "0110000", "1101101", "1111001", "0110011",\n          "1011011", "1011111", "1110000", "1111111", "1111011"]\nwhile True:\n    for d in DIGITS:\n        segs.value = tuple(int(c) for c in d)\n        sleep(1)';
       return '# This program needs an analog pin. The Pi has none.';
     }
@@ -255,8 +265,8 @@
     if (id === 'blink') return 'void setup() {\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(' + a('led') + ', HIGH);\n  delay(500);\n  digitalWrite(' + a('led') + ', LOW);\n  delay(500);\n}';
     if (id === 'button_led') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);  // button to GND\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool pressed = digitalRead(' + a('button') + ') == LOW;\n  digitalWrite(' + a('led') + ', pressed ? HIGH : LOW);\n}';
     if (id === 'fade_knob') return 'void setup() {\n  pinMode(' + a('fade') + ', OUTPUT);\n}\n\nvoid loop() {\n  int knob = analogRead(' + an('knob') + ');   // 0 to ' + BB.BOARDS[mcu].adcMax + '\n  analogWrite(' + a('fade') + ', map(knob, 0, ' + BB.BOARDS[mcu].adcMax + ', 0, 255));  // PWM\n}';
-    if (id === 'light_meter') return '#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 screen(128, 64, &Wire);\n\nvoid setup() {\n  Serial.begin(9600);\n  screen.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.println(light);\n  screen.clearDisplay();\n  screen.setTextColor(WHITE);\n  screen.setCursor(0, 0);\n  screen.print("Light: ");\n  screen.print(light);\n  screen.display();\n  delay(200);\n}';
-    if (id === 'thermometer') return '#include <DHT.h>\nDHT dht(' + a('dht') + ', DHT11);\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n}\n\nvoid loop() {\n  Serial.print("Temp: ");\n  Serial.print(dht.readTemperature());\n  Serial.print(" C  Humidity: ");\n  Serial.println(dht.readHumidity());\n  delay(2000);\n}';
+    if (id === 'light_meter') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + SCR[1] + '\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.println(light);\n' + SCR[2](['"LIGHT METER"', '"Light: " + String(light)']) + '\n  delay(200);\n}';
+    if (id === 'thermometer') return '#include <DHT.h>\n' + SCR[0] + '\nDHT dht(' + a('dht') + ', DHT11);  // DATA needs a 10k pull-up to VCC\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n' + SCR[1] + '\n}\n\nvoid loop() {\n  float t = dht.readTemperature();\n  float h = dht.readHumidity();\n  if (isnan(t) || isnan(h)) { Serial.println("DHT11 error"); delay(2000); return; }\n  Serial.print("Temp: "); Serial.print(t); Serial.print(" C  Humidity: "); Serial.println(h);\n' + SCR[2](['"Temp: " + String(t, 0) + " C"', '"Humidity: " + String(h, 0) + " %"']) + '\n  delay(2000);\n}';
     if (id === 'distance') return 'void setup() {\n  Serial.begin(9600);\n  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH);  // how long ECHO stays HIGH\n  Serial.print("Distance: ");\n  Serial.print(us / 58);   // 58 µs = 1 cm\n  Serial.println(" cm");\n  delay(60);\n}';
     if (id === 'motion_alarm') return 'void setup() {\n  pinMode(' + a('pir') + ', INPUT);\n  pinMode(' + a('buzzer') + ', OUTPUT);\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool motion = digitalRead(' + a('pir') + ') == HIGH;\n  digitalWrite(' + a('buzzer') + ', motion);\n  digitalWrite(' + a('led') + ', motion);\n}';
     if (id === 'clap_beep') return 'void setup() {}\n\nvoid loop() {\n  int sound = analogRead(' + an('mic') + ');\n  if (sound > ' + Math.round(0.8 * BB.BOARDS[mcu].adcMax) + ') {     // a loud sound\n    tone(' + a('speaker') + ', 1000, 500);  // 1 kHz for half a second\n    delay(500);\n  }\n}';

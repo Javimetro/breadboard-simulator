@@ -641,5 +641,5 @@
     return s + leads(p, pts, ['#d8322b', '#222']);
   };
 
-  BB.art = { U: U, defs: defs, board: board, DRAW: DRAW, esc: esc, shade: shade };
+  BB.art = { U: U, defs: defs, board: board, DRAW: DRAW, esc: esc, shade: shade, BAND_RGB: BAND_RGB };
 })();

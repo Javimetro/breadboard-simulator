@@ -290,9 +290,19 @@
       });
     });
     if (hot) return hot;
-    // 3. bodies, top layer first
-    var body = null;
-    parts.slice().sort(function (a, b) { return self.layerOf(b) - self.layerOf(a) || (b.id === self.sel) - (a.id === self.sel); }).some(function (p) {
+    // 3. bodies, top layer first; in a layer, the part drawn last (on top) first. An LED head wins over
+    // leads that only pass under it.
+    var body = null, idxOf = {};
+    parts.forEach(function (p, i) { idxOf[p.id] = i; });
+    var top = parts.slice().sort(function (a, b) { return self.layerOf(b) - self.layerOf(a) || (b.id === self.sel) - (a.id === self.sel) || idxOf[b.id] - idxOf[a.id]; });
+    if (BB.ledBodyCenter) top.some(function (p) {
+      if (p.type !== 'led' || !p.ends) return false;
+      var pts = sim.pinPoints(p), c = BB.ledBodyCenter(pts[0], pts[1]);
+      if (Math.hypot(w.x - c.x, w.y - c.y) < 0.75) { body = { kind: 'body', id: p.id }; return true; }
+      return false;
+    });
+    if (body) return body;
+    top.some(function (p) {
       if (p.ends && PARTS[p.type].kind === 'leads') {
         var pts = sim.pinPoints(p);
         var d = segDist(w, pts[0], pts[1]);
@@ -570,7 +580,7 @@
       if (h.kind === 'jumper') { var u = this.app.snapshot(); var cyc = { '3.3': 'off', off: '5', '5': '3.3' }; p.props[h.side] = cyc[p.props[h.side]]; this.app.commit(u); this.app.onInteract('prop', p); }
       else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
       else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
-      this.select(p.id);
+      if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); // rebuild the panel: the dial / jumper buttons changed
       sim.dirty(); this.render();
       return;
     }

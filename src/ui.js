@@ -341,9 +341,15 @@
         this.stepDone(step.ok);
       }
     },
+    stepTaskHtml: function () {
+      var lv = this.level;
+      return this.mode === 'level' && lv && !lv.done && lv.def.steps[lv.step] ? '<p class="steptask"><b>Step ' + (lv.step + 1) + ':</b> ' + rich(lv.def.steps[lv.step].text) + '</p>' : '';
+    },
     stepDone: function (msg) {
       var lv = this.level;
       lv.step++;
+      var stp = document.querySelector('#inspector .steptask'); // keep the sheet's step text in step with the goal card
+      if (stp) { var nh = this.stepTaskHtml(); if (nh) stp.outerHTML = nh; else stp.remove(); }
       this.saveSandbox(); // also saves the level in progress
       audio.blip(880, 0.12, 'sine', 0.06); setTimeout(function () { audio.blip(1320, 0.18, 'sine', 0.05); }, 90);
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
@@ -397,13 +403,7 @@
         if (ready) html += '<div class="choices">' + step.choices.map(function (c, i) { return '<button data-c="' + i + '">' + esc(c.label) + '</button>'; }).join('') + '</div>';
         else html += '<p class="lockq">' + rich(step.readyText) + '</p>';
       }
-      if (step && step.bands && !lv.done) {
-        var digit = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'blue', 'violet', 'grey', 'white'];
-        var sel = function (n, opts, lab) { return '<label class="bsel"><span>' + lab + '</span><select data-band="' + n + '"><option value="">?</option>' + opts.map(function (o) { return '<option value="' + o[0] + '">' + esc(o[1]) + '</option>'; }).join('') + '</select></label>'; };
-        html += '<div class="bands">' + sel(0, digit.map(function (c, k) { return [c, c + ' = ' + k]; }), '1st band') + sel(1, digit.map(function (c, k) { return [c, c + ' = ' + k]; }), '2nd band') +
-          sel(2, [['black', 'black = × 1'], ['brown', 'brown = × 10'], ['red', 'red = × 100'], ['orange', 'orange = × 1000'], ['yellow', 'yellow = × 10 000']], '3rd band') +
-          '<button class="primary" data-act="bands">Check</button></div>';
-      }
+      if (step && step.bands && !lv.done) html += '<div class="bands">' + this.bandsHtml() + '</div>';
       html += '<div id="why" class="why" hidden></div>';
       if (!lv.done) {
         var left = def.hints.length - lv.hints;
@@ -418,10 +418,23 @@
         if (b.dataset.c !== undefined) self.choose(+b.dataset.c);
         if (b.dataset.act === 'hint') self.hint();
         if (b.dataset.act === 'bands') self.checkBands();
+        if (b.dataset.slot !== undefined) { lv.bandSlot = +b.dataset.slot; self.redrawBands(); }
+        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
       document.body.classList.remove('goalmin');
+      // phones, colour-band step: a taller card for the picker, and the board zoomed onto the resistor below it
+      var bandStep = !!(step && step.bands && !lv.done);
+      document.body.classList.toggle('bandstep', bandStep);
+      if (bandStep && window.innerWidth < 1100) {
+        var mys = this.sim.state.parts.filter(function (q) { return q.hideValue; })[0];
+        if (mys) requestAnimationFrame(function () {
+          var g = $('#goal'), pts = self.sim.pinPoints(mys);
+          self.bench.fitRect(Math.min(pts[0].x, pts[1].x) - 1, pts[0].y - 1.5, Math.max(pts[0].x, pts[1].x) + 1, pts[0].y + 1.5, 10, g.offsetTop + g.offsetHeight + 8, 0);
+          self.bench.renderUi();
+        });
+      }
       this.updateTop();
     },
     choose: function (i) {
@@ -435,10 +448,33 @@
         if (step.ready) { lv.tapped = {}; this.renderGoal(); }
       }
     },
-    // colour-band picker: the player reads the bands and picks each colour
+    // colour-band picker: a big resistor with 3 empty bands; tap a band, then tap its colour chip
+    bandsHtml: function () {
+      var lv = this.level, pick = lv.bandPick || [null, null, null], slot = lv.bandSlot || 0, RGB = BB.art.BAND_RGB;
+      var digit = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'blue', 'violet', 'grey', 'white'];
+      var light = { yellow: 1, white: 1, orange: 1, grey: 1 };
+      var svg = '<svg viewBox="0 0 300 64" class="bigres" aria-hidden="true"><line x1="0" y1="32" x2="300" y2="32" stroke="#b9bdc2" stroke-width="5"/>' +
+        '<rect x="50" y="8" width="200" height="48" rx="22" fill="#e8c99a" stroke="#a98a5e" stroke-width="2"/>' +
+        [92, 128, 164].map(function (x, k) {
+          var c = pick[k];
+          return '<rect x="' + (x - 10) + '" y="9" width="20" height="46" fill="' + (c ? RGB[c] : '#e8c99a') + '"' + (c ? '' : ' stroke="#7a6a50" stroke-dasharray="4 3" stroke-width="2"') + '/>' +
+            (c ? '' : '<text x="' + x + '" y="38" font-size="16" text-anchor="middle" fill="#6b5a40">?</text>') +
+            (k === slot ? '<path d="M' + (x - 9) + ' 63 L' + x + ' 56 L' + (x + 9) + ' 63Z" fill="#4cc9f0"/>' : '');
+        }).join('') + '<rect x="214" y="9" width="12" height="46" fill="' + RGB.gold + '"/></svg>';
+      var slots = '<div class="bslots">' + ['1st', '2nd', '3rd'].map(function (n, k) { return '<button data-slot="' + k + '" class="' + (k === slot ? 'on' : '') + '">' + n + (pick[k] ? ': ' + pick[k] : '') + '</button>'; }).join('') + '</div>';
+      var opts = slot < 2 ? digit.map(function (c, k) { return [c, String(k)]; }) : [['black', '× 1'], ['brown', '× 10'], ['red', '× 100'], ['orange', '× 1k'], ['yellow', '× 10k']];
+      var chips = '<div class="chips">' + opts.map(function (o) { return '<button data-chip="' + o[0] + '" title="' + o[0] + '" class="' + (pick[slot] === o[0] ? 'on' : '') + '" style="background:' + RGB[o[0]] + ';color:' + (light[o[0]] ? '#111' : '#fff') + '"><b>' + o[1] + '</b><small>' + o[0] + '</small></button>'; }).join('') + '</div>';
+      var val = '';
+      if (pick[0] && pick[1] && pick[2]) {
+        var ohm = (digit.indexOf(pick[0]) * 10 + digit.indexOf(pick[1])) * Math.pow(10, digit.indexOf(pick[2]));
+        val = '<p class="small">Your answer: ' + digit.indexOf(pick[0]) + digit.indexOf(pick[1]) + ' × ' + Math.pow(10, digit.indexOf(pick[2])) + ' = <b>' + (ohm >= 1000 ? ohm / 1000 + ' kΩ' : ohm + ' Ω') + '</b></p>';
+      }
+      return svg + slots + '<p class="small mut">' + (slot < 2 ? 'Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the multiplier. Tap its colour:') + '</p>' + chips + val + '<button class="primary" data-act="bands">Check</button>';
+    },
+    redrawBands: function () { var el = document.querySelector('#goal .bands'); if (el) el.innerHTML = this.bandsHtml(); },
     checkBands: function (picked) {
       var lv = this.level, step = lv.def.steps[lv.step]; if (!step || !step.bands) return;
-      picked = picked || [0, 1, 2].map(function (k) { var s = document.querySelector('#goal select[data-band="' + k + '"]'); return s ? s.value : ''; });
+      picked = picked || (lv.bandPick || [null, null, null]).slice();
       if (picked.some(function (x) { return !x; })) { this.toast('Pick a colour for each of the 3 bands.', 'info'); return; }
       var want = step.bands.want, bad = [];
       for (var k = 0; k < 3; k++) if (picked[k] !== want[k]) bad.push(['1st', '2nd', '3rd'][k]);
@@ -800,10 +836,10 @@
       var lock = this.mode === 'level' ? (this.level.def.lock || []) : [];
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
       // phones: the folded goal card's current step, repeated at the top of the sheet
-      if (this.mode === 'level' && !this.level.done && this.level.def.steps[this.level.step]) html += '<p class="steptask"><b>Step ' + (this.level.step + 1) + ':</b> ' + rich(this.level.def.steps[this.level.step].text) + '</p>';
+      html += '<div class="acts" id="acts"></div>'; // Delete / Flip / New part first: on a phone the sheet is short
+      html += this.stepTaskHtml();
       if (def.mcu) html += '<div class="ctls progfirst">' + this.programUi(p, lock.indexOf('program') >= 0) + '</div>'; // the program comes first: steps ask for it
       html += '<div class="vals" id="vals"></div>';
-      html += '<div class="acts" id="acts"></div>';
       html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴') + '</button>';
       var ctrls = '';
       (def.props || []).forEach(function (pr) {
@@ -899,7 +935,7 @@
       }
       s += '<div class="serial"><div class="sh">Serial monitor</div><pre id="serial"></pre></div>';
       // the real code, so the player can do the same on their own board
-      var src = BB.programs.code(p, cur);
+      var src = BB.programs.code(p, cur, this.sim);
       if (src) s += '<details class="code"><summary>See the code (' + (mcu === 'pi5' ? 'Python, gpiozero' : 'Arduino') + ')</summary><pre>' + esc(src) + '</pre>' +
         '<p class="small mut">' + (mcu === 'pi5' ? 'Save it as blink.py on the Pi and run: python3 blink.py' : 'Paste it into the Arduino IDE, pick your board, and press Upload.') + '</p></details>';
       return s;
@@ -957,12 +993,14 @@
     actions: function () {
       var self = this;
       var id = function (x) { return typeof x === 'string' ? x : x.id; };
+      // a typo in a test or a level setup (or a rail gap like T-13) must fail loudly, not leave a loose leg
+      var checkHole = function (at) { if (typeof at === 'string' && at.slice(0, 2) !== 'P:' && !self.sim.board.byId[at]) throw new Error('No hole called ' + at + ' on this board'); };
       var A = {
-        add: function (type, init) { var p = BB.newPart(type, init || {}); self.sim.state.parts.push(p); self.sim.dirty(); if (self.bench.sim === self.sim) self.bench.render(); return p; },
+        add: function (type, init) { var p = BB.newPart(type, init || {}); (p.ends || []).forEach(function (e) { checkHole(e && e.at); }); self.sim.state.parts.push(p); self.sim.dirty(); if (self.bench.sim === self.sim) self.bench.render(); return p; },
         wire: function (a, b) { return self.addWire(a, b); },
         del: function (x) { self.removePart(id(x)); },
         flip: function (x) { var p = self.sim.part(id(x)); p.ends.reverse(); self.sim.dirty(); },
-        moveEnd: function (x, k, at) { var p = self.sim.part(id(x)); p.ends[k] = { at: at }; self.sim.dirty(); },
+        moveEnd: function (x, k, at) { checkHole(at); var p = self.sim.part(id(x)); p.ends[k] = { at: at }; self.sim.dirty(); },
         move: function (x, px, py, rot) { var p = self.sim.part(id(x)); p.x = px; p.y = py; if (rot !== undefined) p.rot = rot; p.free = false; self.sim.dirty(); },
         set: function (x, k, v) { var p = self.sim.part(id(x)); p.props[k] = v; self.sim.dirty(); self.onInteract('prop', p); },
         press: function (x, on) { var p = self.sim.part(id(x)); p.st.pressed = on; self.sim.dirty(); },
@@ -1072,12 +1110,14 @@
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },
     modal: function (html, cb, where) {
-      var m = $('#modal'), opened = Date.now();
+      var m = $('#modal'), downHere = false;
       m.innerHTML = '<div class="mbox">' + html + '</div>';
       m.className = where === 'bottom' ? 'bottom' : '';
       m.hidden = false;
+      m.onpointerdown = function () { downHere = true; };
       m.onclick = function (e) {
-        if (Date.now() - opened < 500) return; // a tap that started before the box opened
+        // ignore a tap whose finger went down before the box opened (its click lands on the box); keyboard clicks have detail 0
+        if (!downHere && e.detail !== 0) return;
         var b = e.target.closest('[data-m]');
         if (b) { m.hidden = true; if (cb) cb(b.dataset.m); }
         else if (e.target === m) { m.hidden = true; if (cb) cb(null); }

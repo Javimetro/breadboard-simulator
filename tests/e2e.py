@@ -205,8 +205,9 @@ def ui_misc(page, tag):
     page.wait_for_timeout(400)
     if tag == 'mobile':
         page.evaluate("document.body.classList.remove('goalmin')")
-    for k, col in enumerate(['yellow', 'violet', 'red']):
-        page.select_option(f'#goal select[data-band="{k}"]', col)
+    for k, col in enumerate(['yellow', 'violet', 'red']):  # tapping a chip fills the band and moves to the next
+        page.click(f'#goal .chips [data-chip="{col}"]')
+    check('4.7 kΩ' in page.inner_text('#goal .bands'), f'{tag}: band picker shows the value picked')
     page.click('#goal .bands .primary')
     page.wait_for_timeout(300)
     check(page.evaluate("BB.app.level.step") == 3, f'{tag}: colour bands read with the picker (level 8)')
