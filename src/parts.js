@@ -508,7 +508,7 @@
       p.vis = { hot: Math.min(1, pw / 0.5), burnt: !!p.st.burnt };
       if (p.st.burnt) ctx.issue(p, 'burnt', 'danger', 'The resistor burned', 'It had too much power. A small resistor can take 0.25 W (250 mW). Tap it and press “New part”.');
       else if (pw > 0.25) ctx.issue(p, 'hot', 'warn', 'The resistor is hot: ' + fmtP(pw), 'A small resistor can take 0.25 W. Power = voltage × current. Use a bigger resistor, or check for a short circuit.');
-      else if (ctx.netOfPin(p, 0) !== null && ctx.netOfPin(p, 0) === ctx.netOfPin(p, 1) && ctx.nodeSupplied(p, 0))
+      else if (ctx.netOfPin(p, 0) !== null && ctx.netOfPin(p, 0) === ctx.netOfPin(p, 1))
         ctx.issue(p, 'samerow', 'warn', 'Both resistor legs are connected together', 'Both legs are in the same strip (or joined by a wire). The strip joins them, so the current goes around the resistor and it does nothing. Put the legs in two different strips.');
     },
     info: function (p, r) {
@@ -618,7 +618,8 @@
     if (i < -0.02) {
       ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting',
         'Another power source with a higher voltage pushes ' + fmtI(-i) + ' backwards into the ' + name + '. This heats the battery, and it can leak or swell. Never connect two power sources to the same rails.');
-    } else if (i > limit) {
+    } else if (i > limit && !ctx.parts.some(function (q) { return q !== p && (q.type === 'battery9' || q.type === 'aa') && (q._i || 0) < -0.02; })) {
+      // (when another battery is being pushed backwards, this is a fight, not a short)
       ctx.issue(p, 'short', 'danger', 'Short circuit! ' + fmtI(i) + ' from the ' + name,
         'The + side is joined to the − side with almost nothing in between. A huge current flows, and the battery and wires get hot. ' +
         'Always have a part (like a resistor or LED) between + and −. Find the wire that joins them and remove it.');

@@ -224,6 +224,47 @@
     // Wio Terminal: its own screen shows what the program shows, or the serial output.
   }
 
-  BB.programs = { P: P, ORDER: ORDER, PINS: PINS, run: run, available: available, pinFor: pinFor };
+
+  // ---------- "See the code": the real sketch / script for each preset ----------
+  // Arduino C++ for the Nano, ESP32 Feather and Wio Terminal; Python (gpiozero) for the Raspberry Pi.
+  function ardPin(label) {
+    if (/^D\d+$/.test(label)) return label.slice(1);          // Nano D13 → 13
+    if (/^A\d$/.test(label)) return label;                    // A0
+    var m = /^D(\d)\/A\d$/.exec(label); if (m) return 'D' + m[1]; // Wio D0/A0 → D0
+    return label;                                              // ESP32 '13' → 13
+  }
+  function ardAnalog(label) { var m = /^D\d\/(A\d)$/.exec(label); return m ? m[1] : label; }
+  function piPin(label) { return label.replace('GPIO', ''); }
+  function code(p, id) {
+    var mcu = PARTS[p.type].mcu, P2 = function (role) { return pinFor(p, role); };
+    var pi = mcu === 'pi5';
+    var L = [];
+    if (id === 'none') return pi ? '# No program: the pins do nothing.' : '// No program: the pins do nothing.\nvoid setup() {}\nvoid loop() {}';
+    if (pi) {
+      var g = function (role) { return piPin(P2(role)); };
+      if (id === 'blink') return 'from gpiozero import LED\nfrom time import sleep\n\nled = LED(' + g('led') + ')   # GPIO' + g('led') + '\nwhile True:\n    led.on()\n    sleep(0.5)\n    led.off()\n    sleep(0.5)';
+      if (id === 'button_led') return 'from gpiozero import LED, Button\nfrom signal import pause\n\nled = LED(' + g('led') + ')\nbutton = Button(' + g('button') + ')   # pull-up on, button to GND\nbutton.when_pressed = led.on\nbutton.when_released = led.off\npause()';
+      if (id === 'motion_alarm') return 'from gpiozero import MotionSensor, Buzzer, LED\nfrom signal import pause\n\npir = MotionSensor(' + g('pir') + ')\nbuzzer = Buzzer(' + g('buzzer') + ')\nled = LED(' + g('led') + ')\npir.when_motion = lambda: (buzzer.on(), led.on())\npir.when_no_motion = lambda: (buzzer.off(), led.off())\npause()';
+      if (id === 'tone_button') return 'from gpiozero import TonalBuzzer, Button\nfrom gpiozero.tones import Tone\nfrom signal import pause\n\nspeaker = TonalBuzzer(' + g('speaker') + ')\nbutton = Button(' + g('button') + ')\nbutton.when_pressed = lambda: speaker.play(Tone("A4"))\nbutton.when_released = speaker.stop\npause()';
+      if (id === 'distance') return 'from gpiozero import DistanceSensor\nfrom time import sleep\n\n# ECHO gives 5 V: use a 1k / 2.2k divider before GPIO' + g('echo') + '!\nsensor = DistanceSensor(echo=' + g('echo') + ', trigger=' + g('trig') + ')\nwhile True:\n    print("Distance:", round(sensor.distance * 100), "cm")\n    sleep(0.5)';
+      if (id === 'thermometer') return 'import adafruit_dht, board\nfrom time import sleep\n\ndht = adafruit_dht.DHT11(board.D' + g('dht') + ')\nwhile True:\n    print("Temp:", dht.temperature, "C  Humidity:", dht.humidity, "%")\n    sleep(2)';
+      if (id === 'counter') return 'from gpiozero import LEDBoard\nfrom time import sleep\n\nsegs = LEDBoard(' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (r) { return g(r); }).join(', ') + ')  # a..g\nDIGITS = ["1111110", "0110000", "1101101", "1111001", "0110011",\n          "1011011", "1011111", "1110000", "1111111", "1111011"]\nwhile True:\n    for d in DIGITS:\n        segs.value = tuple(int(c) for c in d)\n        sleep(1)';
+      return '# This program needs an analog pin. The Pi has none.';
+    }
+    var a = function (role) { return ardPin(P2(role)); }, an = function (role) { return ardAnalog(P2(role)); };
+    if (id === 'blink') return 'void setup() {\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(' + a('led') + ', HIGH);\n  delay(500);\n  digitalWrite(' + a('led') + ', LOW);\n  delay(500);\n}';
+    if (id === 'button_led') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);  // button to GND\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool pressed = digitalRead(' + a('button') + ') == LOW;\n  digitalWrite(' + a('led') + ', pressed ? HIGH : LOW);\n}';
+    if (id === 'fade_knob') return 'void setup() {\n  pinMode(' + a('fade') + ', OUTPUT);\n}\n\nvoid loop() {\n  int knob = analogRead(' + an('knob') + ');   // 0 to ' + BB.BOARDS[mcu].adcMax + '\n  analogWrite(' + a('fade') + ', map(knob, 0, ' + BB.BOARDS[mcu].adcMax + ', 0, 255));  // PWM\n}';
+    if (id === 'light_meter') return '#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 screen(128, 64, &Wire);\n\nvoid setup() {\n  Serial.begin(9600);\n  screen.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.println(light);\n  screen.clearDisplay();\n  screen.setTextColor(WHITE);\n  screen.setCursor(0, 0);\n  screen.print("Light: ");\n  screen.print(light);\n  screen.display();\n  delay(200);\n}';
+    if (id === 'thermometer') return '#include <DHT.h>\nDHT dht(' + a('dht') + ', DHT11);\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n}\n\nvoid loop() {\n  Serial.print("Temp: ");\n  Serial.print(dht.readTemperature());\n  Serial.print(" C  Humidity: ");\n  Serial.println(dht.readHumidity());\n  delay(2000);\n}';
+    if (id === 'distance') return 'void setup() {\n  Serial.begin(9600);\n  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH);  // how long ECHO stays HIGH\n  Serial.print("Distance: ");\n  Serial.print(us / 58);   // 58 µs = 1 cm\n  Serial.println(" cm");\n  delay(60);\n}';
+    if (id === 'motion_alarm') return 'void setup() {\n  pinMode(' + a('pir') + ', INPUT);\n  pinMode(' + a('buzzer') + ', OUTPUT);\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool motion = digitalRead(' + a('pir') + ') == HIGH;\n  digitalWrite(' + a('buzzer') + ', motion);\n  digitalWrite(' + a('led') + ', motion);\n}';
+    if (id === 'clap_beep') return 'void setup() {}\n\nvoid loop() {\n  int sound = analogRead(' + an('mic') + ');\n  if (sound > ' + Math.round(0.8 * BB.BOARDS[mcu].adcMax) + ') {     // a loud sound\n    tone(' + a('speaker') + ', 1000, 500);  // 1 kHz for half a second\n    delay(500);\n  }\n}';
+    if (id === 'tone_button') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);\n}\n\nvoid loop() {\n  if (digitalRead(' + a('button') + ') == LOW) tone(' + a('speaker') + ', 440);  // the note A\n  else noTone(' + a('speaker') + ');\n}';
+    if (id === 'counter') return 'int seg[7] = {' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(a).join(', ') + '};  // a..g\nbyte digits[10] = {0x7E,0x30,0x6D,0x79,0x33,0x5B,0x5F,0x70,0x7F,0x7B};\n\nvoid setup() {\n  for (int i = 0; i < 7; i++) pinMode(seg[i], OUTPUT);\n}\n\nvoid loop() {\n  for (int n = 0; n < 10; n++) {\n    for (int i = 0; i < 7; i++) digitalWrite(seg[i], (digits[n] >> (6 - i)) & 1);\n    delay(1000);\n  }\n}';
+    return '';
+  }
+
+  BB.programs = { P: P, ORDER: ORDER, PINS: PINS, run: run, available: available, pinFor: pinFor, code: code };
   if (typeof module !== 'undefined' && module.exports) module.exports = BB.programs;
 })();

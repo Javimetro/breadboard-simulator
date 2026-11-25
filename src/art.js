@@ -452,6 +452,9 @@
     s += '<rect x="14" y="30" width="4" height="3" fill="' + (on13 ? '#ff3b2a' : '#d9d2c0') + '"/>' + (on13 ? '<circle cx="16" cy="31.5" r="6" fill="#ff3b2a" opacity=".5"/>' : '');
     s += '<rect x="14" y="40" width="4" height="3" fill="' + (st.powered ? '#ffb12a' : '#d9d2c0') + '"/>';
     s += txt(4, 52, 'HUZZAH32', 'brand2') + txt(4, 60, 'Feather', 'tiny');
+    // reset button (next to the USB plug) and the orange CHG (charge) LED
+    s += '<rect x="-6" y="10" width="12" height="12" rx="1" fill="url(#gMetal)" stroke="#777" stroke-width=".4"/><circle cx="0" cy="16" r="3.2" fill="#2b2b2b"/>' + txt(0, 28, 'RST', 'tiny', ' text-anchor="middle"');
+    s += '<rect x="22" y="30" width="4" height="3" fill="' + (st.powered ? '#ffb12a' : '#d9d2c0') + '"/>' + txt(28, 33, 'CHG', 'tiny');
     if (st.damaged && Object.keys(st.damaged).length) s += '<text x="115" y="30" class="dmg" text-anchor="middle">damaged</text>';
     return group(p, s) + smoke(p.x * U + 100, p.y * U + 20, st.smoke, now);
   };

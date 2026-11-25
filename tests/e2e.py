@@ -243,6 +243,22 @@ def ui_misc(page, tag):
     shot(page, f'{tag}-level03-current')
 
 
+def resume_and_code(page, tag):
+    """A reload in the middle of a level keeps the parts; boards show their real code."""
+    page.evaluate("BB.app.startLevel(2)"); page.click('#introGo'); page.wait_for_timeout(200)
+    page.evaluate("BB.app.placeNew('resistor', {r: 470}); BB.app.saveNow()")
+    n0 = page.evaluate("BB.app.sim.state.parts.length")
+    page.reload(); page.wait_for_timeout(500); page.evaluate("BB.app.doneDelay = 300")
+    page.click('#introGo'); page.wait_for_timeout(700)
+    page.click('#modal [data-m=go]'); page.wait_for_timeout(300)
+    check(page.evaluate("BB.app.sim.state.parts.length") == n0, f'{tag}: level parts come back after a reload ("Continue")')
+    page.evaluate("BB.app.startSandbox(); BB.app.sim.state.parts = []; const n = BB.app.actions().add('nano', {x: 8, y: 5, props: {program: 'blink'}}); BB.app.bench.select(n.id)")
+    page.wait_for_timeout(300)
+    code = page.evaluate("(document.querySelector('#inspector details.code pre') || {}).textContent || ''")
+    check('pinMode(13, OUTPUT)' in code, f'{tag}: "See the code" shows the real Arduino sketch')
+    page.evaluate("BB.app.bench.select(null); BB.app.sim.state.parts = []; BB.app.sim.dirty(); BB.app.saveNow()")
+
+
 def pinch(page):
     page.evaluate("BB.app.bench.select(null)")
     page.wait_for_timeout(300)
@@ -284,6 +300,7 @@ with sync_playwright() as pw:
     sandbox_every_part(page, 'desktop')
     ui_misc(page, 'desktop')
     ui_level3_by_pointer(page, 'desktop')
+    resume_and_code(page, 'desktop')
     touch_targets(page, 'desktop play')
     # storage that throws must not break the game
     page.evaluate("Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } })")

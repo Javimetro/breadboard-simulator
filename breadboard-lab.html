@@ -367,6 +367,12 @@ body.pulseparts #tb .partsbtn { animation: partspulse 1.2s ease-in-out infinite;
 /* modules that hang over the rails: see-through while wiring, so the rail holes under them show */
 body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic], body.wiretool #bench g[data-type=dht11], body.wiretool #bench g[data-type=pot] { opacity: .4; }
 #inspector { padding-bottom: calc(24px + var(--safe-b)); }
+.code { margin-top: 8px; border: 1px solid #2c3540; border-radius: 10px; }
+.code summary { min-height: 44px; display: flex; align-items: center; padding: 0 10px; cursor: pointer; color: var(--cyan); font-weight: 600; }
+.code pre { margin: 0; padding: 8px 10px; max-height: 260px; overflow: auto; background: #0c0f12; color: #d7e3ee; font: 12.5px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+.code p { margin: 6px 10px 10px; }
+.steptask { margin: 2px 0 8px; padding: 8px 10px; border-radius: 10px; background: #13303a; border: 1px solid #2c5d6d; font-size: 14.5px; }
+@media (min-width: 1100px) { .steptask { display: none; } }
 </style>
 </head>
 <body>
@@ -1261,7 +1267,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       p.vis = { hot: Math.min(1, pw / 0.5), burnt: !!p.st.burnt };
       if (p.st.burnt) ctx.issue(p, 'burnt', 'danger', 'The resistor burned', 'It had too much power. A small resistor can take 0.25 W (250 mW). Tap it and press “New part”.');
       else if (pw > 0.25) ctx.issue(p, 'hot', 'warn', 'The resistor is hot: ' + fmtP(pw), 'A small resistor can take 0.25 W. Power = voltage × current. Use a bigger resistor, or check for a short circuit.');
-      else if (ctx.netOfPin(p, 0) !== null && ctx.netOfPin(p, 0) === ctx.netOfPin(p, 1) && ctx.nodeSupplied(p, 0))
+      else if (ctx.netOfPin(p, 0) !== null && ctx.netOfPin(p, 0) === ctx.netOfPin(p, 1))
         ctx.issue(p, 'samerow', 'warn', 'Both resistor legs are connected together', 'Both legs are in the same strip (or joined by a wire). The strip joins them, so the current goes around the resistor and it does nothing. Put the legs in two different strips.');
     },
     info: function (p, r) {
@@ -1371,7 +1377,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     if (i < -0.02) {
       ctx.issue(p, 'fight', 'danger', 'Two power sources are fighting',
         'Another power source with a higher voltage pushes ' + fmtI(-i) + ' backwards into the ' + name + '. This heats the battery, and it can leak or swell. Never connect two power sources to the same rails.');
-    } else if (i > limit) {
+    } else if (i > limit && !ctx.parts.some(function (q) { return q !== p && (q.type === 'battery9' || q.type === 'aa') && (q._i || 0) < -0.02; })) {
+      // (when another battery is being pushed backwards, this is a fight, not a short)
       ctx.issue(p, 'short', 'danger', 'Short circuit! ' + fmtI(i) + ' from the ' + name,
         'The + side is joined to the − side with almost nothing in between. A huge current flows, and the battery and wires get hot. ' +
         'Always have a part (like a resistor or LED) between + and −. Find the wire that joins them and remove it.');
@@ -2506,7 +2513,48 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     // Wio Terminal: its own screen shows what the program shows, or the serial output.
   }
 
-  BB.programs = { P: P, ORDER: ORDER, PINS: PINS, run: run, available: available, pinFor: pinFor };
+
+  // ---------- "See the code": the real sketch / script for each preset ----------
+  // Arduino C++ for the Nano, ESP32 Feather and Wio Terminal; Python (gpiozero) for the Raspberry Pi.
+  function ardPin(label) {
+    if (/^D\d+$/.test(label)) return label.slice(1);          // Nano D13 → 13
+    if (/^A\d$/.test(label)) return label;                    // A0
+    var m = /^D(\d)\/A\d$/.exec(label); if (m) return 'D' + m[1]; // Wio D0/A0 → D0
+    return label;                                              // ESP32 '13' → 13
+  }
+  function ardAnalog(label) { var m = /^D\d\/(A\d)$/.exec(label); return m ? m[1] : label; }
+  function piPin(label) { return label.replace('GPIO', ''); }
+  function code(p, id) {
+    var mcu = PARTS[p.type].mcu, P2 = function (role) { return pinFor(p, role); };
+    var pi = mcu === 'pi5';
+    var L = [];
+    if (id === 'none') return pi ? '# No program: the pins do nothing.' : '// No program: the pins do nothing.\nvoid setup() {}\nvoid loop() {}';
+    if (pi) {
+      var g = function (role) { return piPin(P2(role)); };
+      if (id === 'blink') return 'from gpiozero import LED\nfrom time import sleep\n\nled = LED(' + g('led') + ')   # GPIO' + g('led') + '\nwhile True:\n    led.on()\n    sleep(0.5)\n    led.off()\n    sleep(0.5)';
+      if (id === 'button_led') return 'from gpiozero import LED, Button\nfrom signal import pause\n\nled = LED(' + g('led') + ')\nbutton = Button(' + g('button') + ')   # pull-up on, button to GND\nbutton.when_pressed = led.on\nbutton.when_released = led.off\npause()';
+      if (id === 'motion_alarm') return 'from gpiozero import MotionSensor, Buzzer, LED\nfrom signal import pause\n\npir = MotionSensor(' + g('pir') + ')\nbuzzer = Buzzer(' + g('buzzer') + ')\nled = LED(' + g('led') + ')\npir.when_motion = lambda: (buzzer.on(), led.on())\npir.when_no_motion = lambda: (buzzer.off(), led.off())\npause()';
+      if (id === 'tone_button') return 'from gpiozero import TonalBuzzer, Button\nfrom gpiozero.tones import Tone\nfrom signal import pause\n\nspeaker = TonalBuzzer(' + g('speaker') + ')\nbutton = Button(' + g('button') + ')\nbutton.when_pressed = lambda: speaker.play(Tone("A4"))\nbutton.when_released = speaker.stop\npause()';
+      if (id === 'distance') return 'from gpiozero import DistanceSensor\nfrom time import sleep\n\n# ECHO gives 5 V: use a 1k / 2.2k divider before GPIO' + g('echo') + '!\nsensor = DistanceSensor(echo=' + g('echo') + ', trigger=' + g('trig') + ')\nwhile True:\n    print("Distance:", round(sensor.distance * 100), "cm")\n    sleep(0.5)';
+      if (id === 'thermometer') return 'import adafruit_dht, board\nfrom time import sleep\n\ndht = adafruit_dht.DHT11(board.D' + g('dht') + ')\nwhile True:\n    print("Temp:", dht.temperature, "C  Humidity:", dht.humidity, "%")\n    sleep(2)';
+      if (id === 'counter') return 'from gpiozero import LEDBoard\nfrom time import sleep\n\nsegs = LEDBoard(' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(function (r) { return g(r); }).join(', ') + ')  # a..g\nDIGITS = ["1111110", "0110000", "1101101", "1111001", "0110011",\n          "1011011", "1011111", "1110000", "1111111", "1111011"]\nwhile True:\n    for d in DIGITS:\n        segs.value = tuple(int(c) for c in d)\n        sleep(1)';
+      return '# This program needs an analog pin. The Pi has none.';
+    }
+    var a = function (role) { return ardPin(P2(role)); }, an = function (role) { return ardAnalog(P2(role)); };
+    if (id === 'blink') return 'void setup() {\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(' + a('led') + ', HIGH);\n  delay(500);\n  digitalWrite(' + a('led') + ', LOW);\n  delay(500);\n}';
+    if (id === 'button_led') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);  // button to GND\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool pressed = digitalRead(' + a('button') + ') == LOW;\n  digitalWrite(' + a('led') + ', pressed ? HIGH : LOW);\n}';
+    if (id === 'fade_knob') return 'void setup() {\n  pinMode(' + a('fade') + ', OUTPUT);\n}\n\nvoid loop() {\n  int knob = analogRead(' + an('knob') + ');   // 0 to ' + BB.BOARDS[mcu].adcMax + '\n  analogWrite(' + a('fade') + ', map(knob, 0, ' + BB.BOARDS[mcu].adcMax + ', 0, 255));  // PWM\n}';
+    if (id === 'light_meter') return '#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 screen(128, 64, &Wire);\n\nvoid setup() {\n  Serial.begin(9600);\n  screen.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.println(light);\n  screen.clearDisplay();\n  screen.setTextColor(WHITE);\n  screen.setCursor(0, 0);\n  screen.print("Light: ");\n  screen.print(light);\n  screen.display();\n  delay(200);\n}';
+    if (id === 'thermometer') return '#include <DHT.h>\nDHT dht(' + a('dht') + ', DHT11);\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n}\n\nvoid loop() {\n  Serial.print("Temp: ");\n  Serial.print(dht.readTemperature());\n  Serial.print(" C  Humidity: ");\n  Serial.println(dht.readHumidity());\n  delay(2000);\n}';
+    if (id === 'distance') return 'void setup() {\n  Serial.begin(9600);\n  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH);  // how long ECHO stays HIGH\n  Serial.print("Distance: ");\n  Serial.print(us / 58);   // 58 µs = 1 cm\n  Serial.println(" cm");\n  delay(60);\n}';
+    if (id === 'motion_alarm') return 'void setup() {\n  pinMode(' + a('pir') + ', INPUT);\n  pinMode(' + a('buzzer') + ', OUTPUT);\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool motion = digitalRead(' + a('pir') + ') == HIGH;\n  digitalWrite(' + a('buzzer') + ', motion);\n  digitalWrite(' + a('led') + ', motion);\n}';
+    if (id === 'clap_beep') return 'void setup() {}\n\nvoid loop() {\n  int sound = analogRead(' + an('mic') + ');\n  if (sound > ' + Math.round(0.8 * BB.BOARDS[mcu].adcMax) + ') {     // a loud sound\n    tone(' + a('speaker') + ', 1000, 500);  // 1 kHz for half a second\n    delay(500);\n  }\n}';
+    if (id === 'tone_button') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);\n}\n\nvoid loop() {\n  if (digitalRead(' + a('button') + ') == LOW) tone(' + a('speaker') + ', 440);  // the note A\n  else noTone(' + a('speaker') + ');\n}';
+    if (id === 'counter') return 'int seg[7] = {' + ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(a).join(', ') + '};  // a..g\nbyte digits[10] = {0x7E,0x30,0x6D,0x79,0x33,0x5B,0x5F,0x70,0x7F,0x7B};\n\nvoid setup() {\n  for (int i = 0; i < 7; i++) pinMode(seg[i], OUTPUT);\n}\n\nvoid loop() {\n  for (int n = 0; n < 10; n++) {\n    for (int i = 0; i < 7; i++) digitalWrite(seg[i], (digits[n] >> (6 - i)) & 1);\n    delay(1000);\n  }\n}';
+    return '';
+  }
+
+  BB.programs = { P: P, ORDER: ORDER, PINS: PINS, run: run, available: available, pinFor: pinFor, code: code };
   if (typeof module !== 'undefined' && module.exports) module.exports = BB.programs;
 })();
 
@@ -2965,6 +3013,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     s += '<rect x="14" y="30" width="4" height="3" fill="' + (on13 ? '#ff3b2a' : '#d9d2c0') + '"/>' + (on13 ? '<circle cx="16" cy="31.5" r="6" fill="#ff3b2a" opacity=".5"/>' : '');
     s += '<rect x="14" y="40" width="4" height="3" fill="' + (st.powered ? '#ffb12a' : '#d9d2c0') + '"/>';
     s += txt(4, 52, 'HUZZAH32', 'brand2') + txt(4, 60, 'Feather', 'tiny');
+    // reset button (next to the USB plug) and the orange CHG (charge) LED
+    s += '<rect x="-6" y="10" width="12" height="12" rx="1" fill="url(#gMetal)" stroke="#777" stroke-width=".4"/><circle cx="0" cy="16" r="3.2" fill="#2b2b2b"/>' + txt(0, 28, 'RST', 'tiny', ' text-anchor="middle"');
+    s += '<rect x="22" y="30" width="4" height="3" fill="' + (st.powered ? '#ffb12a' : '#d9d2c0') + '"/>' + txt(28, 33, 'CHG', 'tiny');
     if (st.damaged && Object.keys(st.damaged).length) s += '<text x="115" y="30" class="dmg" text-anchor="middle">damaged</text>';
     return group(p, s) + smoke(p.x * U + 100, p.y * U + 20, st.smoke, now);
   };
@@ -3229,7 +3280,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1);
       if (p.ends) self.sim.pinPoints(p).forEach(function (q) { x0 = Math.min(x0, q.x - 1); x1 = Math.max(x1, q.x + 1); y0 = Math.min(y0, q.y - 1); y1 = Math.max(y1, q.y + 4); });
     });
-    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1);
+    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 16, 0, 56); // leave room for the zoom buttons on the right
   };
   B.toWorld = function (cx, cy) {
     var sz = this.size(), v = this.view;
@@ -4256,7 +4307,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       },
       steps: [
         { text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
-        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first, then set the dial to {{DCA}} (mA). (In DCA the meter is like a wire: across the rails its fuse blows.)', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
+        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first. Then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
@@ -4350,7 +4401,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [
-        { text: 'Put the microphone on the board. Connect + to 5V and G to GND. Connect {{AO}} (the sound signal) to A0.', check: function (L) {
+        { text: 'Put the microphone on the board. Connect + to 5V and G to GND. Connect the module’s {{AO}} pin (“Analog Out”, letter O) to the Nano’s A0 pin (“A-zero”).', check: function (L) {
           var m = L.of('mic')[0], n = L.part('nano'); if (!m) return false;
           return (m.st.vcc || 0) > 4.5 && L.net(m, 0) === mcuPinNet(L, n, 'A0');
         }, ok: 'The microphone is on. AO follows the sound.' },
@@ -4374,7 +4425,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 19 mA, just under the safe 20 mA. All the ohms in the loop add up: 220 + 8 (speaker) + about 25 (inside the pin) = 253 Ω, and 4.7 V ÷ 253 Ω ≈ 19 mA.',
+      done: 'The mic gives a voltage that follows the sound, and a loud sound starts a tone. The resistor keeps the pin current near 19 mA, just under the safe 20 mA.',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');
@@ -4408,7 +4459,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
           var top = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 1000 && ((a === echo && b === p33) || (b === echo && a === p33)); });
           var bot = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 2200 && ((a === p33 && gnds.indexOf(b) >= 0) || (b === p33 && gnds.indexOf(a) >= 0)); });
           return top && bot && (e.st.serial || []).some(function (x) { return /^Distance/.test(x); });
-        }, ok: 'Pin 33 gets about 3.4 V: safe, and still HIGH. The distance shows in the {{serial monitor}}.' }
+        }, ok: 'Pin 33 gets about 3.4 V: just under the 3.6 V maximum, and still HIGH. The distance shows in the {{serial monitor}}.' }
       ],
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
@@ -4422,7 +4473,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         return null;
       },
       hints: ['USB is on the bottom row of pins. It gives 5V while the USB cable is plugged in. GND is on the top row.', 'Divider: ECHO column → 1 kΩ → a free middle column → 2.2 kΩ → − rail (joined to GND). Middle gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V.', 'Then a wire from the middle column to a hole below pin 33 (bottom row).'],
-      done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into 5 × 2.2 ÷ 3.2 ≈ 3.4 V: safe and still HIGH.',
+      done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into about 3.4 V. That is just under the ESP32’s 3.6 V maximum, and still reads HIGH.',
       solve: function (A) {
         A.add('hcsr04', { x: 24, y: 3 });
         A.wire('j12', 'b24'); A.wire('a9', 'T-9'); A.wire('T-27', 'b27'); A.wire('a21', 'b25'); A.wait(0.2);
@@ -4480,7 +4531,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
-    board: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M6 14h.01M9 14h.01M12 14h.01M15 14h.01M18 14h.01"/>'
+    board: '<rect x="2.5" y="4" width="19" height="16" rx="1.5"/><path d="M4.5 6.5h15M4.5 17.5h15" stroke-width="1.2"/><path d="M3 12h18" stroke-width="2.2" opacity=".5"/><path d="M6 9.5h.01M9 9.5h.01M12 9.5h.01M15 9.5h.01M18 9.5h.01M6 14.5h.01M9 14.5h.01M12 14.5h.01M15 14.5h.01M18 14.5h.01" stroke-width="2.2"/>',
   };
   function icon(n, cls) { return '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + ICON[n] + '</svg>'; }
   BB.icon = icon;
@@ -4553,7 +4604,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       requestAnimationFrame(loop);
       window.addEventListener('resize', function () { if (self.sim) self.bench.renderUi(); });
       // save the sandbox at once when the page is hidden (switching apps on a phone, closing the tab)
-      var saveNow = function () { if (self.mode === 'sandbox' && self.sim) { clearTimeout(self._saveT); store.data.sandbox = JSON.parse(self.serialize()); store.save(); } };
+      var saveNow = function () { self.saveNow(); };
       window.addEventListener('pagehide', saveNow);
       document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); });
       $('#stage').addEventListener('pointerdown', function () { $('#toasts').innerHTML = ''; });
@@ -4677,14 +4728,21 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       $('#introTip').textContent = store.data.tipShown ? '' : (window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.');
       store.data.tipShown = true; store.save();
       $('#introGo').textContent = again ? 'Back to the level' : 'Start';
-      $('#introGo').onclick = function () { if (again) { self.show('play'); self.bench.renderUi(); } else self.beginLevel(def); };
+      $('#introGo').onclick = function () {
+        if (again) { self.show('play'); self.bench.renderUi(); return; }
+        var sv = store.data.levelSave;
+        // half-finished earlier (or the page was reloaded): continue, or start again
+        if (sv && sv.i === def.n - 1) self.modal('<h2>Continue?</h2><p>You started this level before. Your parts are still there.</p><div class="mbtns"><button class="primary" data-m="go">Continue where I stopped</button><button data-m="new">Start again</button></div>',
+          function (a) { if (a === 'go') self.beginLevel(def, sv); else if (a === 'new') { store.data.levelSave = null; store.save(); self.beginLevel(def); } });
+        else self.beginLevel(def);
+      };
       $('#introBack').onclick = function () { self.showHome(); };
     },
 
     // ---------- levels ----------
     startLevel: function (i) { this.clearToasts(); this.showIntro(LEVELS[i]); },
     clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; $('#modal').hidden = true; },
-    beginLevel: function (def) {
+    beginLevel: function (def, resume) {
       this.clearToasts();
       store.data.where = { level: def.n - 1 }; store.save();
       this.mode = 'level';
@@ -4698,6 +4756,13 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       this.setFlow(false); this.setXray(false); this.setTool('move');
       var A = this.actions();
       if (def.setup) def.setup(A);
+      if (resume) {
+        // put back the parts and the progress from the saved level
+        var rs = JSON.parse(resume.state);
+        rs.parts.forEach(function (q) { q.st = q.st || {}; });
+        this.sim.state.parts = rs.parts;
+        ['step', 'flags', 'hints', 'mistakes', 'wrong', 'tapped'].forEach(function (k) { if (resume[k] !== undefined) this.level[k] = resume[k]; }, this);
+      }
       this.sim.step(0.001);
       this.level.baseline = {};
       var self = this;
@@ -4769,6 +4834,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     stepDone: function (msg) {
       var lv = this.level;
       lv.step++;
+      this.saveSandbox(); // also saves the level in progress
       audio.blip(880, 0.12, 'sine', 0.06); setTimeout(function () { audio.blip(1320, 0.18, 'sine', 0.05); }, 90);
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
       this.toast('✓ ' + (msg || 'Done!'), 'good');
@@ -4778,6 +4844,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       var lv = this.level, self = this;
       $('#toasts').innerHTML = ''; document.body.classList.remove('pulseparts');
       lv.done = true;
+      if (store.data.levelSave && store.data.levelSave.i === lv.def.n - 1) store.data.levelSave = null; // finished: nothing to continue
       var stars = 3 - (lv.hints > 0 ? 1 : 0) - (lv.mistakes + (lv.wrong || 0) > 0 ? 1 : 0);
       stars = Math.max(1, stars);
       var prev = store.data.stars[lv.def.id] || 0;
@@ -4944,10 +5011,20 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (changed) { store.save(); this.renderChallenges(); }
     },
     saveSandbox: function () {
-      if (this.mode !== 'sandbox') return;
       var self = this;
       clearTimeout(this._saveT);
-      this._saveT = setTimeout(function () { store.data.sandbox = JSON.parse(self.serialize()); store.save(); }, 400);
+      if (this.mode === 'sandbox') this._saveT = setTimeout(function () { self.saveNow(); }, 400);
+      else if (this.mode === 'level' && this.level && this.level.ready && !this.level.done) this._saveT = setTimeout(function () { self.saveNow(); }, 400);
+    },
+    // save the sandbox, or the level in progress (so a reload in the middle loses nothing)
+    saveNow: function () {
+      clearTimeout(this._saveT);
+      if (this.mode === 'sandbox' && this.sim) store.data.sandbox = JSON.parse(this.serialize());
+      else if (this.mode === 'level' && this.level && this.level.ready && !this.level.done) {
+        var lv = this.level;
+        store.data.levelSave = { i: lv.def.n - 1, state: this.serialize(), step: lv.step, flags: lv.flags, hints: lv.hints, mistakes: lv.mistakes, wrong: lv.wrong || 0, tapped: lv.tapped || {} };
+      } else return;
+      store.save();
     },
     boardMenu: function () {
       var self = this, b = this.sim.state.board;
@@ -5186,7 +5263,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       var bench = this.bench;
       var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
-      if (this.mode === 'level' && !big && !PARTS[p.type].mcu) document.body.classList.add('goalmin');
+      if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
       if (bench.view.s * 10 < 19 && !big) bench.view.s = 2.2;
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
@@ -5212,6 +5289,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       var p = this.sim.part(id), def = PARTS[p.type];
       var lock = this.mode === 'level' ? (this.level.def.lock || []) : [];
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
+      // phones: the folded goal card's current step, repeated at the top of the sheet
+      if (this.mode === 'level' && !this.level.done && this.level.def.steps[this.level.step]) html += '<p class="steptask"><b>Step ' + (this.level.step + 1) + ':</b> ' + rich(this.level.def.steps[this.level.step].text) + '</p>';
       if (def.mcu) html += '<div class="ctls progfirst">' + this.programUi(p, lock.indexOf('program') >= 0) + '</div>'; // the program comes first: steps ask for it
       html += '<div class="vals" id="vals"></div>';
       html += '<div class="acts" id="acts"></div>';
@@ -5232,7 +5311,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         ctrls += '</label>';
       });
 
-      html += '<div class="ctls">' + ctrls + '</div>';
+      // the meter: its dial row first (the steps ask for it); other parts: controls after the values
+      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>');
+      else html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';
       (def.actions || []).forEach(function (a) { acts += '<button data-a="' + a.id + '">' + esc(a.label) + '</button>'; });
@@ -5307,6 +5388,10 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         }, this).join('') + '</table>';
       }
       s += '<div class="serial"><div class="sh">Serial monitor</div><pre id="serial"></pre></div>';
+      // the real code, so the player can do the same on their own board
+      var src = BB.programs.code(p, cur);
+      if (src) s += '<details class="code"><summary>See the code (' + (mcu === 'pi5' ? 'Python, gpiozero' : 'Arduino') + ')</summary><pre>' + esc(src) + '</pre>' +
+        '<p class="small mut">' + (mcu === 'pi5' ? 'Save it as blink.py on the Pi and run: python3 blink.py' : 'Paste it into the Arduino IDE, pick your board, and press Upload.') + '</p></details>';
       return s;
     },
     refreshInspector: function () {

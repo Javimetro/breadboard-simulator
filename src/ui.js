@@ -41,7 +41,7 @@
     star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
     lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
-    board: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M6 14h.01M9 14h.01M12 14h.01M15 14h.01M18 14h.01"/>'
+    board: '<rect x="2.5" y="4" width="19" height="16" rx="1.5"/><path d="M4.5 6.5h15M4.5 17.5h15" stroke-width="1.2"/><path d="M3 12h18" stroke-width="2.2" opacity=".5"/><path d="M6 9.5h.01M9 9.5h.01M12 9.5h.01M15 9.5h.01M18 9.5h.01M6 14.5h.01M9 14.5h.01M12 14.5h.01M15 14.5h.01M18 14.5h.01" stroke-width="2.2"/>',
   };
   function icon(n, cls) { return '<svg class="ico ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + ICON[n] + '</svg>'; }
   BB.icon = icon;
@@ -114,7 +114,7 @@
       requestAnimationFrame(loop);
       window.addEventListener('resize', function () { if (self.sim) self.bench.renderUi(); });
       // save the sandbox at once when the page is hidden (switching apps on a phone, closing the tab)
-      var saveNow = function () { if (self.mode === 'sandbox' && self.sim) { clearTimeout(self._saveT); store.data.sandbox = JSON.parse(self.serialize()); store.save(); } };
+      var saveNow = function () { self.saveNow(); };
       window.addEventListener('pagehide', saveNow);
       document.addEventListener('visibilitychange', function () { if (document.hidden) saveNow(); });
       $('#stage').addEventListener('pointerdown', function () { $('#toasts').innerHTML = ''; });
@@ -238,14 +238,21 @@
       $('#introTip').textContent = store.data.tipShown ? '' : (window.innerWidth < 1100 ? 'Tip: pinch with two fingers to zoom. Drag an empty spot to move the view.' : 'Tip: scroll to zoom. Drag an empty spot to move the view.');
       store.data.tipShown = true; store.save();
       $('#introGo').textContent = again ? 'Back to the level' : 'Start';
-      $('#introGo').onclick = function () { if (again) { self.show('play'); self.bench.renderUi(); } else self.beginLevel(def); };
+      $('#introGo').onclick = function () {
+        if (again) { self.show('play'); self.bench.renderUi(); return; }
+        var sv = store.data.levelSave;
+        // half-finished earlier (or the page was reloaded): continue, or start again
+        if (sv && sv.i === def.n - 1) self.modal('<h2>Continue?</h2><p>You started this level before. Your parts are still there.</p><div class="mbtns"><button class="primary" data-m="go">Continue where I stopped</button><button data-m="new">Start again</button></div>',
+          function (a) { if (a === 'go') self.beginLevel(def, sv); else if (a === 'new') { store.data.levelSave = null; store.save(); self.beginLevel(def); } });
+        else self.beginLevel(def);
+      };
       $('#introBack').onclick = function () { self.showHome(); };
     },
 
     // ---------- levels ----------
     startLevel: function (i) { this.clearToasts(); this.showIntro(LEVELS[i]); },
     clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; $('#modal').hidden = true; },
-    beginLevel: function (def) {
+    beginLevel: function (def, resume) {
       this.clearToasts();
       store.data.where = { level: def.n - 1 }; store.save();
       this.mode = 'level';
@@ -259,6 +266,13 @@
       this.setFlow(false); this.setXray(false); this.setTool('move');
       var A = this.actions();
       if (def.setup) def.setup(A);
+      if (resume) {
+        // put back the parts and the progress from the saved level
+        var rs = JSON.parse(resume.state);
+        rs.parts.forEach(function (q) { q.st = q.st || {}; });
+        this.sim.state.parts = rs.parts;
+        ['step', 'flags', 'hints', 'mistakes', 'wrong', 'tapped'].forEach(function (k) { if (resume[k] !== undefined) this.level[k] = resume[k]; }, this);
+      }
       this.sim.step(0.001);
       this.level.baseline = {};
       var self = this;
@@ -330,6 +344,7 @@
     stepDone: function (msg) {
       var lv = this.level;
       lv.step++;
+      this.saveSandbox(); // also saves the level in progress
       audio.blip(880, 0.12, 'sine', 0.06); setTimeout(function () { audio.blip(1320, 0.18, 'sine', 0.05); }, 90);
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
       this.toast('✓ ' + (msg || 'Done!'), 'good');
@@ -339,6 +354,7 @@
       var lv = this.level, self = this;
       $('#toasts').innerHTML = ''; document.body.classList.remove('pulseparts');
       lv.done = true;
+      if (store.data.levelSave && store.data.levelSave.i === lv.def.n - 1) store.data.levelSave = null; // finished: nothing to continue
       var stars = 3 - (lv.hints > 0 ? 1 : 0) - (lv.mistakes + (lv.wrong || 0) > 0 ? 1 : 0);
       stars = Math.max(1, stars);
       var prev = store.data.stars[lv.def.id] || 0;
@@ -505,10 +521,20 @@
       if (changed) { store.save(); this.renderChallenges(); }
     },
     saveSandbox: function () {
-      if (this.mode !== 'sandbox') return;
       var self = this;
       clearTimeout(this._saveT);
-      this._saveT = setTimeout(function () { store.data.sandbox = JSON.parse(self.serialize()); store.save(); }, 400);
+      if (this.mode === 'sandbox') this._saveT = setTimeout(function () { self.saveNow(); }, 400);
+      else if (this.mode === 'level' && this.level && this.level.ready && !this.level.done) this._saveT = setTimeout(function () { self.saveNow(); }, 400);
+    },
+    // save the sandbox, or the level in progress (so a reload in the middle loses nothing)
+    saveNow: function () {
+      clearTimeout(this._saveT);
+      if (this.mode === 'sandbox' && this.sim) store.data.sandbox = JSON.parse(this.serialize());
+      else if (this.mode === 'level' && this.level && this.level.ready && !this.level.done) {
+        var lv = this.level;
+        store.data.levelSave = { i: lv.def.n - 1, state: this.serialize(), step: lv.step, flags: lv.flags, hints: lv.hints, mistakes: lv.mistakes, wrong: lv.wrong || 0, tapped: lv.tapped || {} };
+      } else return;
+      store.save();
     },
     boardMenu: function () {
       var self = this, b = this.sim.state.board;
@@ -747,7 +773,7 @@
       var bench = this.bench;
       var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
-      if (this.mode === 'level' && !big && !PARTS[p.type].mcu) document.body.classList.add('goalmin');
+      if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
       if (bench.view.s * 10 < 19 && !big) bench.view.s = 2.2;
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
@@ -773,6 +799,8 @@
       var p = this.sim.part(id), def = PARTS[p.type];
       var lock = this.mode === 'level' ? (this.level.def.lock || []) : [];
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
+      // phones: the folded goal card's current step, repeated at the top of the sheet
+      if (this.mode === 'level' && !this.level.done && this.level.def.steps[this.level.step]) html += '<p class="steptask"><b>Step ' + (this.level.step + 1) + ':</b> ' + rich(this.level.def.steps[this.level.step].text) + '</p>';
       if (def.mcu) html += '<div class="ctls progfirst">' + this.programUi(p, lock.indexOf('program') >= 0) + '</div>'; // the program comes first: steps ask for it
       html += '<div class="vals" id="vals"></div>';
       html += '<div class="acts" id="acts"></div>';
@@ -793,7 +821,9 @@
         ctrls += '</label>';
       });
 
-      html += '<div class="ctls">' + ctrls + '</div>';
+      // the meter: its dial row first (the steps ask for it); other parts: controls after the values
+      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>');
+      else html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';
       (def.actions || []).forEach(function (a) { acts += '<button data-a="' + a.id + '">' + esc(a.label) + '</button>'; });
@@ -868,6 +898,10 @@
         }, this).join('') + '</table>';
       }
       s += '<div class="serial"><div class="sh">Serial monitor</div><pre id="serial"></pre></div>';
+      // the real code, so the player can do the same on their own board
+      var src = BB.programs.code(p, cur);
+      if (src) s += '<details class="code"><summary>See the code (' + (mcu === 'pi5' ? 'Python, gpiozero' : 'Arduino') + ')</summary><pre>' + esc(src) + '</pre>' +
+        '<p class="small mut">' + (mcu === 'pi5' ? 'Save it as blink.py on the Pi and run: python3 blink.py' : 'Paste it into the Arduino IDE, pick your board, and press Upload.') + '</p></details>';
       return s;
     },
     refreshInspector: function () {

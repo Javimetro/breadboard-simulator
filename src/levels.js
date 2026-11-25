@@ -432,7 +432,7 @@
       },
       steps: [
         { text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
-        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first, then set the dial to {{DCA}} (mA). (In DCA the meter is like a wire: across the rails its fuse blows.)', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
+        { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first. Then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
@@ -526,7 +526,7 @@
       lock: ['r', 'program'],
       setup: function (A) { A.add('nano', { id: 'nano', x: 1, y: 5, props: { program: 'clap_beep' }, locked: true }); },
       steps: [
-        { text: 'Put the microphone on the board. Connect + to 5V and G to GND. Connect {{AO}} (the sound signal) to A0.', check: function (L) {
+        { text: 'Put the microphone on the board. Connect + to 5V and G to GND. Connect the module’s {{AO}} pin (“Analog Out”, letter O) to the Nano’s A0 pin (“A-zero”).', check: function (L) {
           var m = L.of('mic')[0], n = L.part('nano'); if (!m) return false;
           return (m.st.vcc || 0) > 4.5 && L.net(m, 0) === mcuPinNet(L, n, 'A0');
         }, ok: 'The microphone is on. AO follows the sound.' },
@@ -550,7 +550,7 @@
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
-      done: 'The mic gives a voltage that follows the sound. A loud sound starts a tone. The resistor keeps the pin current near 19 mA, just under the safe 20 mA. All the ohms in the loop add up: 220 + 8 (speaker) + about 25 (inside the pin) = 253 Ω, and 4.7 V ÷ 253 Ω ≈ 19 mA.',
+      done: 'The mic gives a voltage that follows the sound, and a loud sound starts a tone. The resistor keeps the pin current near 19 mA, just under the safe 20 mA.',
       solve: function (A) {
         var m = A.add('mic', { x: 24, y: 3 });
         A.wire('j12', 'B+12'); A.wire('a12', 'T-12'); A.wire('B+20', 'b26'); A.wire('b25', 'T-26'); A.wire('b24', 'i4');
@@ -584,7 +584,7 @@
           var top = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 1000 && ((a === echo && b === p33) || (b === echo && a === p33)); });
           var bot = L.of('resistor').some(function (r) { var a = L.net(r, 0), b = L.net(r, 1); return r.props.r === 2200 && ((a === p33 && gnds.indexOf(b) >= 0) || (b === p33 && gnds.indexOf(a) >= 0)); });
           return top && bot && (e.st.serial || []).some(function (x) { return /^Distance/.test(x); });
-        }, ok: 'Pin 33 gets about 3.4 V: safe, and still HIGH. The distance shows in the {{serial monitor}}.' }
+        }, ok: 'Pin 33 gets about 3.4 V: just under the 3.6 V maximum, and still HIGH. The distance shows in the {{serial monitor}}.' }
       ],
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
@@ -598,7 +598,7 @@
         return null;
       },
       hints: ['USB is on the bottom row of pins. It gives 5V while the USB cable is plugged in. GND is on the top row.', 'Divider: ECHO column → 1 kΩ → a free middle column → 2.2 kΩ → − rail (joined to GND). Middle gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V.', 'Then a wire from the middle column to a hole below pin 33 (bottom row).'],
-      done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into 5 × 2.2 ÷ 3.2 ≈ 3.4 V: safe and still HIGH.',
+      done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into about 3.4 V. That is just under the ESP32’s 3.6 V maximum, and still reads HIGH.',
       solve: function (A) {
         A.add('hcsr04', { x: 24, y: 3 });
         A.wire('j12', 'b24'); A.wire('a9', 'T-9'); A.wire('T-27', 'b27'); A.wire('a21', 'b25'); A.wait(0.2);
