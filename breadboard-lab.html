@@ -398,6 +398,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
 @media (min-width: 1100px) { .steptask { display: none; } }
 
 #bench g.grabbed { filter: drop-shadow(0 0 6px #4cc9f0); } /* held: ready to move the whole part */
+.hotglow { animation: hotglow .5s ease-in-out infinite alternate; } @keyframes hotglow { to { stroke-opacity: .15; } }
 </style>
 </head>
 <body>
@@ -2770,7 +2771,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     var hot = p.vis && p.vis.hot;
     return '<path d="' + d + '" fill="none" stroke="#00000055" stroke-width="5.2" stroke-linecap="round" transform="translate(0 1.4)"/>' +
       '<path d="' + d + '" fill="none" stroke="' + shade(col, -0.35) + '" stroke-width="4.6" stroke-linecap="round"/>' +
-      '<path d="' + d + '" fill="none" stroke="' + (hot ? '#ff7a2a' : col) + '" stroke-width="3.4" stroke-linecap="round"' + (hot ? ' class="hotwire"' : '') + '/>' +
+      (hot ? '<path d="' + d + '" fill="none" stroke="#ff5a1a" stroke-opacity=".55" stroke-width="8" stroke-linecap="round" class="hotglow"/>' : '') + // hot: a glow around it, the wire keeps its own colour
+      '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="3.4" stroke-linecap="round"/>' +
       '<path d="' + d + '" fill="none" stroke="#ffffff" stroke-opacity=".32" stroke-width="1" stroke-linecap="round" transform="translate(-.5 -.7)"/>' +
       tip(a, '#cfd3d8') + tip(b, '#cfd3d8');
   };
@@ -3318,14 +3320,14 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     this.view.ty = insetTop + (alignTop ? Math.min(pad + 16 + (reserve || 0), Math.max(spare / 2, spare - pad - 8)) : spare / 2) - y0 * U * s;
     this.applyView();
   };
-  B.fitAll = function (insetTop) {
+  B.fitAll = function (insetTop) { // insetTop given (phones, under the task card): centred in the free area
     var b = this.sim.board, x0 = b.x0, y0 = b.y0, x1 = b.x1, y1 = b.y1, self = this;
     this.sim.state.parts.forEach(function (p) {
       var r = self.sim.bodyRect(p);
       x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1);
       if (p.ends) self.sim.pinPoints(p).forEach(function (q) { x0 = Math.min(x0, q.x - 1); x1 = Math.max(x1, q.x + 1); y0 = Math.min(y0, q.y - 1); y1 = Math.max(y1, q.y + 4); });
     });
-    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 16, insetTop || 0, 56, !!insetTop); // leave room for the zoom buttons on the right
+    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, insetTop ? 8 : 16, insetTop || 0, insetTop ? 0 : 56); // leave room for the zoom buttons on the right (phones: they sit at the bottom)
   };
   B.toWorld = function (cx, cy) {
     var sz = this.size(), v = this.view;
@@ -3482,15 +3484,18 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         var key2 = sim.keyOf(q, p, k);
         if (key2[0] === 'F' || !res.keyPowered[key2]) return;
         var net = res.nets.find(key2);
-        if (key2.slice(0, 2) === 'P:' && used[net] < 2) return;
+        if ((key2.slice(0, 2) === 'P:' || PARTS[p.type].mcu) && used[net] < 2) return; // a board pin with nothing on it: no tag
+        if (p.st && p.st.floating && PARTS[p.type].mcu && sim.pinPoints(p)[k] && p.st.floating[PARTS[p.type].pins[k] && PARTS[p.type].pins[k].n]) return;
         if (tags[net]) return;
         tags[net] = 1;
         var v = res.keyV[key2];
         // move the tag down until it does not cover another tag
-        var tx = q.x * U + 4, ty = q.y * U - 6, w = v < 0 ? 30 : 26;
-        for (var tries = 0; tries < 6 && boxes.some(function (bx) { return tx < bx.x + bx.w && tx + w > bx.x && ty - 7 < bx.y + 3 && ty + 3 > bx.y - 7; }); tries++) ty += 11;
+        // never smaller than about 12 px on screen: grow the tag when zoomed out
+        var ks = Math.max(1, 12 / (10 * self.view.s));
+        var tx = q.x * U + 4, ty = q.y * U - 6, w = (v < 0 ? 30 : 26) * ks;
+        for (var tries = 0; tries < 6 && boxes.some(function (bx) { return tx < bx.x + bx.w && tx + w > bx.x && ty - 7 * ks < bx.y + 3 * ks && ty + 3 * ks > bx.y - 7 * ks; }); tries++) ty += 11 * ks;
         boxes.push({ x: tx, y: ty, w: w });
-        out += '<g transform="translate(' + tx + ' ' + ty + ')"><rect x="0" y="-7" width="' + w + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
+        out += '<g transform="translate(' + tx + ' ' + ty + ') scale(' + ks.toFixed(2) + ')"><rect x="0" y="-7" width="' + w + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
       });
     });
     if (out !== this.lastLabels) { this.gLabels.innerHTML = out; this.lastLabels = out; }
@@ -3647,6 +3652,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   };
   B.wireHit = function (w, e) {
     var tol = Math.max(0.9, this.tolPx(e) / this.view.s / U);
+    // aimed at a hole hidden under a part: say so, do not quietly use the next free hole
+    var near = this.sim.board.nearest(w.x, w.y, 0.5), cov = this.sim.covered();
+    if (near && cov[near.id]) return { kind: 'covered', by: cov[near.id] };
     var pnt = this.nearestPoint(w, tol);
     if (pnt) return { kind: 'wire', start: pnt };
     return { kind: 'empty' };
@@ -3701,7 +3709,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         d.kind = 'body'; d.hit = { kind: 'body', id: kp.id }; d.orig = JSON.parse(JSON.stringify({ x: kp.x, y: kp.y, ends: kp.ends, free: kp.free }));
       }
       if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id, true); } }
-      if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
+      if (d.kind === 'hole' || d.kind === 'empty' || d.kind === 'covered' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
       if (d.kind === 'end') this.select(d.hit.id, true);
       this.hideTip();
       // while placing a leg or wire, other parts turn see-through so the holes under them show
@@ -3860,7 +3868,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
         else if (this.wireStart === hit.start) this.wireStart = null;
         else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
-      } else this.wireStart = null;
+      } else if (hit.kind === 'covered') this.app.toast('The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      else this.wireStart = null;
       this.renderUi();
       return;
     }
@@ -4329,7 +4338,11 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         A.add('led', { ends: ['b18', 'T-20'], locked: true });
       },
       steps: [
-        { text: 'Add the knob so the current goes: + rail → knob → resistor (column 14) → LED.', check: function (L) { var p = L.of('pot')[0], l = L.of('led')[0]; return p && lit(l) && inSeries(p, l); }, ok: 'The knob is in the loop.' },
+        { text: 'Add the knob so the current goes: + rail → knob → resistor (column 14) → LED.', check: function (L) {
+          // in the loop through the middle leg (wiper), at any knob position: even dim counts, turning it is step 2
+          var p = L.of('pot')[0], l = L.of('led')[0];
+          return p && l && !l.st.burnt && inSeries(p, l) && !L.alone(p, 1) && (l._i || 0) > 0.0003;
+        }, ok: 'The knob is in the loop. The LED is dim or bright depending on where the knob is.' },
         { text: 'Turn the knob all the way one way, then the other. Watch the LED.', check: function (L) {
           var p = L.of('pot')[0], l = L.of('led')[0], f = L.flags;
           if (!p || !l || l.st.burnt) return false;
@@ -4344,6 +4357,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (!p) return 'The loop is open where the knob should be. Add the knob (Parts), then join + rail → knob → column 14.';
+        if (p && l && inSeries(p, l) && !L.alone(p, 1) && !lit(l) && (l._i || 0) > 0.0003) return 'Good wiring! The LED is dim because the knob is set to a high resistance. Turn the knob to make it brighter.';
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
         // the knob is in the loop, but through its two outer legs: always the full 10 kΩ, so the LED is dim and never changes
         if (p && l && inSeries(p, l) && L.alone(p, 1)) return 'You use the two outer legs of the knob. Between them it is always the full ' + fmt.R(p.props.r) + ', so the LED stays dim and turning does nothing. Use one outer leg and the middle leg ({{wiper}}, marked W).';
@@ -4449,7 +4463,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         return whyDark(L, l);
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'A pin set HIGH gives about 4.7 V on USB with nothing on it, and about 4.4 V while it lights the LED (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'red' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -4531,7 +4545,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 35, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
@@ -4733,7 +4747,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         var b = e.target.closest('button'); if (!b) return;
         var a = b.dataset.act;
         if (a === 'move' || a === 'wire') self.setTool(a);
-        if (a === 'parts') { document.body.classList.toggle('trayopen'); document.body.classList.remove('pulseparts'); store.data.partsTip = true; store.save(); }
+        if (a === 'parts') { document.body.classList.toggle('trayopen'); document.body.classList.remove('pulseparts'); store.data.partsTip = true; store.save(); $('#toasts').innerHTML = ''; } // the tip pointed here: its job is done
         if (a === 'undo') self.undo();
         if (a === 'flow') self.setFlow(!self.bench.showFlow);
         if (a === 'xray') self.setXray(!self.bench.xray);
@@ -4765,7 +4779,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         self.placeNew(spec.type, spec.props || {});
         document.body.classList.remove('trayopen');
       });
-      $('#banner').addEventListener('click', function () { $('#banner').classList.toggle('open'); });
+      $('#banner').addEventListener('click', function () { var bn = $('#banner'); bn.classList.toggle('open'); clearTimeout(bn._t); if (bn.classList.contains('open')) bn._t = setTimeout(function () { bn.classList.remove('open'); }, 7000); }); // folds itself again, so it does not hide the board
     },
     setTool: function (t) {
       this.bench.hideTip(); this.bench.stickyHi = false;
@@ -5022,8 +5036,10 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (wasBand && !bandStep) requestAnimationFrame(function () { // zoomed on the resistor: now show the resistor and the meter, the next step's work
         var mys = self.sim.state.parts.filter(function (q) { return q.hideValue; })[0], mt = self.sim.state.parts.filter(function (q) { return q.type === 'meter'; })[0];
         if (!mys || !mt || window.innerWidth >= 1100) { self.fitView(); self.bench.renderUi(); return; }
-        var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal');
-        self.bench.fitRect(Math.min(a.x0, m.x0) - 1, a.y0 - 2, Math.max(a.x1, m.x1) + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
+        var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal'), tips = self.sim.pinPoints(mt);
+        var x0 = Math.min(a.x0, m.x0), x1 = Math.max(a.x1, m.x1), y0 = a.y0 - 2;
+        tips.forEach(function (q) { x0 = Math.min(x0, q.x - 1.5); x1 = Math.max(x1, q.x + 1.5); y0 = Math.min(y0, q.y - 1.5); }); // and the probe tips: the player moves them next
+        self.bench.fitRect(x0 - 1, y0, x1 + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
         self.bench.renderUi();
       });
       if (bandStep && window.innerWidth < 1100) {

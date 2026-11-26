@@ -149,7 +149,7 @@
         var b = e.target.closest('button'); if (!b) return;
         var a = b.dataset.act;
         if (a === 'move' || a === 'wire') self.setTool(a);
-        if (a === 'parts') { document.body.classList.toggle('trayopen'); document.body.classList.remove('pulseparts'); store.data.partsTip = true; store.save(); }
+        if (a === 'parts') { document.body.classList.toggle('trayopen'); document.body.classList.remove('pulseparts'); store.data.partsTip = true; store.save(); $('#toasts').innerHTML = ''; } // the tip pointed here: its job is done
         if (a === 'undo') self.undo();
         if (a === 'flow') self.setFlow(!self.bench.showFlow);
         if (a === 'xray') self.setXray(!self.bench.xray);
@@ -181,7 +181,7 @@
         self.placeNew(spec.type, spec.props || {});
         document.body.classList.remove('trayopen');
       });
-      $('#banner').addEventListener('click', function () { $('#banner').classList.toggle('open'); });
+      $('#banner').addEventListener('click', function () { var bn = $('#banner'); bn.classList.toggle('open'); clearTimeout(bn._t); if (bn.classList.contains('open')) bn._t = setTimeout(function () { bn.classList.remove('open'); }, 7000); }); // folds itself again, so it does not hide the board
     },
     setTool: function (t) {
       this.bench.hideTip(); this.bench.stickyHi = false;
@@ -438,8 +438,10 @@
       if (wasBand && !bandStep) requestAnimationFrame(function () { // zoomed on the resistor: now show the resistor and the meter, the next step's work
         var mys = self.sim.state.parts.filter(function (q) { return q.hideValue; })[0], mt = self.sim.state.parts.filter(function (q) { return q.type === 'meter'; })[0];
         if (!mys || !mt || window.innerWidth >= 1100) { self.fitView(); self.bench.renderUi(); return; }
-        var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal');
-        self.bench.fitRect(Math.min(a.x0, m.x0) - 1, a.y0 - 2, Math.max(a.x1, m.x1) + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
+        var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal'), tips = self.sim.pinPoints(mt);
+        var x0 = Math.min(a.x0, m.x0), x1 = Math.max(a.x1, m.x1), y0 = a.y0 - 2;
+        tips.forEach(function (q) { x0 = Math.min(x0, q.x - 1.5); x1 = Math.max(x1, q.x + 1.5); y0 = Math.min(y0, q.y - 1.5); }); // and the probe tips: the player moves them next
+        self.bench.fitRect(x0 - 1, y0, x1 + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
         self.bench.renderUi();
       });
       if (bandStep && window.innerWidth < 1100) {

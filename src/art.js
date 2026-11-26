@@ -168,7 +168,8 @@
     var hot = p.vis && p.vis.hot;
     return '<path d="' + d + '" fill="none" stroke="#00000055" stroke-width="5.2" stroke-linecap="round" transform="translate(0 1.4)"/>' +
       '<path d="' + d + '" fill="none" stroke="' + shade(col, -0.35) + '" stroke-width="4.6" stroke-linecap="round"/>' +
-      '<path d="' + d + '" fill="none" stroke="' + (hot ? '#ff7a2a' : col) + '" stroke-width="3.4" stroke-linecap="round"' + (hot ? ' class="hotwire"' : '') + '/>' +
+      (hot ? '<path d="' + d + '" fill="none" stroke="#ff5a1a" stroke-opacity=".55" stroke-width="8" stroke-linecap="round" class="hotglow"/>' : '') + // hot: a glow around it, the wire keeps its own colour
+      '<path d="' + d + '" fill="none" stroke="' + col + '" stroke-width="3.4" stroke-linecap="round"/>' +
       '<path d="' + d + '" fill="none" stroke="#ffffff" stroke-opacity=".32" stroke-width="1" stroke-linecap="round" transform="translate(-.5 -.7)"/>' +
       tip(a, '#cfd3d8') + tip(b, '#cfd3d8');
   };

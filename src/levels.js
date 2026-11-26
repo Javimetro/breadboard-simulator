@@ -361,7 +361,11 @@
         A.add('led', { ends: ['b18', 'T-20'], locked: true });
       },
       steps: [
-        { text: 'Add the knob so the current goes: + rail → knob → resistor (column 14) → LED.', check: function (L) { var p = L.of('pot')[0], l = L.of('led')[0]; return p && lit(l) && inSeries(p, l); }, ok: 'The knob is in the loop.' },
+        { text: 'Add the knob so the current goes: + rail → knob → resistor (column 14) → LED.', check: function (L) {
+          // in the loop through the middle leg (wiper), at any knob position: even dim counts, turning it is step 2
+          var p = L.of('pot')[0], l = L.of('led')[0];
+          return p && l && !l.st.burnt && inSeries(p, l) && !L.alone(p, 1) && (l._i || 0) > 0.0003;
+        }, ok: 'The knob is in the loop. The LED is dim or bright depending on where the knob is.' },
         { text: 'Turn the knob all the way one way, then the other. Watch the LED.', check: function (L) {
           var p = L.of('pot')[0], l = L.of('led')[0], f = L.flags;
           if (!p || !l || l.st.burnt) return false;
@@ -376,6 +380,7 @@
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (!p) return 'The loop is open where the knob should be. Add the knob (Parts), then join + rail → knob → column 14.';
+        if (p && l && inSeries(p, l) && !L.alone(p, 1) && !lit(l) && (l._i || 0) > 0.0003) return 'Good wiring! The LED is dim because the knob is set to a high resistance. Turn the knob to make it brighter.';
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
         // the knob is in the loop, but through its two outer legs: always the full 10 kΩ, so the LED is dim and never changes
         if (p && l && inSeries(p, l) && L.alone(p, 1)) return 'You use the two outer legs of the knob. Between them it is always the full ' + fmt.R(p.props.r) + ', so the LED stays dim and turning does nothing. Use one outer leg and the middle leg ({{wiper}}, marked W).';
@@ -481,7 +486,7 @@
         return whyDark(L, l);
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives about 4.7 V on USB (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'A pin set HIGH gives about 4.7 V on USB with nothing on it, and about 4.4 V while it lights the LED (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'red' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -563,7 +568,7 @@
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 35, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [

@@ -278,6 +278,15 @@ def pinch(page):
     check(s1 > s0 * 1.5, f'mobile: pinch zoom ({s0:.2f} → {s1:.2f})')
 
 
+def level6_default_knob(page, tag):
+    """Level 6 with the knob as the tray adds it (50 %): wired through the wiper, step 1 must pass without turning."""
+    if page.is_visible('#modal'):
+        page.evaluate("document.getElementById('modal').hidden = true")
+    page.evaluate("BB.app.startLevel(5)"); page.click('#introGo'); page.wait_for_timeout(200)
+    page.evaluate("""(() => { const A = BB.app.actions(); A.add('pot', { x: 8, y: 10 }); A.wire('T+2', 'B+2'); A.wire('B+8', 'j8'); A.wire('j10', 'e14'); A.wait(0.3); BB.app.checkLevel(); })()""")
+    check(page.evaluate("BB.app.level.step") == 1, f'{tag}: level 6 step 1 passes with the knob at 50 % (dim LED)')
+
+
 def touch_targets(page, tag):
     small = page.evaluate("""(() => { const out = [];
       document.querySelectorAll('#play button, #home button, #intro button').forEach(b => {
@@ -301,6 +310,7 @@ with sync_playwright() as pw:
     sandbox_every_part(page, 'desktop')
     ui_misc(page, 'desktop')
     ui_level3_by_pointer(page, 'desktop')
+    level6_default_knob(page, 'desktop')
     resume_and_code(page, 'desktop')
     touch_targets(page, 'desktop play')
     # storage that throws must not break the game

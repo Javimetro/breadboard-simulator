@@ -68,14 +68,14 @@
     this.view.ty = insetTop + (alignTop ? Math.min(pad + 16 + (reserve || 0), Math.max(spare / 2, spare - pad - 8)) : spare / 2) - y0 * U * s;
     this.applyView();
   };
-  B.fitAll = function (insetTop) {
+  B.fitAll = function (insetTop) { // insetTop given (phones, under the task card): centred in the free area
     var b = this.sim.board, x0 = b.x0, y0 = b.y0, x1 = b.x1, y1 = b.y1, self = this;
     this.sim.state.parts.forEach(function (p) {
       var r = self.sim.bodyRect(p);
       x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1);
       if (p.ends) self.sim.pinPoints(p).forEach(function (q) { x0 = Math.min(x0, q.x - 1); x1 = Math.max(x1, q.x + 1); y0 = Math.min(y0, q.y - 1); y1 = Math.max(y1, q.y + 4); });
     });
-    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 16, insetTop || 0, 56, !!insetTop); // leave room for the zoom buttons on the right
+    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, insetTop ? 8 : 16, insetTop || 0, insetTop ? 0 : 56); // leave room for the zoom buttons on the right (phones: they sit at the bottom)
   };
   B.toWorld = function (cx, cy) {
     var sz = this.size(), v = this.view;
@@ -232,15 +232,18 @@
         var key2 = sim.keyOf(q, p, k);
         if (key2[0] === 'F' || !res.keyPowered[key2]) return;
         var net = res.nets.find(key2);
-        if (key2.slice(0, 2) === 'P:' && used[net] < 2) return;
+        if ((key2.slice(0, 2) === 'P:' || PARTS[p.type].mcu) && used[net] < 2) return; // a board pin with nothing on it: no tag
+        if (p.st && p.st.floating && PARTS[p.type].mcu && sim.pinPoints(p)[k] && p.st.floating[PARTS[p.type].pins[k] && PARTS[p.type].pins[k].n]) return;
         if (tags[net]) return;
         tags[net] = 1;
         var v = res.keyV[key2];
         // move the tag down until it does not cover another tag
-        var tx = q.x * U + 4, ty = q.y * U - 6, w = v < 0 ? 30 : 26;
-        for (var tries = 0; tries < 6 && boxes.some(function (bx) { return tx < bx.x + bx.w && tx + w > bx.x && ty - 7 < bx.y + 3 && ty + 3 > bx.y - 7; }); tries++) ty += 11;
+        // never smaller than about 12 px on screen: grow the tag when zoomed out
+        var ks = Math.max(1, 12 / (10 * self.view.s));
+        var tx = q.x * U + 4, ty = q.y * U - 6, w = (v < 0 ? 30 : 26) * ks;
+        for (var tries = 0; tries < 6 && boxes.some(function (bx) { return tx < bx.x + bx.w && tx + w > bx.x && ty - 7 * ks < bx.y + 3 * ks && ty + 3 * ks > bx.y - 7 * ks; }); tries++) ty += 11 * ks;
         boxes.push({ x: tx, y: ty, w: w });
-        out += '<g transform="translate(' + tx + ' ' + ty + ')"><rect x="0" y="-7" width="' + w + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
+        out += '<g transform="translate(' + tx + ' ' + ty + ') scale(' + ks.toFixed(2) + ')"><rect x="0" y="-7" width="' + w + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
       });
     });
     if (out !== this.lastLabels) { this.gLabels.innerHTML = out; this.lastLabels = out; }
@@ -397,6 +400,9 @@
   };
   B.wireHit = function (w, e) {
     var tol = Math.max(0.9, this.tolPx(e) / this.view.s / U);
+    // aimed at a hole hidden under a part: say so, do not quietly use the next free hole
+    var near = this.sim.board.nearest(w.x, w.y, 0.5), cov = this.sim.covered();
+    if (near && cov[near.id]) return { kind: 'covered', by: cov[near.id] };
     var pnt = this.nearestPoint(w, tol);
     if (pnt) return { kind: 'wire', start: pnt };
     return { kind: 'empty' };
@@ -451,7 +457,7 @@
         d.kind = 'body'; d.hit = { kind: 'body', id: kp.id }; d.orig = JSON.parse(JSON.stringify({ x: kp.x, y: kp.y, ends: kp.ends, free: kp.free }));
       }
       if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id, true); } }
-      if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
+      if (d.kind === 'hole' || d.kind === 'empty' || d.kind === 'covered' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
       if (d.kind === 'end') this.select(d.hit.id, true);
       this.hideTip();
       // while placing a leg or wire, other parts turn see-through so the holes under them show
@@ -610,7 +616,8 @@
         if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
         else if (this.wireStart === hit.start) this.wireStart = null;
         else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
-      } else this.wireStart = null;
+      } else if (hit.kind === 'covered') this.app.toast('The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      else this.wireStart = null;
       this.renderUi();
       return;
     }
