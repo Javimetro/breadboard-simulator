@@ -393,7 +393,7 @@
     {
       id: 'mb102', title: 'Power supply & Ohm’s law', icon: 'mb102',
       intro: { pic: I.mb102, text: 'The MB102 power board gives 3.3V or 5V to each pair of rails. Pick the right resistor with {{Ohm’s law}}: R = V ÷ I.' },
-      board: { cols: 30 }, view: [-9, -2.5, 22, 19.5], phone: [-6, -2.5, 18, 19.5], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 22 } }, { type: 'resistor', props: { r: 220 } }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
+      board: { cols: 30 }, view: [-9, -2.5, 22, 19.5], phone: [-8, -2.5, 18, 19.5], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 22 } }, { type: 'resistor', props: { r: 220 } }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'color'],
       setup: function (A) { A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: 'off', bottom: 'off', on: false }, locked: true }); },
       steps: [
@@ -568,7 +568,7 @@
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 35, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 35, 18.6], phone: [-3.5, -5, 35.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [

@@ -578,6 +578,9 @@
     if (d.kind === 'pinch') { if (Object.keys(this.pointers).length === 0) this.drag = null; return; }
     if (e.pointerId !== d.pid) return;
     this.drag = null;
+    // something burned or broke while the finger was down: now rebuild its sheet (it may need “New LED”)
+    var ps = this.app._pendingSel; this.app._pendingSel = null;
+    if (ps && this.sel === ps) this.app.onSelect(ps, !document.body.classList.contains('hassel'));
     if (!d.moved) { this.releasePress(); this.tap(d, e); this.renderUi(); return; }
     if (d.kind === 'wire') {
       if (d.snap && d.snap !== d.hit.start) this.app.addWire(d.hit.start, d.snap);
@@ -630,7 +633,9 @@
       else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
       else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
       // pressing a button cap or turning a knob is just that: no sheet, no zoom
-      if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); } // rebuild the panel: the dial / jumper buttons changed
+      // rebuild the panel (the dial / jumper buttons changed). Jumpers and the switch: on phones no sheet, it would cover the MB102
+      var quietHot = (h.kind === 'jumper' || h.kind === 'switch') && window.innerWidth < 1100;
+      if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id, quietHot || !document.body.classList.contains('hassel') && quietHot); else this.select(p.id, quietHot); }
       sim.dirty(); this.render();
       return;
     }

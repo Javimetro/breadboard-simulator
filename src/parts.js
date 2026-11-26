@@ -19,7 +19,7 @@
     return '0 mA';
   }
   function fmtV(v) { return (Math.abs(v) < 0.005 ? '0.00' : v.toFixed(2)) + ' V'; }
-  function fmtP(p) { return p >= 1 ? p.toFixed(2) + ' W' : Math.round(p * 1000) + ' mW'; }
+  function fmtP(p) { return p >= 1 ? p.toFixed(2) + ' W' : p >= 0.01 ? Math.round(p * 1000) + ' mW' : p >= 0.0001 ? (p * 1000).toFixed(2) + ' mW' : Math.round(p * 1e6) + ' µW'; }
   BB.fmt = { R: fmtR, I: fmtI, V: fmtV, P: fmtP };
 
   // Heating: a part above its limit warms up and fails after `secs` seconds.

@@ -358,7 +358,8 @@
       audio.blip(880, 0.12, 'sine', 0.06); setTimeout(function () { audio.blip(1320, 0.18, 'sine', 0.05); }, 90);
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
       // the band picker shows the good news inside the card, so nothing covers the resistor below it
-      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')]; else this.toast('✓ ' + (msg || 'Done!'), 'good');
+      var wasBands = lv.def.steps[lv.step - 1] && lv.def.steps[lv.step - 1].bands; // after the band picker the meter's dial is at the bottom: say it up top
+      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')]; else this.toast('✓ ' + (msg || 'Done!'), 'good', wasBands);
       this.renderGoal();
     },
     finishLevel: function () {
@@ -851,7 +852,7 @@
     focusPart: function (p) {
       var bench = this.bench;
       if (bench.drag) return; // never move the view while a finger drags
-      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102'; // the meter, batteries, Pi...: do not zoom into them
+      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102' || (PARTS[p.type].props || []).some(function (q) { return q.env; }); // sensors you set (light, sound…): keep the screen / speaker in view // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
       if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
@@ -884,6 +885,7 @@
       if (id && !quiet && window.innerWidth < 1100) { var sp = this.sim.part(id); if (sp) this.focusPart(sp); }
       if (!id) {
         this.restoreView();
+        document.body.classList.remove('goalmin'); // the sheet showed the step; now the card shows it again
         ins.innerHTML = '<p class="mut small empty">' + icon('info') + ' Tap a part to see its values here. Tap a hole to see what is connected to it.</p>';
         return;
       }
@@ -913,8 +915,10 @@
       });
 
       // the meter: its dial row first (the steps ask for it); other parts: controls after the values
-      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '').replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>'); // dial, reading, then the step
-      else html += '<div class="ctls">' + ctrls + '</div>';
+      var envFirst = (def.props || []).some(function (q) { return q.env; }); // a sensor's light / sound slider is what the step asks for
+      if (envFirst && p.type !== 'meter') html = html.replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div>');
+      else if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '').replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>'); // dial, reading, then the step
+      else if (!envFirst) html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';
       (def.actions || []).forEach(function (a) { acts += '<button data-a="' + a.id + '">' + esc(a.label) + '</button>'; });
@@ -1087,7 +1091,7 @@
         if (ev.type === 'damage') { audio.noise(0.3, 0.3); }
         if (self.mode === 'level' && self.level && !self.level.done) self.level.mistakes++;
         // show the new state (e.g. “New LED”), but never open the sheet or move the view under a dragging finger
-        if (self.bench.sel === ev.part && !self.bench.drag) self.onSelect(ev.part, !document.body.classList.contains('hassel'));
+        if (self.bench.sel === ev.part) { if (self.bench.drag) self._pendingSel = ev.part; else self.onSelect(ev.part, !document.body.classList.contains('hassel')); }
       });
       sim.events = [];
       if (this.mode === 'level' && this.level && !this.level.done) {
@@ -1148,7 +1152,7 @@
       ban.style.top = top + 'px';
     },
     // ---------- small UI pieces ----------
-    toast: function (text, kind) {
+    toast: function (text, kind, high) { // high: phones, under the task card (keeps the lower screen free)
       var t = document.createElement('div');
       t.className = 'toast ' + (kind || 'info');
       t.innerHTML = rich(text);
@@ -1158,7 +1162,7 @@
       // They never take taps, and the next touch on the bench clears them.
       var box = $('#toasts');
       if (window.innerWidth < 1100) {
-        var sheet = document.body.classList.contains('hassel') || document.body.classList.contains('trayopen');
+        var sheet = high || document.body.classList.contains('hassel') || document.body.classList.contains('trayopen');
         if (sheet) {
           var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
           box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';

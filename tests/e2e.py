@@ -287,6 +287,28 @@ def level6_default_knob(page, tag):
     check(page.evaluate("BB.app.level.step") == 1, f'{tag}: level 6 step 1 passes with the knob at 50 % (dim LED)')
 
 
+def burn_during_drag(page, tag):
+    """An LED that burns while a finger still drags its leg: after lifting, its sheet must offer “New LED”."""
+    if page.is_visible('#modal'):
+        page.evaluate("document.getElementById('modal').hidden = true")
+    page.evaluate("BB.app.startLevel(2)"); page.click('#introGo'); page.wait_for_timeout(200)
+    page.evaluate("(() => { const A = BB.app.actions(); const l = A.add('led', { props: { color: 'red' }, ends: ['c13', 'T-12'] }); A.wait(0.1); BB.app.bench.select(l.id, true); })()")
+    cdp = page.context.new_cdp_session(page)
+    a = page.evaluate("(() => { const p = BB.app.sim.state.parts.find(q => q.type === 'led'); const q = BB.app.sim.pinPoints(p)[0]; const s = BB.app.bench.toScreen(q.x, q.y); const r = BB.app.bench.size(); return [s.x + r.left, s.y + r.top]; })()")
+    b = page.evaluate("(() => { const h = BB.app.sim.board.byId['T+11']; const s = BB.app.bench.toScreen(h.x, h.y); const r = BB.app.bench.size(); return [s.x + r.left, s.y + r.top]; })()")
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': a[0], 'y': a[1]}]})
+    for t in range(1, 13):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': a[0] + (b[0] - a[0]) * t / 12, 'y': a[1] + (b[1] - a[1]) * t / 12}]})
+        page.wait_for_timeout(60)
+    page.wait_for_timeout(700)  # the LED burns while the finger is still down
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    page.wait_for_timeout(300)
+    burnt = page.evaluate("!!BB.app.sim.state.parts.find(q => q.type === 'led').st.burnt")
+    page.evaluate("BB.app.bench.select(BB.app.sim.state.parts.find(q => q.type === 'led').id)"); page.wait_for_timeout(200)
+    check(burnt and page.locator('#inspector [data-a=renew]').count() == 1, f'{tag}: LED burnt during a drag offers “New LED” (burnt={burnt})')
+    page.evaluate("BB.app.bench.select(null)")
+
+
 def touch_targets(page, tag):
     small = page.evaluate("""(() => { const out = [];
       document.querySelectorAll('#play button, #home button, #intro button').forEach(b => {
@@ -327,6 +349,7 @@ with sync_playwright() as pw:
     ui_misc(page, 'mobile')
     pinch(page)
     ui_level3_by_pointer(page, 'mobile')
+    burn_during_drag(page, 'mobile')
     touch_targets(page, 'mobile play')
     sandbox_every_part(page, 'mobile')
     page.evaluate("BB.app.bench.select(BB.app.sim.state.parts.find(p => p.type === 'nano').id)")

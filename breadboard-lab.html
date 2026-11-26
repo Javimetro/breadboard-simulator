@@ -804,7 +804,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     return '0 mA';
   }
   function fmtV(v) { return (Math.abs(v) < 0.005 ? '0.00' : v.toFixed(2)) + ' V'; }
-  function fmtP(p) { return p >= 1 ? p.toFixed(2) + ' W' : Math.round(p * 1000) + ' mW'; }
+  function fmtP(p) { return p >= 1 ? p.toFixed(2) + ' W' : p >= 0.01 ? Math.round(p * 1000) + ' mW' : p >= 0.0001 ? (p * 1000).toFixed(2) + ' mW' : Math.round(p * 1e6) + ' µW'; }
   BB.fmt = { R: fmtR, I: fmtI, V: fmtV, P: fmtP };
 
   // Heating: a part above its limit warms up and fails after `secs` seconds.
@@ -3830,6 +3830,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     if (d.kind === 'pinch') { if (Object.keys(this.pointers).length === 0) this.drag = null; return; }
     if (e.pointerId !== d.pid) return;
     this.drag = null;
+    // something burned or broke while the finger was down: now rebuild its sheet (it may need “New LED”)
+    var ps = this.app._pendingSel; this.app._pendingSel = null;
+    if (ps && this.sel === ps) this.app.onSelect(ps, !document.body.classList.contains('hassel'));
     if (!d.moved) { this.releasePress(); this.tap(d, e); this.renderUi(); return; }
     if (d.kind === 'wire') {
       if (d.snap && d.snap !== d.hit.start) this.app.addWire(d.hit.start, d.snap);
@@ -3882,7 +3885,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
       else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
       // pressing a button cap or turning a knob is just that: no sheet, no zoom
-      if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); } // rebuild the panel: the dial / jumper buttons changed
+      // rebuild the panel (the dial / jumper buttons changed). Jumpers and the switch: on phones no sheet, it would cover the MB102
+      var quietHot = (h.kind === 'jumper' || h.kind === 'switch') && window.innerWidth < 1100;
+      if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id, quietHot || !document.body.classList.contains('hassel') && quietHot); else this.select(p.id, quietHot); }
       sim.dirty(); this.render();
       return;
     }
@@ -4373,7 +4378,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'mb102', title: 'Power supply & Ohm’s law', icon: 'mb102',
       intro: { pic: I.mb102, text: 'The MB102 power board gives 3.3V or 5V to each pair of rails. Pick the right resistor with {{Ohm’s law}}: R = V ÷ I.' },
-      board: { cols: 30 }, view: [-9, -2.5, 22, 19.5], phone: [-6, -2.5, 18, 19.5], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 22 } }, { type: 'resistor', props: { r: 220 } }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
+      board: { cols: 30 }, view: [-9, -2.5, 22, 19.5], phone: [-8, -2.5, 18, 19.5], tray: [{ type: 'led', props: { color: 'red' } }, { type: 'resistor', props: { r: 22 } }, { type: 'resistor', props: { r: 220 } }, { type: 'resistor', props: { r: 10000 } }, 'wire'],
       lock: ['r', 'color'],
       setup: function (A) { A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: 'off', bottom: 'off', on: false }, locked: true }); },
       steps: [
@@ -4548,7 +4553,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 35, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 35, 18.6], phone: [-3.5, -5, 35.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
@@ -4959,7 +4964,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       audio.blip(880, 0.12, 'sine', 0.06); setTimeout(function () { audio.blip(1320, 0.18, 'sine', 0.05); }, 90);
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
       // the band picker shows the good news inside the card, so nothing covers the resistor below it
-      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')]; else this.toast('✓ ' + (msg || 'Done!'), 'good');
+      var wasBands = lv.def.steps[lv.step - 1] && lv.def.steps[lv.step - 1].bands; // after the band picker the meter's dial is at the bottom: say it up top
+      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')]; else this.toast('✓ ' + (msg || 'Done!'), 'good', wasBands);
       this.renderGoal();
     },
     finishLevel: function () {
@@ -5452,7 +5458,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     focusPart: function (p) {
       var bench = this.bench;
       if (bench.drag) return; // never move the view while a finger drags
-      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102'; // the meter, batteries, Pi...: do not zoom into them
+      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102' || (PARTS[p.type].props || []).some(function (q) { return q.env; }); // sensors you set (light, sound…): keep the screen / speaker in view // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
       if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
@@ -5485,6 +5491,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (id && !quiet && window.innerWidth < 1100) { var sp = this.sim.part(id); if (sp) this.focusPart(sp); }
       if (!id) {
         this.restoreView();
+        document.body.classList.remove('goalmin'); // the sheet showed the step; now the card shows it again
         ins.innerHTML = '<p class="mut small empty">' + icon('info') + ' Tap a part to see its values here. Tap a hole to see what is connected to it.</p>';
         return;
       }
@@ -5514,8 +5521,10 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       });
 
       // the meter: its dial row first (the steps ask for it); other parts: controls after the values
-      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '').replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>'); // dial, reading, then the step
-      else html += '<div class="ctls">' + ctrls + '</div>';
+      var envFirst = (def.props || []).some(function (q) { return q.env; }); // a sensor's light / sound slider is what the step asks for
+      if (envFirst && p.type !== 'meter') html = html.replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div>');
+      else if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '').replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>'); // dial, reading, then the step
+      else if (!envFirst) html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';
       (def.actions || []).forEach(function (a) { acts += '<button data-a="' + a.id + '">' + esc(a.label) + '</button>'; });
@@ -5688,7 +5697,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (ev.type === 'damage') { audio.noise(0.3, 0.3); }
         if (self.mode === 'level' && self.level && !self.level.done) self.level.mistakes++;
         // show the new state (e.g. “New LED”), but never open the sheet or move the view under a dragging finger
-        if (self.bench.sel === ev.part && !self.bench.drag) self.onSelect(ev.part, !document.body.classList.contains('hassel'));
+        if (self.bench.sel === ev.part) { if (self.bench.drag) self._pendingSel = ev.part; else self.onSelect(ev.part, !document.body.classList.contains('hassel')); }
       });
       sim.events = [];
       if (this.mode === 'level' && this.level && !this.level.done) {
@@ -5749,7 +5758,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       ban.style.top = top + 'px';
     },
     // ---------- small UI pieces ----------
-    toast: function (text, kind) {
+    toast: function (text, kind, high) { // high: phones, under the task card (keeps the lower screen free)
       var t = document.createElement('div');
       t.className = 'toast ' + (kind || 'info');
       t.innerHTML = rich(text);
@@ -5759,7 +5768,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       // They never take taps, and the next touch on the bench clears them.
       var box = $('#toasts');
       if (window.innerWidth < 1100) {
-        var sheet = document.body.classList.contains('hassel') || document.body.classList.contains('trayopen');
+        var sheet = high || document.body.classList.contains('hassel') || document.body.classList.contains('trayopen');
         if (sheet) {
           var g = $('#goal'), tb = $('#topbar'), gr = g && g.offsetParent && this.mode === 'level' ? g.getBoundingClientRect() : null;
           box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
