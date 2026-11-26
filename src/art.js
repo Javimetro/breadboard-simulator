@@ -484,7 +484,7 @@
     s += '<circle cx="24" cy="150" r="4" fill="' + (st.powered ? '#ff3b2a' : '#5a1e1a') + '"/>' + (st.powered ? '<circle cx="24" cy="150" r="8" fill="#ff3b2a" opacity=".35"/>' : '');
     s += txt(20, 40, 'Raspberry Pi 5', 'brand');
     s += '</g>';
-    s += '<text x="' + (x + 4) + '" y="' + (y + 236) + '" class="caption">Too big for the breadboard: connect its GPIO pins with jumper wires.</text>';
+    s += '<text x="' + (x + 4) + '" y="' + (y + 244) + '" class="caption">Too big for the breadboard:</text><text x="' + (x + 4) + '" y="' + (y + 260) + '" class="caption">connect its GPIO pins with wires.</text>';
     def.pins.forEach(function (pin, i) {
       var q = def.pinPos[i];
       s += '<text x="' + f1(x + q[0] * U) + '" y="' + f1(y + q[1] * U + (q[1] < 1.5 ? -5 : 7.6)) + '" class="hdr" text-anchor="middle">' + pin.phys + '</text>';

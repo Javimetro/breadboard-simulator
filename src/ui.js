@@ -350,6 +350,7 @@
     },
     stepDone: function (msg) {
       var lv = this.level;
+      $('#toasts').innerHTML = ''; // the last step's message is old news
       lv.step++;
       var stp = document.querySelector('#inspector .steptask'); // keep the sheet's step text in step with the goal card
       if (stp) { var nh = this.stepTaskHtml(); if (nh) stp.outerHTML = nh; else stp.remove(); }
@@ -423,7 +424,7 @@
         if (b.dataset.act === 'hint') self.hint();
         if (b.dataset.act === 'bands') self.checkBands();
         if (b.dataset.slot !== undefined) { lv.bandSlot = +b.dataset.slot; self.redrawBands(); }
-        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if (lv.bandBad) lv.bandBad = lv.bandBad.filter(function (x) { return x !== (lv.bandSlot || 0); }); if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
+        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; if (lv.bandNote && lv.bandNote[0] === 'good') lv.bandNote = null; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if (lv.bandBad) lv.bandBad = lv.bandBad.filter(function (x) { return x !== (lv.bandSlot || 0); }); if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
@@ -437,6 +438,7 @@
           var g = $('#goal'), pts = self.sim.pinPoints(mys);
           self.bench.fitRect(Math.min(pts[0].x, pts[1].x) - 1, pts[0].y - 1.5, Math.max(pts[0].x, pts[1].x) + 1, pts[0].y + 1.5, 10, g.offsetTop + g.offsetHeight + 8, 0);
           self.bench.renderUi();
+          self.redrawBands();
         });
       }
       this.updateTop();
@@ -475,9 +477,14 @@
         var ohm = (digit.indexOf(pick[0]) * 10 + digit.indexOf(pick[1])) * Math.pow(10, digit.indexOf(pick[2]));
         val = '<p class="small">Your answer: ' + digit.indexOf(pick[0]) + digit.indexOf(pick[1]) + ' × ' + Math.pow(10, digit.indexOf(pick[2])) + ' = <b>' + (ohm >= 1000 ? ohm / 1000 + ' kΩ' : ohm + ' Ω') + '</b></p>';
       }
-      return note + svg + slots + '<p class="small mut">' + (slot < 2 ? 'Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the multiplier. Tap its colour:') + '</p>' + chips + val;
+      return note + svg + slots + '<p class="small mut">' + (slot < 2 ? 'Read the resistor on the board. Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the {{multiplier}} (how many zeros). Tap its colour:').replace(/\{\{([^}]+)\}\}/g, '$1') + '</p>' + chips + val;
     },
-    redrawBands: function () { var el = document.querySelector('#goal .bands'); if (el) el.innerHTML = this.bandsHtml(); },
+    redrawBands: function () {
+      var el = document.querySelector('#goal .bands'); if (!el) return;
+      el.innerHTML = this.bandsHtml();
+      // keep the chips in sight if the card has to scroll (small phones)
+      var ch = el.querySelector('.chips'); if (ch && ch.scrollIntoView) ch.scrollIntoView({ block: 'nearest' });
+    },
     checkBands: function (picked) {
       var lv = this.level, step = lv.def.steps[lv.step]; if (!step || !step.bands) return;
       picked = picked || (lv.bandPick || [null, null, null]).slice();
@@ -692,7 +699,7 @@
         }
       } else {
         // modules and off-board parts go next to the board
-        var spot = this.freeSpot(def);
+        var spot = this.freeSpot(type === 'meter' ? { size: [def.size[0], def.size[1] + 6] } : def); // + room for the meter's probes below it
         p = BB.newPart(type, { props: props, x: spot.x, y: spot.y });
         if (def.kind === 'module') {
           var lf = def.leadFrom;
@@ -717,7 +724,13 @@
       return p;
     },
     freeSpot: function (def) {
-      var sim = this.sim, b = sim.board, rects = sim.state.parts.map(function (p) { return sim.bodyRect(p); });
+      var sim = this.sim, b = sim.board;
+      // a module's flying leads count as part of it (a new part must not land under the meter's probes)
+      var rects = sim.state.parts.map(function (p) {
+        var r = Object.assign({}, sim.bodyRect(p));
+        if (PARTS[p.type].kind === 'module' && p.ends) sim.pinPoints(p).forEach(function (q) { r.x0 = Math.min(r.x0, q.x - 1); r.x1 = Math.max(r.x1, q.x + 1); r.y0 = Math.min(r.y0, q.y - 1); r.y1 = Math.max(r.y1, q.y + 4); });
+        return r;
+      });
       rects.push({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
       var w = def.size[0], h = def.size[1];
       var tries = [];
@@ -725,6 +738,7 @@
       if (def.spot === 'above') for (var a = 0; a < 4; a++) tries.push({ x: b.x0 + 3 + a * (w + 2), y: b.y0 - h - 3 });
       // below the board in a grid: 3 to a row, then the next row (not one endless line)
       for (var rrow = 0; rrow < 6; rrow++) for (var k = 0; k < 3; k++) tries.push({ x: b.x0 + k * (Math.max(w, 12) + 2), y: b.y1 + 3 + rrow * 16 });
+      for (var r2 = 0; r2 < 40; r2++) for (var k3 = 0; k3 < 4; k3++) tries.push({ x: b.x0 + k3 * (Math.max(w, 12) + 2), y: b.y1 + 99 + r2 * 8 }); // further down, never on top of another part
       for (var k2 = 0; k2 < 6; k2++) { tries.push({ x: b.x0 - w - 3, y: b.y0 + k2 * (h + 2) }); tries.push({ x: b.x1 + 3, y: b.y0 + k2 * (h + 2) }); }
       for (var j = 0; j < tries.length; j++) {
         var t = tries[j];

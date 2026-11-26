@@ -193,7 +193,7 @@ body.goalmin #goal .ghead h2 { white-space: nowrap; overflow: hidden; text-overf
 #stage .banner { bottom: auto; top: 8px; right: 60px; } #goal .ghead h2 { font-size: 16px; } #goal .ibtn { width: 44px; height: 44px; }
 #goal .steps { list-style: none; padding-left: 0; margin: 4px 0; } #goal .steps .sn { display: block; }
 #goal .choices button { min-height: 44px; } .hintbtn { min-height: 44px; }
-#toasts { top: auto; bottom: calc(74px + var(--safe-b)); }
+#toasts { top: auto; bottom: calc(74px + var(--safe-b)); left: 8px; right: 60px; width: auto; transform: none; } /* clear of the Fit button */
 body:not(.insfull) #inspector .desc { display: none; }
 body.hassel #toasts, body.trayopen #toasts { bottom: auto; top: 128px; }
 /* phones: the problem banner is a small chip; tap it to read why */
@@ -243,7 +243,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .bbnum { font: 600 3.8px system-ui; fill: #9a9586; text-anchor: middle; }
 .pol { font: 800 6.5px system-ui; fill: #7a4a00; stroke: #fff8e6; stroke-width: .9px; paint-order: stroke; }
 .pinlbl { font: 650 3.2px system-ui; fill: #fff; }
-.caption { font: 600 8px system-ui; fill: #9fb3a8; }
+.caption { font: 700 14px system-ui; fill: #c4d6cc; paint-order: stroke; stroke: #0b1a12; stroke-width: 3px; }
 .pinlbl.dark, .tiny.dark, .chip.dark, .brand.dark { fill: #222; }
 .chip { font: 700 3px system-ui; fill: #c9ccd1; }
 .tiny { font: 500 2.6px system-ui; fill: #e3e6ea; }
@@ -347,8 +347,14 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 @media (min-width: 1100px) { .chalbtn { display: none !important; } }
 .lockq { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px dashed #3c6c80; color: #bfe6f5; font-size: 15px; }
 .bands { display: grid; gap: 6px; margin: 8px 0; }
-.bigres { width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
-@media (max-width: 1099px) { body.bandstep #goal { max-height: 60%; } .bigres { max-height: 46px; } .bands > .mut { display: none; } }
+.bigres { width: 100%; max-width: 320px; max-height: 60px; height: auto; display: block; margin: 0 auto; }
+body.bandstep #goal .steps li.done { display: none; } /* room for the picker */
+@media (max-width: 1099px) {
+  /* phones, colour-band step: the picker replaces the step text (its own line says what to tap) */
+  body.bandstep #goal { max-height: 72%; } body.bandstep #goal .steps { display: none; }
+  .bigres { max-height: 42px; } .bands > .mut { margin: 4px 0; }
+}
+@media (max-width: 1099px) and (max-height: 700px) { body.bandstep .bigres { display: none; } }
 .bslots { display: grid; grid-template-columns: repeat(3, 1fr) 1.2fr; gap: 6px; margin-top: 4px; }
 .bslots button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
 .bslots button small { font-size: 11px; color: var(--mut); }

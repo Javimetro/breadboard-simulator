@@ -813,7 +813,7 @@
     name: 'Raspberry Pi 5', cat: 'boards', kind: 'offboard', mcu: 'pi5',
     desc: 'A full small computer. It is too big for the breadboard, so you connect its {{GPIO}} {{header pin|header pins}} with jumper wires. Its pins work at 3.3V. Pin names like GPIO17 are {{BCM}} numbers.',
     pins: pp.pins, pinPos: pp.pos.map(function (q) { return [q[0] + 2.9, q[1] + 1.0]; }), // pin 1 is about 7 mm from the left edge
-    size: [33.5, 22],
+    size: [33.5, 26.5], // the board is 22 high; the caption under it takes the rest
     defaults: { usb: true, program: 'none' },
     props: [{ k: 'usb', label: 'Power supply plugged in', type: 'toggle' }],
     links: function () { var g = [], first = -1; pp.pins.forEach(function (pin, i) { if (pin.kind === 'gnd') { if (first < 0) first = i; else g.push([first, i]); } }); return g; },

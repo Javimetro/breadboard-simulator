@@ -201,7 +201,7 @@ body.goalmin #goal .ghead h2 { white-space: nowrap; overflow: hidden; text-overf
 #stage .banner { bottom: auto; top: 8px; right: 60px; } #goal .ghead h2 { font-size: 16px; } #goal .ibtn { width: 44px; height: 44px; }
 #goal .steps { list-style: none; padding-left: 0; margin: 4px 0; } #goal .steps .sn { display: block; }
 #goal .choices button { min-height: 44px; } .hintbtn { min-height: 44px; }
-#toasts { top: auto; bottom: calc(74px + var(--safe-b)); }
+#toasts { top: auto; bottom: calc(74px + var(--safe-b)); left: 8px; right: 60px; width: auto; transform: none; } /* clear of the Fit button */
 body:not(.insfull) #inspector .desc { display: none; }
 body.hassel #toasts, body.trayopen #toasts { bottom: auto; top: 128px; }
 /* phones: the problem banner is a small chip; tap it to read why */
@@ -251,7 +251,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .bbnum { font: 600 3.8px system-ui; fill: #9a9586; text-anchor: middle; }
 .pol { font: 800 6.5px system-ui; fill: #7a4a00; stroke: #fff8e6; stroke-width: .9px; paint-order: stroke; }
 .pinlbl { font: 650 3.2px system-ui; fill: #fff; }
-.caption { font: 600 8px system-ui; fill: #9fb3a8; }
+.caption { font: 700 14px system-ui; fill: #c4d6cc; paint-order: stroke; stroke: #0b1a12; stroke-width: 3px; }
 .pinlbl.dark, .tiny.dark, .chip.dark, .brand.dark { fill: #222; }
 .chip { font: 700 3px system-ui; fill: #c9ccd1; }
 .tiny { font: 500 2.6px system-ui; fill: #e3e6ea; }
@@ -355,8 +355,14 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 @media (min-width: 1100px) { .chalbtn { display: none !important; } }
 .lockq { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px dashed #3c6c80; color: #bfe6f5; font-size: 15px; }
 .bands { display: grid; gap: 6px; margin: 8px 0; }
-.bigres { width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
-@media (max-width: 1099px) { body.bandstep #goal { max-height: 60%; } .bigres { max-height: 46px; } .bands > .mut { display: none; } }
+.bigres { width: 100%; max-width: 320px; max-height: 60px; height: auto; display: block; margin: 0 auto; }
+body.bandstep #goal .steps li.done { display: none; } /* room for the picker */
+@media (max-width: 1099px) {
+  /* phones, colour-band step: the picker replaces the step text (its own line says what to tap) */
+  body.bandstep #goal { max-height: 72%; } body.bandstep #goal .steps { display: none; }
+  .bigres { max-height: 42px; } .bands > .mut { margin: 4px 0; }
+}
+@media (max-width: 1099px) and (max-height: 700px) { body.bandstep .bigres { display: none; } }
 .bslots { display: grid; grid-template-columns: repeat(3, 1fr) 1.2fr; gap: 6px; margin-top: 4px; }
 .bslots button { display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
 .bslots button small { font-size: 11px; color: var(--mut); }
@@ -1588,7 +1594,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     name: 'Raspberry Pi 5', cat: 'boards', kind: 'offboard', mcu: 'pi5',
     desc: 'A full small computer. It is too big for the breadboard, so you connect its {{GPIO}} {{header pin|header pins}} with jumper wires. Its pins work at 3.3V. Pin names like GPIO17 are {{BCM}} numbers.',
     pins: pp.pins, pinPos: pp.pos.map(function (q) { return [q[0] + 2.9, q[1] + 1.0]; }), // pin 1 is about 7 mm from the left edge
-    size: [33.5, 22],
+    size: [33.5, 26.5], // the board is 22 high; the caption under it takes the rest
     defaults: { usb: true, program: 'none' },
     props: [{ k: 'usb', label: 'Power supply plugged in', type: 'toggle' }],
     links: function () { var g = [], first = -1; pp.pins.forEach(function (pin, i) { if (pin.kind === 'gnd') { if (first < 0) first = i; else g.push([first, i]); } }); return g; },
@@ -2545,7 +2551,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   function code(p, id, sim) {
     var mcu = PARTS[p.type].mcu, P2 = function (role) { return pinFor(p, role); };
     var pi = mcu === 'pi5';
-    var scr = mcu === 'wio' ? 'tft' : sim && sim.state.parts.some(function (q) { return q.type === 'lcd'; }) && !sim.state.parts.some(function (q) { return q.type === 'oled'; }) ? 'lcd' : 'oled';
+    var has = function (t) { return sim && sim.state.parts.some(function (q) { return q.type === t; }); };
+    var scr = mcu === 'wio' ? 'tft' : has('lcd') && !has('oled') ? 'lcd' : has('oled') || !sim ? 'oled' : 'none';
     // screen code for the light meter and the thermometer: [include + object, setup line, lines → code]
     var SCR = {
       oled: ['#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 screen(128, 64, &Wire);', '  screen.begin(SSD1306_SWITCHCAPVCC, 0x3C);\n  screen.setTextColor(WHITE);',
@@ -2553,8 +2560,11 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       lcd: ['#include <LiquidCrystal_I2C.h>\nLiquidCrystal_I2C lcd(0x27, 16, 2);  // the backpack is often 0x27 (or 0x3F)', '  lcd.init();\n  lcd.backlight();',
         function (ls) { return '  lcd.clear();\n' + ls.slice(0, 2).map(function (l, i) { return '  lcd.setCursor(0, ' + i + ');\n  lcd.print(' + l + ');'; }).join('\n'); }],
       tft: ['#include <TFT_eSPI.h>   // the Wio\'s own screen\nTFT_eSPI tft;', '  tft.begin();\n  tft.setRotation(3);\n  tft.setTextSize(3);',
-        function (ls) { return '  tft.fillScreen(TFT_BLACK);\n' + ls.map(function (l, i) { return '  tft.drawString(' + l + ', 10, ' + (10 + i * 40) + ');'; }).join('\n'); }]
+        function (ls) { return '  tft.fillScreen(TFT_BLACK);\n' + ls.map(function (l, i) { return '  tft.drawString(' + l + ', 10, ' + (10 + i * 40) + ');'; }).join('\n'); }],
+      // no screen on the bench: serial monitor only
+      none: ['// No screen on the bench, so this sketch only uses the serial monitor.\n// Add an OLED or an LCD 1602 and "See the code" shows the screen lines too.', '', function () { return ''; }]
     }[scr];
+    var ln = function (x) { return x ? x + '\n' : ''; }; // a code block plus its line end, or nothing
     if (id === 'none') return pi ? '# No program: the pins do nothing.' : '// No program: the pins do nothing.\nvoid setup() {}\nvoid loop() {}';
     if (pi) {
       var g = function (role) { return piPin(P2(role)); };
@@ -2571,9 +2581,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     if (id === 'blink') return 'void setup() {\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(' + a('led') + ', HIGH);\n  delay(500);\n  digitalWrite(' + a('led') + ', LOW);\n  delay(500);\n}';
     if (id === 'button_led') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);  // button to GND\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool pressed = digitalRead(' + a('button') + ') == LOW;\n  digitalWrite(' + a('led') + ', pressed ? HIGH : LOW);\n}';
     if (id === 'fade_knob') return 'void setup() {\n  pinMode(' + a('fade') + ', OUTPUT);\n}\n\nvoid loop() {\n  int knob = analogRead(' + an('knob') + ');   // 0 to ' + BB.BOARDS[mcu].adcMax + '\n  analogWrite(' + a('fade') + ', map(knob, 0, ' + BB.BOARDS[mcu].adcMax + ', 0, 255));  // PWM\n}';
-    if (id === 'light_meter') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + SCR[1] + '\n}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.print("Light: ");\n  Serial.println(light);\n  String bar = "[";   // a bar of 10 marks\n  int marks = (light * 20L / ' + BB.BOARDS[mcu].adcMax + ' + 1) / 2;   // 0 to 10, rounded\n  for (int i = 0; i < 10; i++) bar += (i < marks) ? "#" : ".";\n  bar += "]";\n' + SCR[2](['"LIGHT METER"', '"Light: " + String(light)', 'bar']) + '\n  delay(200);\n}';
-    if (id === 'thermometer') return '#include <DHT.h>\n' + SCR[0] + '\nDHT dht(' + a('dht') + ', DHT11);  // DATA needs a 10k pull-up to VCC\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n' + SCR[1] + '\n}\n\nvoid loop() {\n  float t = dht.readTemperature();\n  float h = dht.readHumidity();\n  if (isnan(t) || isnan(h)) { Serial.println("DHT11 error"); delay(2000); return; }\n  Serial.print("Temp: "); Serial.print(t); Serial.print(" C  Humidity: "); Serial.println(h);\n' + SCR[2](['"THERMOMETER"', '"Temp: " + String(t, 0) + " C"', '"Humidity: " + String(h, 0) + " %"']) + '\n  delay(2000);\n}';
-    if (id === 'distance') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + SCR[1] + '\n  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH, 30000);  // how long ECHO stays HIGH (0 = no echo)\n  String txt = "No echo";\n  if (us) txt = "Distance: " + String(us / 58) + " cm";   // 58 µs = 1 cm\n  Serial.println(txt);\n' + SCR[2](['"DISTANCE"', 'txt']) + '\n  delay(60);\n}';
+    if (id === 'light_meter') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + ln(SCR[1]) + '}\n\nvoid loop() {\n  int light = analogRead(' + an('light') + ');\n  Serial.print("Light: ");\n  Serial.println(light);\n  String bar = "[";   // a bar of 10 marks\n  int marks = (light * 20L / ' + BB.BOARDS[mcu].adcMax + ' + 1) / 2;   // 0 to 10, rounded\n  for (int i = 0; i < 10; i++) bar += (i < marks) ? "#" : ".";\n  bar += "]";\n' + ln(SCR[2](['"LIGHT METER"', '"Light: " + String(light)', 'bar'])) + '  delay(200);\n}';
+    if (id === 'thermometer') return '#include <DHT.h>\n' + SCR[0] + '\nDHT dht(' + a('dht') + ', DHT11);  // DATA needs a 10k pull-up to VCC\n\nvoid setup() {\n  Serial.begin(9600);\n  dht.begin();\n' + ln(SCR[1]) + '}\n\nvoid loop() {\n  float t = dht.readTemperature();\n  float h = dht.readHumidity();\n  if (isnan(t) || isnan(h)) { Serial.println("DHT11 error"); delay(2000); return; }\n  Serial.print("Temp: "); Serial.print(t); Serial.print(" C  Humidity: "); Serial.println(h);\n' + ln(SCR[2](['"THERMOMETER"', '"Temp: " + String(t, 0) + " C"', '"Humidity: " + String(h, 0) + " %"'])) + '  delay(2000);\n}';
+    if (id === 'distance') return SCR[0] + '\n\nvoid setup() {\n  Serial.begin(9600);\n' + ln(SCR[1]) + '  pinMode(' + a('trig') + ', OUTPUT);\n  pinMode(' + a('echo') + ', INPUT);' + (BB.BOARDS[mcu].vcc < 4 ? '  // through a 1k/2.2k divider!' : '') + '\n}\n\nvoid loop() {\n  digitalWrite(' + a('trig') + ', HIGH);   // a 10 µs pulse starts a measurement\n  delayMicroseconds(10);\n  digitalWrite(' + a('trig') + ', LOW);\n  long us = pulseIn(' + a('echo') + ', HIGH, 30000);  // how long ECHO stays HIGH (0 = no echo)\n  String txt = "No echo";\n  if (us) txt = "Distance: " + String(us / 58) + " cm";   // 58 µs = 1 cm\n  Serial.println(txt);\n' + ln(SCR[2](['"DISTANCE"', 'txt'])) + '  delay(60);\n}';
     if (id === 'motion_alarm') return 'void setup() {\n  pinMode(' + a('pir') + ', INPUT);\n  pinMode(' + a('buzzer') + ', OUTPUT);\n  pinMode(' + a('led') + ', OUTPUT);\n}\n\nvoid loop() {\n  bool motion = digitalRead(' + a('pir') + ') == HIGH;\n  digitalWrite(' + a('buzzer') + ', motion);\n  digitalWrite(' + a('led') + ', motion);\n}';
     if (id === 'clap_beep') return 'void setup() {}\n\nvoid loop() {\n  int sound = analogRead(' + an('mic') + ');\n  if (sound > ' + Math.round(0.8 * BB.BOARDS[mcu].adcMax) + ') {     // a loud sound\n    tone(' + a('speaker') + ', 1000, 500);  // 1 kHz for half a second\n    delay(500);\n  }\n}';
     if (id === 'tone_button') return 'void setup() {\n  pinMode(' + a('button') + ', INPUT_PULLUP);\n}\n\nvoid loop() {\n  if (digitalRead(' + a('button') + ') == LOW) tone(' + a('speaker') + ', 440);  // the note A\n  else noTone(' + a('speaker') + ');\n}';
@@ -3072,7 +3082,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     s += '<circle cx="24" cy="150" r="4" fill="' + (st.powered ? '#ff3b2a' : '#5a1e1a') + '"/>' + (st.powered ? '<circle cx="24" cy="150" r="8" fill="#ff3b2a" opacity=".35"/>' : '');
     s += txt(20, 40, 'Raspberry Pi 5', 'brand');
     s += '</g>';
-    s += '<text x="' + (x + 4) + '" y="' + (y + 236) + '" class="caption">Too big for the breadboard: connect its GPIO pins with jumper wires.</text>';
+    s += '<text x="' + (x + 4) + '" y="' + (y + 244) + '" class="caption">Too big for the breadboard:</text><text x="' + (x + 4) + '" y="' + (y + 260) + '" class="caption">connect its GPIO pins with wires.</text>';
     def.pins.forEach(function (pin, i) {
       var q = def.pinPos[i];
       s += '<text x="' + f1(x + q[0] * U) + '" y="' + f1(y + q[1] * U + (q[1] < 1.5 ? -5 : 7.6)) + '" class="hdr" text-anchor="middle">' + pin.phys + '</text>';
@@ -3543,13 +3553,23 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       return false;
     });
     if (body) return body;
+    // leads parts of the top layer that is hit: the one whose leads pass nearest the finger wins
+    // (an LED's legs may run right beside a resistor's body)
+    var leadsBest = null, leadsLayer = null;
+    top.forEach(function (p) {
+      if (!p.ends || PARTS[p.type].kind !== 'leads') return;
+      if (leadsLayer !== null && self.layerOf(p) !== leadsLayer) return;
+      var pts = sim.pinPoints(p);
+      var d = segDist(w, pts[0], pts[1]);
+      var lim = p.type === 'wire' ? Math.max(0.35, tol * 0.6) : Math.max(0.8, tol * 0.7);
+      if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); d = Math.min(d, Math.max(0, Math.hypot(w.x - c.x, w.y - c.y) - 0.6)); }
+      if (p.type === 'resistor' || p.type === 'capacitor') d -= 0.25; // a body, not a thin leg
+      if (p.id === self.sel) d -= 0.15;
+      if (d < lim && (!leadsBest || d < leadsBest.d)) { leadsBest = { d: d, id: p.id }; leadsLayer = self.layerOf(p); }
+    });
     top.some(function (p) {
       if (p.ends && PARTS[p.type].kind === 'leads') {
-        var pts = sim.pinPoints(p);
-        var d = segDist(w, pts[0], pts[1]);
-        var lim = p.type === 'wire' ? Math.max(0.35, tol * 0.6) : Math.max(0.8, tol * 0.7);
-        if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); d = Math.min(d, Math.max(0, Math.hypot(w.x - c.x, w.y - c.y) - 0.6)); }
-        if (d < lim) { body = { kind: 'body', id: p.id }; return true; }
+        if (leadsBest && self.layerOf(p) === leadsLayer) { body = { kind: 'body', id: leadsBest.id }; return true; }
         return false;
       }
       var r = sim.bodyRect(p);
@@ -3700,6 +3720,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     var at = this.nearestPoint(w, r, { free: true, self: p.id, k: k });
     // keep short legs together: LED, capacitor and LDR legs cannot stretch far
     if (def.maxSpan && p.ends.length === 2) {
+      if (d.otherEnd0 === undefined) d.otherEnd0 = JSON.stringify(p.ends[1 - k]); // to tell the player if it moves
       var other = this.sim.endPos(p.ends[1 - k]);
       var tgt = at ? this.pointPos(at) : w;
       var dist = Math.hypot(tgt.x - other.x, tgt.y - other.y);
@@ -3784,6 +3805,11 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     if (d.kind === 'body' || d.kind === 'end') {
       var p = this.sim.part(d.hit.id);
       if (p && p.type === 'wire' && p.ends[0].at && p.ends[0].at === p.ends[1].at) this.app.removePart(p.id);
+      // the short other leg was pulled along: say so, and where it is now
+      if (p && d.kind === 'end' && d.otherEnd0 !== undefined && JSON.stringify(p.ends[1 - d.hit.k]) !== d.otherEnd0) {
+        var oe = p.ends[1 - d.hit.k];
+        this.app.toast('The other leg moved too' + (oe.at ? ', to ' + oe.at : '') + '. These legs are short, so they cannot be far apart. Check both legs.', 'info');
+      } else
       // a leg let go over the board but not in a hole: say why
       if (p && d.kind === 'end' && p.ends[d.hit.k] && !p.ends[d.hit.k].at) {
         var e = p.ends[d.hit.k], b = this.sim.board;
@@ -3821,7 +3847,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (h.kind === 'jumper') { var u = this.app.snapshot(); var cyc = { '3.3': 'off', off: '5', '5': '3.3' }; p.props[h.side] = cyc[p.props[h.side]]; this.app.commit(u); this.app.onInteract('prop', p); }
       else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
       else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
-      if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); // rebuild the panel: the dial / jumper buttons changed
+      // pressing a button cap or turning a knob is just that: no sheet, no zoom
+      if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); } // rebuild the panel: the dial / jumper buttons changed
       sim.dirty(); this.render();
       return;
     }
@@ -4335,7 +4362,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'meter', title: 'Multimeter', icon: 'meter',
       intro: { pic: I.meter, text: 'A {{multimeter}} measures volts across a part. To measure current, you put the meter into the loop ({{series}}).' },
-      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [1.5, -2.5, 31, 48.5], tray: [],
+      board: { cols: 30 }, view: [-9, -2.5, 49, 25], phone: [-6.5, -2.5, 31, 48.5], tray: [],
       lock: ['r', 'color'],
       setup: function (A) {
         A.add('mb102', { id: 'mb', x: 2, y: 0, props: { top: '5', bottom: '5', on: true }, locked: true });
@@ -4352,7 +4379,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         { text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first. Then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
-        { text: 'Check it: put the probes in the resistor’s columns (22 and 27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
+        { text: 'Check it: put the probes in the resistor’s columns in the bottom half (like g22 and g27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }
       ],
       explain: function (L) {
         var m = L.part('m'), r = (m && m.st.reading) || {};
@@ -4480,7 +4507,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'esp32', title: 'ESP32: the 5V danger', icon: 'esp32',
       intro: { pic: I.esp32, text: 'The ESP32 works at 3.3V (its {{logic level}}). Its pins must never get 5V. Two resistors bring a 5V signal down to a safe level.' },
-      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [-3.5, -6, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
+      board: { cols: 30 }, view: [-3.5, -10, 31.5, 18.6], phone: [-3.5, -5, 33.5, 19], placeFree: ['hcsr04'], tray: ['hcsr04', { type: 'resistor', props: { r: 1000 } }, { type: 'resistor', props: { r: 2200 } }, 'wire'],
       lock: ['r', 'program'],
       setup: function (A) { A.add('esp32', { id: 'esp', x: 6, y: 4, props: { program: 'distance' }, locked: true }); },
       steps: [
@@ -4883,6 +4910,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     },
     stepDone: function (msg) {
       var lv = this.level;
+      $('#toasts').innerHTML = ''; // the last step's message is old news
       lv.step++;
       var stp = document.querySelector('#inspector .steptask'); // keep the sheet's step text in step with the goal card
       if (stp) { var nh = this.stepTaskHtml(); if (nh) stp.outerHTML = nh; else stp.remove(); }
@@ -4956,7 +4984,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (b.dataset.act === 'hint') self.hint();
         if (b.dataset.act === 'bands') self.checkBands();
         if (b.dataset.slot !== undefined) { lv.bandSlot = +b.dataset.slot; self.redrawBands(); }
-        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if (lv.bandBad) lv.bandBad = lv.bandBad.filter(function (x) { return x !== (lv.bandSlot || 0); }); if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
+        if (b.dataset.chip) { lv.bandPick = lv.bandPick || [null, null, null]; if (lv.bandNote && lv.bandNote[0] === 'good') lv.bandNote = null; lv.bandPick[lv.bandSlot || 0] = b.dataset.chip; if (lv.bandBad) lv.bandBad = lv.bandBad.filter(function (x) { return x !== (lv.bandSlot || 0); }); if ((lv.bandSlot || 0) < 2) lv.bandSlot = (lv.bandSlot || 0) + 1; audio.blip(660, 0.05, 'sine', 0.03); self.redrawBands(); }
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
@@ -4970,6 +4998,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
           var g = $('#goal'), pts = self.sim.pinPoints(mys);
           self.bench.fitRect(Math.min(pts[0].x, pts[1].x) - 1, pts[0].y - 1.5, Math.max(pts[0].x, pts[1].x) + 1, pts[0].y + 1.5, 10, g.offsetTop + g.offsetHeight + 8, 0);
           self.bench.renderUi();
+          self.redrawBands();
         });
       }
       this.updateTop();
@@ -5008,9 +5037,14 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         var ohm = (digit.indexOf(pick[0]) * 10 + digit.indexOf(pick[1])) * Math.pow(10, digit.indexOf(pick[2]));
         val = '<p class="small">Your answer: ' + digit.indexOf(pick[0]) + digit.indexOf(pick[1]) + ' × ' + Math.pow(10, digit.indexOf(pick[2])) + ' = <b>' + (ohm >= 1000 ? ohm / 1000 + ' kΩ' : ohm + ' Ω') + '</b></p>';
       }
-      return note + svg + slots + '<p class="small mut">' + (slot < 2 ? 'Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the multiplier. Tap its colour:') + '</p>' + chips + val;
+      return note + svg + slots + '<p class="small mut">' + (slot < 2 ? 'Read the resistor on the board. Band ' + (slot + 1) + ' is a digit. Tap its colour:' : 'Band 3 is the {{multiplier}} (how many zeros). Tap its colour:').replace(/\{\{([^}]+)\}\}/g, '$1') + '</p>' + chips + val;
     },
-    redrawBands: function () { var el = document.querySelector('#goal .bands'); if (el) el.innerHTML = this.bandsHtml(); },
+    redrawBands: function () {
+      var el = document.querySelector('#goal .bands'); if (!el) return;
+      el.innerHTML = this.bandsHtml();
+      // keep the chips in sight if the card has to scroll (small phones)
+      var ch = el.querySelector('.chips'); if (ch && ch.scrollIntoView) ch.scrollIntoView({ block: 'nearest' });
+    },
     checkBands: function (picked) {
       var lv = this.level, step = lv.def.steps[lv.step]; if (!step || !step.bands) return;
       picked = picked || (lv.bandPick || [null, null, null]).slice();
@@ -5225,7 +5259,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         }
       } else {
         // modules and off-board parts go next to the board
-        var spot = this.freeSpot(def);
+        var spot = this.freeSpot(type === 'meter' ? { size: [def.size[0], def.size[1] + 6] } : def); // + room for the meter's probes below it
         p = BB.newPart(type, { props: props, x: spot.x, y: spot.y });
         if (def.kind === 'module') {
           var lf = def.leadFrom;
@@ -5250,7 +5284,13 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       return p;
     },
     freeSpot: function (def) {
-      var sim = this.sim, b = sim.board, rects = sim.state.parts.map(function (p) { return sim.bodyRect(p); });
+      var sim = this.sim, b = sim.board;
+      // a module's flying leads count as part of it (a new part must not land under the meter's probes)
+      var rects = sim.state.parts.map(function (p) {
+        var r = Object.assign({}, sim.bodyRect(p));
+        if (PARTS[p.type].kind === 'module' && p.ends) sim.pinPoints(p).forEach(function (q) { r.x0 = Math.min(r.x0, q.x - 1); r.x1 = Math.max(r.x1, q.x + 1); r.y0 = Math.min(r.y0, q.y - 1); r.y1 = Math.max(r.y1, q.y + 4); });
+        return r;
+      });
       rects.push({ x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
       var w = def.size[0], h = def.size[1];
       var tries = [];
@@ -5258,6 +5298,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (def.spot === 'above') for (var a = 0; a < 4; a++) tries.push({ x: b.x0 + 3 + a * (w + 2), y: b.y0 - h - 3 });
       // below the board in a grid: 3 to a row, then the next row (not one endless line)
       for (var rrow = 0; rrow < 6; rrow++) for (var k = 0; k < 3; k++) tries.push({ x: b.x0 + k * (Math.max(w, 12) + 2), y: b.y1 + 3 + rrow * 16 });
+      for (var r2 = 0; r2 < 40; r2++) for (var k3 = 0; k3 < 4; k3++) tries.push({ x: b.x0 + k3 * (Math.max(w, 12) + 2), y: b.y1 + 99 + r2 * 8 }); // further down, never on top of another part
       for (var k2 = 0; k2 < 6; k2++) { tries.push({ x: b.x0 - w - 3, y: b.y0 + k2 * (h + 2) }); tries.push({ x: b.x1 + 3, y: b.y0 + k2 * (h + 2) }); }
       for (var j = 0; j < tries.length; j++) {
         var t = tries[j];

@@ -308,13 +308,23 @@
       return false;
     });
     if (body) return body;
+    // leads parts of the top layer that is hit: the one whose leads pass nearest the finger wins
+    // (an LED's legs may run right beside a resistor's body)
+    var leadsBest = null, leadsLayer = null;
+    top.forEach(function (p) {
+      if (!p.ends || PARTS[p.type].kind !== 'leads') return;
+      if (leadsLayer !== null && self.layerOf(p) !== leadsLayer) return;
+      var pts = sim.pinPoints(p);
+      var d = segDist(w, pts[0], pts[1]);
+      var lim = p.type === 'wire' ? Math.max(0.35, tol * 0.6) : Math.max(0.8, tol * 0.7);
+      if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); d = Math.min(d, Math.max(0, Math.hypot(w.x - c.x, w.y - c.y) - 0.6)); }
+      if (p.type === 'resistor' || p.type === 'capacitor') d -= 0.25; // a body, not a thin leg
+      if (p.id === self.sel) d -= 0.15;
+      if (d < lim && (!leadsBest || d < leadsBest.d)) { leadsBest = { d: d, id: p.id }; leadsLayer = self.layerOf(p); }
+    });
     top.some(function (p) {
       if (p.ends && PARTS[p.type].kind === 'leads') {
-        var pts = sim.pinPoints(p);
-        var d = segDist(w, pts[0], pts[1]);
-        var lim = p.type === 'wire' ? Math.max(0.35, tol * 0.6) : Math.max(0.8, tol * 0.7);
-        if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); d = Math.min(d, Math.max(0, Math.hypot(w.x - c.x, w.y - c.y) - 0.6)); }
-        if (d < lim) { body = { kind: 'body', id: p.id }; return true; }
+        if (leadsBest && self.layerOf(p) === leadsLayer) { body = { kind: 'body', id: leadsBest.id }; return true; }
         return false;
       }
       var r = sim.bodyRect(p);
@@ -465,6 +475,7 @@
     var at = this.nearestPoint(w, r, { free: true, self: p.id, k: k });
     // keep short legs together: LED, capacitor and LDR legs cannot stretch far
     if (def.maxSpan && p.ends.length === 2) {
+      if (d.otherEnd0 === undefined) d.otherEnd0 = JSON.stringify(p.ends[1 - k]); // to tell the player if it moves
       var other = this.sim.endPos(p.ends[1 - k]);
       var tgt = at ? this.pointPos(at) : w;
       var dist = Math.hypot(tgt.x - other.x, tgt.y - other.y);
@@ -549,6 +560,11 @@
     if (d.kind === 'body' || d.kind === 'end') {
       var p = this.sim.part(d.hit.id);
       if (p && p.type === 'wire' && p.ends[0].at && p.ends[0].at === p.ends[1].at) this.app.removePart(p.id);
+      // the short other leg was pulled along: say so, and where it is now
+      if (p && d.kind === 'end' && d.otherEnd0 !== undefined && JSON.stringify(p.ends[1 - d.hit.k]) !== d.otherEnd0) {
+        var oe = p.ends[1 - d.hit.k];
+        this.app.toast('The other leg moved too' + (oe.at ? ', to ' + oe.at : '') + '. These legs are short, so they cannot be far apart. Check both legs.', 'info');
+      } else
       // a leg let go over the board but not in a hole: say why
       if (p && d.kind === 'end' && p.ends[d.hit.k] && !p.ends[d.hit.k].at) {
         var e = p.ends[d.hit.k], b = this.sim.board;
@@ -586,7 +602,8 @@
       if (h.kind === 'jumper') { var u = this.app.snapshot(); var cyc = { '3.3': 'off', off: '5', '5': '3.3' }; p.props[h.side] = cyc[p.props[h.side]]; this.app.commit(u); this.app.onInteract('prop', p); }
       else if (h.kind === 'switch') { var u2 = this.app.snapshot(); p.props.on = !p.props.on; this.app.commit(u2); this.app.onInteract('prop', p); }
       else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
-      if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); // rebuild the panel: the dial / jumper buttons changed
+      // pressing a button cap or turning a knob is just that: no sheet, no zoom
+      if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id); else this.select(p.id); } // rebuild the panel: the dial / jumper buttons changed
       sim.dirty(); this.render();
       return;
     }
