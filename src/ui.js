@@ -300,7 +300,7 @@
         var mobile = window.innerWidth < 1100, g = $('#goal');
         var top = mobile && g.offsetHeight ? g.offsetHeight + 12 : 0, right = mobile ? 0 : 54;
         // phones: a tighter view (where the work happens) so holes are big enough for a finger
-        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top + 50, right, true); return; } // + room for the problem chip under the card
+        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top, right, true, 50); return; } // + room for the problem chip under the card, if there is spare height
         bench.fitRect(v[0], v[1], v[2], v[3], 8, top, right);
         if (mobile) return;
         var s0 = bench.view.s;
@@ -372,7 +372,6 @@
       store.data.stars[lv.def.id] = Math.max(prev, stars); store.save();
       lv.stars = stars;
       this.renderGoal();
-      if (window.innerWidth < 1100) { var gg = $('#goal'); this.bench.fitAll(gg.offsetTop + gg.offsetHeight + 8); } // phones: the whole finished circuit in view
       [523, 659, 784, 1047].forEach(function (f, i) { setTimeout(function () { audio.blip(f, 0.2, 'triangle', 0.06); }, i * 110); });
       var next = LEVELS[lv.def.n];
       var why = [];
@@ -391,6 +390,8 @@
           if (a === 'next') self.startLevel(lv.def.n);
           if (a === 'home') self.showHome();
           if (a === 'sand') self.startSandbox();
+          // stay: on phones, show the whole finished circuit (not during the level: never move the view under a finger)
+          if ((a === 'stay' || a === null) && window.innerWidth < 1100 && self.level === lv) { var gg = $('#goal'); self.bench.fitAll(gg.offsetTop + gg.offsetHeight + 8); self.bench.renderUi(); }
         }, 'bottom');
       };
       setTimeout(showDone, this.doneDelay === undefined ? 1800 : this.doneDelay);

@@ -55,7 +55,8 @@
   B.size = function () { var r = this.svg.getBoundingClientRect(); return { w: r.width || 1, h: r.height || 1, left: r.left, top: r.top }; };
   // Fit a world rectangle into the view. insetTop keeps it below an overlay (the goal card).
   // alignTop: put spare height below the rect, not above (phones: the work sits right under the task card)
-  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight, alignTop) {
+  // reserve: extra room wanted under insetTop (the problem chip), taken only from spare height, never by shrinking
+  B.fitRect = function (x0, y0, x1, y1, pad, insetTop, insetRight, alignTop, reserve) {
     var sz = this.size(); pad = pad === undefined ? 16 : pad; insetTop = insetTop || 0; insetRight = insetRight || 0;
     var w = (x1 - x0) * U, h = (y1 - y0) * U;
     var aw = sz.w - insetRight, ah = sz.h - insetTop;
@@ -63,7 +64,8 @@
     s = Math.max(0.25, Math.min(8, s));
     this.view.s = s;
     this.view.tx = (aw - w * s) / 2 - x0 * U * s;
-    this.view.ty = insetTop + (alignTop ? Math.min(pad + 16, (ah - h * s) / 2) : (ah - h * s) / 2) - y0 * U * s;
+    var spare = ah - h * s;
+    this.view.ty = insetTop + (alignTop ? Math.min(pad + 16 + (reserve || 0), Math.max(spare / 2, spare - pad - 8)) : spare / 2) - y0 * U * s;
     this.applyView();
   };
   B.fitAll = function (insetTop) {
