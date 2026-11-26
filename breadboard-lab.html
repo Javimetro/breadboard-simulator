@@ -214,7 +214,7 @@ body.sandmode #goal { display: none; }
 body.goalopen #goal .steps li.todo, body.goalopen #goal .steps li.done { display: list-item; }
 #tray, #inspector { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; max-height: 56%; overflow-y: auto; padding: 10px 12px 14px; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; box-shadow: 0 -10px 30px #000a; transform: translateY(105%); transition: transform .22s ease-out; }
 body.trayopen #tray { transform: none; }
-body.hassel #inspector { transform: none; max-height: 36%; }
+body.hassel #inspector { transform: none; max-height: clamp(36%, 290px, 56%); } /* short phones: still room for a control row */
 body.hassel.insfull #inspector { max-height: 72%; }
 .insmore { display: flex; width: 100%; justify-content: center; align-items: center; min-height: 44px; margin: 8px 0 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--mut); }
 body.hassel.trayopen #inspector { transform: translateY(105%); }
@@ -226,7 +226,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #stage { order: 2; }
   #goal { position: static; max-height: none; box-shadow: none; background: var(--panel2); flex: none; }
   #tray, #inspector { flex: none; }
-  #toasts { top: auto; bottom: 84px; } /* desktop: low in the bench, away from the board's top rails */
+  #toasts { top: auto; bottom: 84px; left: 50%; right: auto; width: min(460px, 36vw); transform: translateX(-50%); } /* desktop: low in the middle of the bench, away from the board's top rails */
   body.hassel #toasts { top: auto; bottom: 84px; }
   body:not(.insfull) #inspector .desc { display: block; }
   body.sandmode #goal { display: block; order: 2; } body.sandmode #tray { order: 1; } /* sandbox: parts first */
@@ -253,6 +253,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .pinlbl { font: 650 3.2px system-ui; fill: #fff; }
 .caption { font: 700 14px system-ui; fill: #c4d6cc; paint-order: stroke; stroke: #0b1a12; stroke-width: 3px; }
 .pinlbl.dark, .tiny.dark, .chip.dark, .brand.dark { fill: #222; }
+.pinlbl.dark { paint-order: stroke; stroke: #f2f0e8; stroke-width: .9px; } /* readable on the board and on the dark bench */
 .chip { font: 700 3px system-ui; fill: #c9ccd1; }
 .tiny { font: 500 2.6px system-ui; fill: #e3e6ea; }
 .brand { font: 800 7px system-ui; fill: #fff; } .brand2 { font: 800 5px system-ui; fill: #fff; }
@@ -395,6 +396,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
 .code p { margin: 6px 10px 10px; }
 .steptask { margin: 2px 0 8px; padding: 8px 10px; border-radius: 10px; background: #13303a; border: 1px solid #2c5d6d; font-size: 14.5px; }
 @media (min-width: 1100px) { .steptask { display: none; } }
+
+#bench g.grabbed { filter: drop-shadow(0 0 6px #4cc9f0); } /* held: ready to move the whole part */
 </style>
 </head>
 <body>
@@ -1350,7 +1353,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     desc: 'A knob with a resistor inside. The middle leg (the {{wiper}}) slides along it, so turning the knob changes the resistance.',
     pins: [{ n: '1', d: 'End 1' }, { n: 'W', d: 'Wiper (middle leg)' }, { n: '3', d: 'End 3' }],
     pinPos: [[0, 0], [2, 0], [4, 0]],
-    body: [-1.3, -6.6, 5.3, 0.3],
+    body: [-1.3, -7.2, 5.3, 0.3], // the round knob's top edge
     defaults: { r: 10000, pos: 0.5, style: 'rotary' },
     props: [{ k: 'style', label: 'Looks like (match yours)', type: 'select', options: ['rotary', 'trimmer'], labels: ['Round knob', 'Blue trimmer (small)'] }, { k: 'r', label: 'Total', type: 'select', options: [1000, 10000, 100000], labels: ['1 kΩ', '10 kΩ', '100 kΩ'] }, { k: 'pos', label: 'Knob', type: 'range', min: 0, max: 1, step: 0.01, fmt: function (v) { return Math.round(v * 100) + ' %'; } }],
     stamp: function (p, n) {
@@ -2833,6 +2836,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     s += '<circle cx="2" cy="7.6" r="1.1" fill="#666"/><circle cx="18" cy="7.6" r="1.1" fill="#666"/><circle cx="2" cy="22.4" r="1.1" fill="#666"/><circle cx="18" cy="22.4" r="1.1" fill="#666"/>';
     s += '<circle cx="10" cy="15" r="' + (pr ? 6.4 : 7.2) + '" fill="' + (pr ? '#111' : '#242424') + '" stroke="#000" stroke-width=".6"/>';
     if (!pr) s += '<circle cx="8.4" cy="13.2" r="2.4" fill="#fff" opacity=".12"/>';
+    else s += '<circle cx="10" cy="15" r="8.6" fill="none" stroke="#4cc9f0" stroke-width="1.3" opacity=".9"/>'; // pressed down: a ring shows the finger's press
     // leg numbers (legs 1–3 and 2–4 are joined inside)
     s += txt(-5.5, -1.5, '1', 'pinlbl dark') + txt(23, -1.5, '2', 'pinlbl dark') + txt(-5.5, 33.5, '3', 'pinlbl dark') + txt(23, 33.5, '4', 'pinlbl dark');
     return group(p, s);
@@ -3616,7 +3620,17 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     this.drag = { kind: hit.kind, hit: hit, sx: e.clientX, sy: e.clientY, w0: w, t0: Date.now(), moved: false, v0: Object.assign({}, this.view), pid: e.pointerId, ptype: e.pointerType };
     var p = hit.id ? this.sim.part(hit.id) : null;
     if (hit.kind === 'hot' && hit.hot.kind === 'press') { p.st.pressed = true; this.sim.dirty(); this.app.onInteract('press', p); this.render(); }
-    if (hit.kind === 'hot' && hit.hot.kind === 'knob') { this.drag.pos0 = p.props.pos; this.drag.undo = this.app.snapshot(); }
+    if (hit.kind === 'hot' && hit.hot.kind === 'knob') {
+      this.drag.pos0 = p.props.pos; this.drag.undo = this.app.snapshot();
+      // drag at once = turn the knob; hold still for a moment, then drag = move the whole part
+      var dk = this.drag, self = this;
+      if (!p.locked) dk.holdT = setTimeout(function () {
+        if (self.drag !== dk || dk.moved) return;
+        dk.grab = true;
+        if (navigator.vibrate) try { navigator.vibrate(15); } catch (er) { /* not allowed: fine */ }
+        if (self.partEls[p.id]) self.partEls[p.id].classList.add('grabbed');
+      }, 400);
+    }
     if (hit.kind === 'body' && p && !p.locked) {
       this.drag.undo = this.app.snapshot();
       this.drag.orig = JSON.parse(JSON.stringify({ x: p.x, y: p.y, ends: p.ends, free: p.free }));
@@ -3678,6 +3692,10 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         this.releasePress();
         if (bp && !bp.locked) { d.kind = 'body'; d.hit = { kind: 'body', id: bp.id }; d.undo = this.app.snapshot(); d.orig = JSON.parse(JSON.stringify({ x: bp.x, y: bp.y, free: bp.free })); }
         else d.kind = 'pan';
+      }
+      if (d.grab) { // held still first: move the knob part, do not turn it
+        var kp = this.sim.part(d.hit.id);
+        d.kind = 'body'; d.hit = { kind: 'body', id: kp.id }; d.orig = JSON.parse(JSON.stringify({ x: kp.x, y: kp.y, ends: kp.ends, free: kp.free }));
       }
       if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id, true); } }
       if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
@@ -3786,7 +3804,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   };
   B.endDragLook = function () {
     this.svg.classList.remove('dragleg');
-    this.svg.querySelectorAll('g.active').forEach(function (a) { a.classList.remove('active'); });
+    this.svg.querySelectorAll('g.active, g.grabbed').forEach(function (a) { a.classList.remove('active'); a.classList.remove('grabbed'); });
+    if (this.drag && this.drag.holdT) clearTimeout(this.drag.holdT);
   };
   B.up = function (e) {
     var d = this.drag;
@@ -3873,6 +3892,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
   };
   // quiet: select without opening the phone's bottom sheet (used while dragging)
   B.select = function (id, quiet) {
+    id = id || null;
     if (this.sel === id) { if (id && !quiet) this.app.showSheet(); return; }
     this.sel = id;
     if (id) { this.stickyHi = false; this.hiHole = null; this.hideTip(); }
@@ -4460,7 +4480,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       solve: function (A) {
         A.wire('P:oled:0', 'j21'); A.wire('P:oled:1', 'j19'); A.wire('P:oled:2', 'j16'); A.wire('P:oled:3', 'j15');
         A.wire('h19', 'B+20'); A.wire('h21', 'B-21');
-        var l = A.add('ldr', { ends: ['B+26', 'j26'] }); A.add('resistor', { props: { r: 10000 }, ends: ['i26', 'B-28'] }); A.wire('h11', 'h26');
+        var l = A.add('ldr', { ends: ['B+26', 'j26'] }); A.add('resistor', { props: { r: 10000 }, ends: ['f26', 'f30'] }); A.wire('j30', 'B-30'); A.wire('h11', 'h26'); // the resistor beside the LDR, not on top of it
         A.set(l, 'light', 0.9); A.wait(0.3); A.set(l, 'light', 0.05); A.wait(0.3);
       }
     },
@@ -4991,7 +5011,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       document.body.classList.remove('goalmin');
       // phones, colour-band step: a taller card for the picker, and the board zoomed onto the resistor below it
       var bandStep = !!(step && step.bands && !lv.done);
+      var wasBand = document.body.classList.contains('bandstep');
       document.body.classList.toggle('bandstep', bandStep);
+      if (wasBand && !bandStep) requestAnimationFrame(function () { self.fitView(); self.bench.renderUi(); }); // zoomed on the resistor: show the whole bench again
       if (bandStep && window.innerWidth < 1100) {
         var mys = this.sim.state.parts.filter(function (q) { return q.hideValue; })[0];
         if (mys) requestAnimationFrame(function () {
@@ -5055,7 +5077,13 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (!bad.length) { lv.bandNote = null; lv.bandBad = null; this.stepDone(step.bands.ok); return; }
       lv.wrong = (lv.wrong || 0) + 1;
       lv.bandBad = bad; lv.bandSlot = bad[0];
-      lv.bandNote = ['bad', (bad.length === 1 ? 'The ' + names[bad[0]] + ' band is' : 'The ' + bad.map(function (b) { return names[b]; }).join(' and ') + ' bands are') + ' not right. ' + (bad[0] < 2 ? 'Bands 1 and 2 are digits: read them from the end away from the gold band.' : 'The 3rd band says how many zeros.')];
+      // say what the player's colours mean, then where to look again (without giving the answer)
+      var DG = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'blue', 'violet', 'grey', 'white'];
+      var ohm = (DG.indexOf(picked[0]) * 10 + DG.indexOf(picked[1])) * Math.pow(10, DG.indexOf(picked[2]));
+      var f0 = bad[0], col = picked[f0], cap = col.charAt(0).toUpperCase() + col.slice(1);
+      var mean = f0 < 2 ? cap + ' is ' + DG.indexOf(col) : cap + ' means × ' + Math.pow(10, DG.indexOf(col));
+      lv.bandNote = ['bad', mean + ', so your answer is ' + (ohm >= 1000 ? ohm / 1000 + ' kΩ' : ohm + ' Ω') + '. Look at the ' + names[f0] + ' band again: is it really ' + col + '?' +
+        (f0 < 2 ? ' Read from the end away from the gold band.' : '') + (bad.length > 1 ? ' (The ' + names[bad[1]] + ' band is not right either.)' : '')];
       this.redrawBands();
       audio.blip(220, 0.18, 'sawtooth', 0.04);
     },
@@ -5280,7 +5308,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       bench.select(p.id, true); // selected (outlined), but the phone sheet stays closed so the board stays visible
       bench.render();
       this.ensureVisible(p);
-      if (!this._addedTip) { this._addedTip = true; this.toast(def.kind === 'leads' ? 'Added. Drag it into place. Drag the end of a leg to move just that leg.' : 'Added. Drag it into place.', 'info'); }
+      if (type === 'pot') this.toast('Added. Drag the knob to turn it. To move the whole part, hold the knob still for a moment, then drag.', 'info');
+      else if (!this._addedTip) { this._addedTip = true; this.toast(def.kind === 'leads' ? 'Added. Drag it into place. Drag the end of a leg to move just that leg.' : 'Added. Drag it into place.', 'info'); }
       return p;
     },
     freeSpot: function (def) {
@@ -5415,6 +5444,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       Object.assign(v, vb); this.bench.applyView(); this.bench.renderUi();
     },
     onSelect: function (id, quiet) {
+      id = id || null;
       var ins = $('#inspector'), self = this;
       if (id !== this._lastSel) document.body.classList.remove('insfull');
       this._lastSel = id;
@@ -5430,8 +5460,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
       // phones: the folded goal card's current step, repeated at the top of the sheet
       html += '<div class="acts" id="acts"></div>'; // Delete / Flip / New part first: on a phone the sheet is short
-      html += this.stepTaskHtml();
       if (def.mcu) html += '<div class="ctls progfirst">' + this.programUi(p, lock.indexOf('program') >= 0) + '</div>'; // the program comes first: steps ask for it
+      html += '<!--meterctls-->' + this.stepTaskHtml(); // the step text comes after the controls the step asks for
       html += '<div class="vals" id="vals"></div>';
       html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴') + '</button>';
       var ctrls = '';
@@ -5451,7 +5481,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       });
 
       // the meter: its dial row first (the steps ask for it); other parts: controls after the values
-      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>');
+      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '').replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>'); // dial, reading, then the step
       else html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';

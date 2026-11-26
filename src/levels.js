@@ -515,7 +515,7 @@
       solve: function (A) {
         A.wire('P:oled:0', 'j21'); A.wire('P:oled:1', 'j19'); A.wire('P:oled:2', 'j16'); A.wire('P:oled:3', 'j15');
         A.wire('h19', 'B+20'); A.wire('h21', 'B-21');
-        var l = A.add('ldr', { ends: ['B+26', 'j26'] }); A.add('resistor', { props: { r: 10000 }, ends: ['i26', 'B-28'] }); A.wire('h11', 'h26');
+        var l = A.add('ldr', { ends: ['B+26', 'j26'] }); A.add('resistor', { props: { r: 10000 }, ends: ['f26', 'f30'] }); A.wire('j30', 'B-30'); A.wire('h11', 'h26'); // the resistor beside the LDR, not on top of it
         A.set(l, 'light', 0.9); A.wait(0.3); A.set(l, 'light', 0.05); A.wait(0.3);
       }
     },

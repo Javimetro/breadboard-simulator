@@ -235,6 +235,7 @@
     s += '<circle cx="2" cy="7.6" r="1.1" fill="#666"/><circle cx="18" cy="7.6" r="1.1" fill="#666"/><circle cx="2" cy="22.4" r="1.1" fill="#666"/><circle cx="18" cy="22.4" r="1.1" fill="#666"/>';
     s += '<circle cx="10" cy="15" r="' + (pr ? 6.4 : 7.2) + '" fill="' + (pr ? '#111' : '#242424') + '" stroke="#000" stroke-width=".6"/>';
     if (!pr) s += '<circle cx="8.4" cy="13.2" r="2.4" fill="#fff" opacity=".12"/>';
+    else s += '<circle cx="10" cy="15" r="8.6" fill="none" stroke="#4cc9f0" stroke-width="1.3" opacity=".9"/>'; // pressed down: a ring shows the finger's press
     // leg numbers (legs 1–3 and 2–4 are joined inside)
     s += txt(-5.5, -1.5, '1', 'pinlbl dark') + txt(23, -1.5, '2', 'pinlbl dark') + txt(-5.5, 33.5, '3', 'pinlbl dark') + txt(23, 33.5, '4', 'pinlbl dark');
     return group(p, s);

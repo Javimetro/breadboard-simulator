@@ -371,7 +371,17 @@
     this.drag = { kind: hit.kind, hit: hit, sx: e.clientX, sy: e.clientY, w0: w, t0: Date.now(), moved: false, v0: Object.assign({}, this.view), pid: e.pointerId, ptype: e.pointerType };
     var p = hit.id ? this.sim.part(hit.id) : null;
     if (hit.kind === 'hot' && hit.hot.kind === 'press') { p.st.pressed = true; this.sim.dirty(); this.app.onInteract('press', p); this.render(); }
-    if (hit.kind === 'hot' && hit.hot.kind === 'knob') { this.drag.pos0 = p.props.pos; this.drag.undo = this.app.snapshot(); }
+    if (hit.kind === 'hot' && hit.hot.kind === 'knob') {
+      this.drag.pos0 = p.props.pos; this.drag.undo = this.app.snapshot();
+      // drag at once = turn the knob; hold still for a moment, then drag = move the whole part
+      var dk = this.drag, self = this;
+      if (!p.locked) dk.holdT = setTimeout(function () {
+        if (self.drag !== dk || dk.moved) return;
+        dk.grab = true;
+        if (navigator.vibrate) try { navigator.vibrate(15); } catch (er) { /* not allowed: fine */ }
+        if (self.partEls[p.id]) self.partEls[p.id].classList.add('grabbed');
+      }, 400);
+    }
     if (hit.kind === 'body' && p && !p.locked) {
       this.drag.undo = this.app.snapshot();
       this.drag.orig = JSON.parse(JSON.stringify({ x: p.x, y: p.y, ends: p.ends, free: p.free }));
@@ -433,6 +443,10 @@
         this.releasePress();
         if (bp && !bp.locked) { d.kind = 'body'; d.hit = { kind: 'body', id: bp.id }; d.undo = this.app.snapshot(); d.orig = JSON.parse(JSON.stringify({ x: bp.x, y: bp.y, free: bp.free })); }
         else d.kind = 'pan';
+      }
+      if (d.grab) { // held still first: move the knob part, do not turn it
+        var kp = this.sim.part(d.hit.id);
+        d.kind = 'body'; d.hit = { kind: 'body', id: kp.id }; d.orig = JSON.parse(JSON.stringify({ x: kp.x, y: kp.y, ends: kp.ends, free: kp.free }));
       }
       if (d.kind === 'body') { var bpp = this.sim.part(d.hit.id); if (!bpp || bpp.locked) d.kind = 'pan'; else { this.select(bpp.id, true); } }
       if (d.kind === 'hole' || d.kind === 'empty' || (d.kind === 'hot' && d.hit.hot.kind !== 'knob')) d.kind = 'pan';
@@ -541,7 +555,8 @@
   };
   B.endDragLook = function () {
     this.svg.classList.remove('dragleg');
-    this.svg.querySelectorAll('g.active').forEach(function (a) { a.classList.remove('active'); });
+    this.svg.querySelectorAll('g.active, g.grabbed').forEach(function (a) { a.classList.remove('active'); a.classList.remove('grabbed'); });
+    if (this.drag && this.drag.holdT) clearTimeout(this.drag.holdT);
   };
   B.up = function (e) {
     var d = this.drag;
@@ -628,6 +643,7 @@
   };
   // quiet: select without opening the phone's bottom sheet (used while dragging)
   B.select = function (id, quiet) {
+    id = id || null;
     if (this.sel === id) { if (id && !quiet) this.app.showSheet(); return; }
     this.sel = id;
     if (id) { this.stickyHi = false; this.hiHole = null; this.hideTip(); }

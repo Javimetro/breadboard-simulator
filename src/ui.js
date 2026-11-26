@@ -431,7 +431,9 @@
       document.body.classList.remove('goalmin');
       // phones, colour-band step: a taller card for the picker, and the board zoomed onto the resistor below it
       var bandStep = !!(step && step.bands && !lv.done);
+      var wasBand = document.body.classList.contains('bandstep');
       document.body.classList.toggle('bandstep', bandStep);
+      if (wasBand && !bandStep) requestAnimationFrame(function () { self.fitView(); self.bench.renderUi(); }); // zoomed on the resistor: show the whole bench again
       if (bandStep && window.innerWidth < 1100) {
         var mys = this.sim.state.parts.filter(function (q) { return q.hideValue; })[0];
         if (mys) requestAnimationFrame(function () {
@@ -495,7 +497,13 @@
       if (!bad.length) { lv.bandNote = null; lv.bandBad = null; this.stepDone(step.bands.ok); return; }
       lv.wrong = (lv.wrong || 0) + 1;
       lv.bandBad = bad; lv.bandSlot = bad[0];
-      lv.bandNote = ['bad', (bad.length === 1 ? 'The ' + names[bad[0]] + ' band is' : 'The ' + bad.map(function (b) { return names[b]; }).join(' and ') + ' bands are') + ' not right. ' + (bad[0] < 2 ? 'Bands 1 and 2 are digits: read them from the end away from the gold band.' : 'The 3rd band says how many zeros.')];
+      // say what the player's colours mean, then where to look again (without giving the answer)
+      var DG = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'blue', 'violet', 'grey', 'white'];
+      var ohm = (DG.indexOf(picked[0]) * 10 + DG.indexOf(picked[1])) * Math.pow(10, DG.indexOf(picked[2]));
+      var f0 = bad[0], col = picked[f0], cap = col.charAt(0).toUpperCase() + col.slice(1);
+      var mean = f0 < 2 ? cap + ' is ' + DG.indexOf(col) : cap + ' means × ' + Math.pow(10, DG.indexOf(col));
+      lv.bandNote = ['bad', mean + ', so your answer is ' + (ohm >= 1000 ? ohm / 1000 + ' kΩ' : ohm + ' Ω') + '. Look at the ' + names[f0] + ' band again: is it really ' + col + '?' +
+        (f0 < 2 ? ' Read from the end away from the gold band.' : '') + (bad.length > 1 ? ' (The ' + names[bad[1]] + ' band is not right either.)' : '')];
       this.redrawBands();
       audio.blip(220, 0.18, 'sawtooth', 0.04);
     },
@@ -720,7 +728,8 @@
       bench.select(p.id, true); // selected (outlined), but the phone sheet stays closed so the board stays visible
       bench.render();
       this.ensureVisible(p);
-      if (!this._addedTip) { this._addedTip = true; this.toast(def.kind === 'leads' ? 'Added. Drag it into place. Drag the end of a leg to move just that leg.' : 'Added. Drag it into place.', 'info'); }
+      if (type === 'pot') this.toast('Added. Drag the knob to turn it. To move the whole part, hold the knob still for a moment, then drag.', 'info');
+      else if (!this._addedTip) { this._addedTip = true; this.toast(def.kind === 'leads' ? 'Added. Drag it into place. Drag the end of a leg to move just that leg.' : 'Added. Drag it into place.', 'info'); }
       return p;
     },
     freeSpot: function (def) {
@@ -855,6 +864,7 @@
       Object.assign(v, vb); this.bench.applyView(); this.bench.renderUi();
     },
     onSelect: function (id, quiet) {
+      id = id || null;
       var ins = $('#inspector'), self = this;
       if (id !== this._lastSel) document.body.classList.remove('insfull');
       this._lastSel = id;
@@ -870,8 +880,8 @@
       var html = '<div class="ihead"><h3>' + esc(def.name) + '</h3><button class="ibtn closeins" title="Close">' + icon('close') + '</button></div><p class="desc">' + rich(def.desc) + '</p>';
       // phones: the folded goal card's current step, repeated at the top of the sheet
       html += '<div class="acts" id="acts"></div>'; // Delete / Flip / New part first: on a phone the sheet is short
-      html += this.stepTaskHtml();
       if (def.mcu) html += '<div class="ctls progfirst">' + this.programUi(p, lock.indexOf('program') >= 0) + '</div>'; // the program comes first: steps ask for it
+      html += '<!--meterctls-->' + this.stepTaskHtml(); // the step text comes after the controls the step asks for
       html += '<div class="vals" id="vals"></div>';
       html += '<button class="insmore" data-a="more">' + (document.body.classList.contains('insfull') ? 'Show less ▾' : 'More ▴') + '</button>';
       var ctrls = '';
@@ -891,7 +901,7 @@
       });
 
       // the meter: its dial row first (the steps ask for it); other parts: controls after the values
-      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>');
+      if (p.type === 'meter') html = html.replace('<div class="vals" id="vals"></div>', '').replace('<!--meterctls-->', '<div class="ctls">' + ctrls + '</div><div class="vals" id="vals"></div>'); // dial, reading, then the step
       else html += '<div class="ctls">' + ctrls + '</div>';
       var acts = '';
       if (p.type === 'button') acts += '<button class="holdbtn" data-a="hold">Hold to press</button>';

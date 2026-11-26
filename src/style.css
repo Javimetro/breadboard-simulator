@@ -206,7 +206,7 @@ body.sandmode #goal { display: none; }
 body.goalopen #goal .steps li.todo, body.goalopen #goal .steps li.done { display: list-item; }
 #tray, #inspector { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; max-height: 56%; overflow-y: auto; padding: 10px 12px 14px; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; box-shadow: 0 -10px 30px #000a; transform: translateY(105%); transition: transform .22s ease-out; }
 body.trayopen #tray { transform: none; }
-body.hassel #inspector { transform: none; max-height: 36%; }
+body.hassel #inspector { transform: none; max-height: clamp(36%, 290px, 56%); } /* short phones: still room for a control row */
 body.hassel.insfull #inspector { max-height: 72%; }
 .insmore { display: flex; width: 100%; justify-content: center; align-items: center; min-height: 44px; margin: 8px 0 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--mut); }
 body.hassel.trayopen #inspector { transform: translateY(105%); }
@@ -218,7 +218,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
   #stage { order: 2; }
   #goal { position: static; max-height: none; box-shadow: none; background: var(--panel2); flex: none; }
   #tray, #inspector { flex: none; }
-  #toasts { top: auto; bottom: 84px; } /* desktop: low in the bench, away from the board's top rails */
+  #toasts { top: auto; bottom: 84px; left: 50%; right: auto; width: min(460px, 36vw); transform: translateX(-50%); } /* desktop: low in the middle of the bench, away from the board's top rails */
   body.hassel #toasts { top: auto; bottom: 84px; }
   body:not(.insfull) #inspector .desc { display: block; }
   body.sandmode #goal { display: block; order: 2; } body.sandmode #tray { order: 1; } /* sandbox: parts first */
@@ -245,6 +245,7 @@ body.hassel.trayopen #inspector { transform: translateY(105%); }
 .pinlbl { font: 650 3.2px system-ui; fill: #fff; }
 .caption { font: 700 14px system-ui; fill: #c4d6cc; paint-order: stroke; stroke: #0b1a12; stroke-width: 3px; }
 .pinlbl.dark, .tiny.dark, .chip.dark, .brand.dark { fill: #222; }
+.pinlbl.dark { paint-order: stroke; stroke: #f2f0e8; stroke-width: .9px; } /* readable on the board and on the dark bench */
 .chip { font: 700 3px system-ui; fill: #c9ccd1; }
 .tiny { font: 500 2.6px system-ui; fill: #e3e6ea; }
 .brand { font: 800 7px system-ui; fill: #fff; } .brand2 { font: 800 5px system-ui; fill: #fff; }
@@ -387,3 +388,5 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
 .code p { margin: 6px 10px 10px; }
 .steptask { margin: 2px 0 8px; padding: 8px 10px; border-radius: 10px; background: #13303a; border: 1px solid #2c5d6d; font-size: 14.5px; }
 @media (min-width: 1100px) { .steptask { display: none; } }
+
+#bench g.grabbed { filter: drop-shadow(0 0 6px #4cc9f0); } /* held: ready to move the whole part */
