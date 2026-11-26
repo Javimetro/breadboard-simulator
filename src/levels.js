@@ -375,6 +375,7 @@
       ],
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
+        if (!p) return 'The loop is open where the knob should be. Add the knob (Parts), then join + rail → knob → column 14.';
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
         // the knob is in the loop, but through its two outer legs: always the full 10 kΩ, so the LED is dim and never changes
         if (p && l && inSeries(p, l) && L.alone(p, 1)) return 'You use the two outer legs of the knob. Between them it is always the full ' + fmt.R(p.props.r) + ', so the LED stays dim and turning does nothing. Use one outer leg and the middle leg ({{wiper}}, marked W).';
@@ -382,7 +383,7 @@
       },
       hints: ['Path: + rail → knob leg 1 → knob middle leg ({{wiper}}, W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the + rail to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
       done: 'The knob changes the resistance, so the current and the brightness change. The fixed 470 Ω keeps the LED safe (about 15 mA) when the knob is at 0 Ω.',
-      solve: function (A) { var p = A.add('pot', { x: 8, y: 5 }); A.wire('T+8', 'b8'); A.wire('b10', 'c14'); A.set(p, 'pos', 0); A.wait(0.3); A.set(p, 'pos', 1); A.wait(0.3); }
+      solve: function (A) { var p = A.add('pot', { x: 8, y: 10 }); A.wire('T+2', 'B+2'); A.wire('B+8', 'j8'); A.wire('j10', 'e14'); /* no wire end under the knob */ A.set(p, 'pos', 0); A.wait(0.3); A.set(p, 'pos', 1); A.wait(0.3); }
     },
     {
       id: 'mb102', title: 'Power supply & Ohm’s law', icon: 'mb102',
@@ -431,7 +432,7 @@
           : { id: 'm', x: 33, y: -2, props: { mode: 'off' }, ends: [{ x: 31, y: 21 }, { x: 34, y: 21 }] });
       },
       steps: [
-        { text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
+        { sheet: 'Red probe in the + rail, black probe in the − rail, and the dial on DCV (volts).', text: 'Measure the top + rail. Put the red probe in the + rail and the black probe in the − rail. Then tap the meter and set the dial to {{DCV}} (volts).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'V' && Math.abs(r.val - 5) < 0.1 && (L.connectedTo(m, 0, 'T+20') || L.connectedTo(m, 0, 'B+20')) && (L.connectedTo(m, 1, 'T-20') || L.connectedTo(m, 1, 'B-20')); }, ok: '5.00 V: the rail voltage.' },
         { text: 'Measure the LED current. There is a gap between column 8 and column 12. Put the probes in the gap first. Then set the dial to {{DCA}} (mA).', check: function (L) { var m = L.part('m'), r = m.st.reading || {}, l = L.of('led')[0]; return r.m === 'A' && r.val > 0.005 && inSeries(m, l); }, ok: 'About 14 mA flows through the meter and the LED.' },
         { text: 'Read the loose resistor (columns 22–27): zoom in and pick the colour of each band. The 3rd band is the {{multiplier}} (how many zeros).', bands: { want: ['yellow', 'violet', 'red'], ok: 'Yellow 4, violet 7, red × 100: 4700 Ω = 4.7 kΩ. Now check it with the meter.', tip: 'the 1st and 2nd bands are digits, the 3rd says how many zeros. The gold band ({{tolerance}}) is at the other end.' } },
         { text: 'Check it: put the probes in the resistor’s columns in the bottom half (like g22 and g27), then set the dial to Ω.', check: function (L) { var m = L.part('m'), r = m.st.reading || {}; return r.m === 'ohm' && Math.abs(r.val - 4700) < 250; }, ok: 'The meter reads 4.70 kΩ, the same as the bands.' }

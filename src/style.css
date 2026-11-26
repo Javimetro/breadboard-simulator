@@ -77,7 +77,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 body.notray #tb .partsbtn { display: none; }
 
 /* goal card (levels) */
-#goal { background: rgba(27,32,39,.95); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+#goal { background: #1b2027; border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
 .ghead { display: flex; align-items: center; gap: 8px; }
 .ghead h2 { margin: 0; font-size: 17px; flex: 1; }
 .gnum { color: var(--amber); font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }

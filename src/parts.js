@@ -569,7 +569,7 @@
     desc: 'A knob with a resistor inside. The middle leg (the {{wiper}}) slides along it, so turning the knob changes the resistance.',
     pins: [{ n: '1', d: 'End 1' }, { n: 'W', d: 'Wiper (middle leg)' }, { n: '3', d: 'End 3' }],
     pinPos: [[0, 0], [2, 0], [4, 0]],
-    body: [-1.3, -7.2, 5.3, 0.3], // the round knob's top edge
+    body: [-1.3, -7.2, 5.3, 0.3], covers: true, // the round knob's top edge; nothing can go in the holes under it
     defaults: { r: 10000, pos: 0.5, style: 'rotary' },
     props: [{ k: 'style', label: 'Looks like (match yours)', type: 'select', options: ['rotary', 'trimmer'], labels: ['Round knob', 'Blue trimmer (small)'] }, { k: 'r', label: 'Total', type: 'select', options: [1000, 10000, 100000], labels: ['1 kΩ', '10 kΩ', '100 kΩ'] }, { k: 'pos', label: 'Knob', type: 'range', min: 0, max: 1, step: 0.01, fmt: function (v) { return Math.round(v * 100) + ' %'; } }],
     stamp: function (p, n) {
@@ -1074,7 +1074,7 @@
     desc: 'Beeps by itself when it gets 3–5V. The long leg (+) goes to +. Backwards, it stays quiet.',
     pins: [{ n: '+' }, { n: '−' }],
     pinPos: [[0, 0], [3, 0]],
-    body: [-0.9, -2.4, 3.9, 2.4],
+    body: [-0.9, -2.4, 3.9, 2.4], covers: true,
     defaults: {}, props: [],
     stamp: function (p, n) {
       var mid = n.node();

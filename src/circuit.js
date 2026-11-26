@@ -103,6 +103,7 @@
     if (def.kind === 'module' || def.kind === 'offboard') return { x0: p.x, y0: p.y, x1: p.x + def.size[0], y1: p.y + def.size[1] };
     var pts = this.pinPoints(p);
     var xs = pts.map(function (q) { return q.x; }), ys = pts.map(function (q) { return q.y; });
+    if (p.type === 'ldr') { var mx = (pts[0].x + pts[1].x) / 2, my = (pts[0].y + pts[1].y) / 2; xs.push(mx - 0.8, mx + 0.8); ys.push(my - 0.8, my + 0.8); } // its round head
     if (p.type === 'led' && BB.ledBodyCenter) { var c = BB.ledBodyCenter(pts[0], pts[1]); xs.push(c.x - 0.6, c.x + 0.6); ys.push(c.y - 0.9, c.y + 0.9); }
     return { x0: Math.min.apply(0, xs) - 0.6, y0: Math.min.apply(0, ys) - 0.6, x1: Math.max.apply(0, xs) + 0.6, y1: Math.max.apply(0, ys) + 0.6 };
   };

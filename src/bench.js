@@ -66,14 +66,14 @@
     this.view.ty = insetTop + (alignTop ? Math.min(pad + 16, (ah - h * s) / 2) : (ah - h * s) / 2) - y0 * U * s;
     this.applyView();
   };
-  B.fitAll = function () {
+  B.fitAll = function (insetTop) {
     var b = this.sim.board, x0 = b.x0, y0 = b.y0, x1 = b.x1, y1 = b.y1, self = this;
     this.sim.state.parts.forEach(function (p) {
       var r = self.sim.bodyRect(p);
       x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1);
       if (p.ends) self.sim.pinPoints(p).forEach(function (q) { x0 = Math.min(x0, q.x - 1); x1 = Math.max(x1, q.x + 1); y0 = Math.min(y0, q.y - 1); y1 = Math.max(y1, q.y + 4); });
     });
-    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 16, 0, 56); // leave room for the zoom buttons on the right
+    this.fitRect(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 16, insetTop || 0, 56, !!insetTop); // leave room for the zoom buttons on the right
   };
   B.toWorld = function (cx, cy) {
     var sz = this.size(), v = this.view;

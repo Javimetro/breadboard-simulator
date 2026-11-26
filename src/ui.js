@@ -285,7 +285,7 @@
       // the first level that needs parts on a phone: show where they are
       var hasTray = (def.tray || []).some(function (it) { return (typeof it === 'string' ? it : it.type) !== 'wire'; });
       document.body.classList.toggle('pulseparts', hasTray && window.innerWidth < 1100 && !store.data.partsTip);
-      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { if (self2.level && !self2.level.done && !store.data.partsTip) self2.toast('Your parts are in “Parts” (bottom bar). Tap it, then tap a part to add it.', 'info'); }, 400); }
+      if (hasTray && window.innerWidth < 1100 && !store.data.partsTip) { var self2 = this; setTimeout(function () { if (self2.level && !self2.level.done && !store.data.partsTip) self2.toast('Your parts are in “Parts” below ↓', 'info'); }, 400); }
       this.buildTray(def.tray);
       this.updateTop();
       this.renderGoal();
@@ -300,7 +300,7 @@
         var mobile = window.innerWidth < 1100, g = $('#goal');
         var top = mobile && g.offsetHeight ? g.offsetHeight + 12 : 0, right = mobile ? 0 : 54;
         // phones: a tighter view (where the work happens) so holes are big enough for a finger
-        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top, right, true); return; }
+        if (mobile && this.level.def.phone) { var ph = this.level.def.phone; bench.fitRect(ph[0], ph[1], ph[2], ph[3], 6, top + 50, right, true); return; } // + room for the problem chip under the card
         bench.fitRect(v[0], v[1], v[2], v[3], 8, top, right);
         if (mobile) return;
         var s0 = bench.view.s;
@@ -346,7 +346,7 @@
     },
     stepTaskHtml: function () {
       var lv = this.level;
-      return this.mode === 'level' && lv && !lv.done && lv.def.steps[lv.step] ? '<p class="steptask"><b>Step ' + (lv.step + 1) + ':</b> ' + plain(lv.def.steps[lv.step].text) + '</p>' : '';
+      return this.mode === 'level' && lv && !lv.done && lv.def.steps[lv.step] ? '<p class="steptask"><b>Step ' + (lv.step + 1) + ':</b> ' + plain(lv.def.steps[lv.step].sheet || lv.def.steps[lv.step].text) + '</p>' : '';
     },
     stepDone: function (msg) {
       var lv = this.level;
@@ -372,6 +372,7 @@
       store.data.stars[lv.def.id] = Math.max(prev, stars); store.save();
       lv.stars = stars;
       this.renderGoal();
+      if (window.innerWidth < 1100) { var gg = $('#goal'); this.bench.fitAll(gg.offsetTop + gg.offsetHeight + 8); } // phones: the whole finished circuit in view
       [523, 659, 784, 1047].forEach(function (f, i) { setTimeout(function () { audio.blip(f, 0.2, 'triangle', 0.06); }, i * 110); });
       var next = LEVELS[lv.def.n];
       var why = [];
@@ -433,7 +434,13 @@
       var bandStep = !!(step && step.bands && !lv.done);
       var wasBand = document.body.classList.contains('bandstep');
       document.body.classList.toggle('bandstep', bandStep);
-      if (wasBand && !bandStep) requestAnimationFrame(function () { self.fitView(); self.bench.renderUi(); }); // zoomed on the resistor: show the whole bench again
+      if (wasBand && !bandStep) requestAnimationFrame(function () { // zoomed on the resistor: now show the resistor and the meter, the next step's work
+        var mys = self.sim.state.parts.filter(function (q) { return q.hideValue; })[0], mt = self.sim.state.parts.filter(function (q) { return q.type === 'meter'; })[0];
+        if (!mys || !mt || window.innerWidth >= 1100) { self.fitView(); self.bench.renderUi(); return; }
+        var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal');
+        self.bench.fitRect(Math.min(a.x0, m.x0) - 1, a.y0 - 2, Math.max(a.x1, m.x1) + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
+        self.bench.renderUi();
+      });
       if (bandStep && window.innerWidth < 1100) {
         var mys = this.sim.state.parts.filter(function (q) { return q.hideValue; })[0];
         if (mys) requestAnimationFrame(function () {
@@ -721,6 +728,7 @@
         }
       }
       if (type === 'wire' && !p.props.color) p.props.color = 'red';
+      if (this.mode === 'level' && this.level) this.level.acted = true;
       sim.state.parts.push(p);
       sim.dirty();
       this.commit(u);
@@ -1030,7 +1038,7 @@
       if (a === 'wave') { p.st.motionUntil = this.sim.t + 4; }
       this.sim.dirty();
     },
-    onInteract: function (what, p) { if (this.mode === 'level') this.checkLevel(); this.saveSandbox(); },
+    onInteract: function (what, p) { if (this.mode === 'level') { if (this.level) this.level.acted = true; this.checkLevel(); } this.saveSandbox(); },
 
     // ---------- the action API (used by tests and level setups) ----------
     actions: function () {
@@ -1106,7 +1114,7 @@
       if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
       else if (this.mode === 'level' && this.level && !this.level.done && this.level.def.explain) {
         var t = null; try { t = this.level.def.explain(this.L()); } catch (e) { t = null; }
-        if (t) {
+        if (t && this.level.acted) {
           // wait a little before explaining, so we do not nag while the player is still building
           var lv = this.level;
           if (lv.lastExplain !== t) { lv.lastExplain = t; lv.explainT = performance.now(); }
