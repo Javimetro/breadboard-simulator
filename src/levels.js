@@ -369,12 +369,12 @@
         { text: 'Turn the knob all the way one way, then the other. Watch the LED.', check: function (L) {
           var p = L.of('pot')[0], l = L.of('led')[0], f = L.flags;
           if (!p || !l || l.st.burnt) return false;
-          // only count readings while the knob really is in the LED's path
+          // count only the two ends of the knob, while it really is in the LED's path: both ways, as the step says
           if (inSeries(p, l)) {
-            f.maxI = Math.max(f.maxI || 0, l._i || 0);
-            f.minI = Math.min(f.minI === undefined ? 1 : f.minI, l._i || 0);
+            if (p.props.pos <= 0.08) f.iLo = l._i || 0;
+            if (p.props.pos >= 0.92) f.iHi = l._i || 0;
           }
-          return f.maxI > 0.012 && f.minI < 0.002;
+          return f.iLo !== undefined && f.iHi !== undefined && Math.max(f.iLo, f.iHi) > 0.012 && Math.min(f.iLo, f.iHi) < 0.002;
         }, ok: 'Bright and dim: the knob controls the current.' }
       ],
       explain: function (L) {

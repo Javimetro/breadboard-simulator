@@ -359,8 +359,9 @@
       if (lv.step >= lv.def.steps.length) { this.finishLevel(); return; }
       // the band picker shows the good news inside the card, so nothing covers the resistor below it
       var wasBands = lv.def.steps[lv.step - 1] && lv.def.steps[lv.step - 1].bands; // after the band picker the meter's dial is at the bottom: say it up top
-      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')]; else this.toast('✓ ' + (msg || 'Done!'), 'good', wasBands);
-      this.renderGoal();
+      if (lv.def.steps[lv.step].bands) lv.bandNote = ['good', '✓ ' + (msg || 'Done!')];
+      this.renderGoal(); // first the new card, so the toast is placed under its real height
+      if (!lv.def.steps[lv.step].bands) this.toast('✓ ' + (msg || 'Done!'), 'good', wasBands);
     },
     finishLevel: function () {
       var lv = this.level, self = this;
@@ -431,9 +432,10 @@
         if (b.dataset.act === 'info') self.showIntro(def, true);
         if (b.dataset.act === 'next') { if (LEVELS[def.n]) self.startLevel(def.n); else self.startSandbox(); }
       };
-      document.body.classList.remove('goalmin');
+      if (!document.body.classList.contains('hassel')) document.body.classList.remove('goalmin'); // a sheet is open: it shows the step
       // phones, colour-band step: a taller card for the picker, and the board zoomed onto the resistor below it
       var bandStep = !!(step && step.bands && !lv.done);
+      if (bandStep && this.bench.sel && window.innerWidth < 1100) { this.bench.select(null); document.body.classList.remove('goalmin'); } // the picker needs the card, the resistor needs the board
       var wasBand = document.body.classList.contains('bandstep');
       document.body.classList.toggle('bandstep', bandStep);
       if (wasBand && !bandStep) requestAnimationFrame(function () { // zoomed on the resistor: now show the resistor and the meter, the next step's work
@@ -855,7 +857,7 @@
       var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102' || (PARTS[p.type].props || []).some(function (q) { return q.env; }); // sensors you set (light, sound…): keep the screen / speaker in view // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
       if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
-      if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
+      if (big) { this.frameForSheet(p); return; } // the meter, sensors...: frame what the player must watch, above the sheet
       if (!this._viewBefore) this._viewBefore = Object.assign({}, bench.view); // put back when the sheet closes
       if (bench.view.s * 10 < 19) bench.view.s = 2.2;
       // centre the part's pins (where the player works) in the free area between the goal card and the sheet
@@ -866,6 +868,30 @@
       var top = this.mode === 'level' && g.offsetParent ? g.offsetTop + g.offsetHeight + 8 : 8, bottom = sz.h * 0.6;
       bench.view.tx = sz.w / 2 - cx * 10 * bench.view.s;
       bench.view.ty = (top + bottom) / 2 - cy * 10 * bench.view.s;
+      bench.applyView(); bench.renderUi();
+      this._viewFocus = Object.assign({}, bench.view);
+    },
+    // A sheet is opening for p: fit the area the player must watch between the task card and the sheet.
+    // Sensors: the sensor and the screen / speaker that shows its effect. Meter: its probe tips on the board.
+    frameForSheet: function (p) {
+      var sim = this.sim, bench = this.bench, def = PARTS[p.type], box = null;
+      var add = function (r) { box = box ? { x0: Math.min(box.x0, r.x0), y0: Math.min(box.y0, r.y0), x1: Math.max(box.x1, r.x1), y1: Math.max(box.y1, r.y1) } : Object.assign({}, r); };
+      if ((def.props || []).some(function (q) { return q.env; })) {
+        add(sim.bodyRect(p));
+        sim.state.parts.forEach(function (q) { if (['oled', 'lcd', 'speaker', 'buzzer', 'seg7', 'wio'].indexOf(q.type) >= 0) add(sim.bodyRect(q)); });
+      } else if (p.type === 'meter') {
+        sim.pinPoints(p).forEach(function (q) { if (q.at) add({ x0: q.x - 4, y0: q.y - 3, x1: q.x + 4, y1: q.y + 3 }); });
+      }
+      if (!box) return;
+      var sz = bench.size(), g = $('#goal');
+      var top = this.mode === 'level' && g.offsetParent ? g.offsetTop + g.offsetHeight + 8 : 8;
+      var sheetTop = sz.h - Math.min(Math.max(0.36 * sz.h, 290), 0.56 * sz.h); // the sheet's height rule in style.css
+      var w = (box.x1 - box.x0 + 1) * 10, h = (box.y1 - box.y0 + 1) * 10;
+      var s = Math.min(2.2, (sz.w - 16) / w, Math.max(40, sheetTop - top - 12) / h);
+      if (!this._viewBefore) this._viewBefore = Object.assign({}, bench.view);
+      bench.view.s = s;
+      bench.view.tx = sz.w / 2 - (box.x0 + box.x1) / 2 * 10 * s;
+      bench.view.ty = (top + sheetTop) / 2 - (box.y0 + box.y1) / 2 * 10 * s;
       bench.applyView(); bench.renderUi();
       this._viewFocus = Object.assign({}, bench.view);
     },
@@ -1013,6 +1039,9 @@
       if (vals.innerHTML !== html) vals.innerHTML = html;
       var ser = $('#serial');
       if (ser) { var t = (p.st.serial || []).join('\n') || (p.st.powered ? '' : '(no power)'); if (ser.textContent !== t) ser.textContent = t; }
+      // the mic's label follows what it hears (a clap is loud even with the slider on quiet)
+      var so = p.type === 'mic' && document.querySelector('#inspector [data-out=sound]');
+      if (so) { var sd = (def.props[0].fmt)(Math.max(p.props.sound || 0, p.st.level || 0)); if (so.textContent !== sd) so.textContent = sd; }
       var pos = document.querySelector('#inspector input[data-k=pos]');
       if (pos && document.activeElement !== pos && +pos.value !== p.props.pos) { pos.value = p.props.pos; var o = document.querySelector('#inspector [data-out=pos]'); if (o) o.textContent = Math.round(p.props.pos * 100) + ' %'; }
     },

@@ -981,7 +981,7 @@
     desc: 'Sends a sound pulse you cannot hear and waits for the echo. It needs 5V. Its {{ECHO}} pin gives 5V pulses: too much for a 3.3V board.',
     pins: [{ n: 'VCC' }, { n: 'TRIG' }, { n: 'ECHO' }, { n: 'GND' }],
     pinPos: [[0, 0], [1, 0], [2, 0], [3, 0]],
-    body: [-7.3, -4.6, 10.3, 0.25],
+    body: [-7.3, -7.2, 10.3, 0.25],
     defaults: { dist: 30 },
     props: [{ k: 'dist', label: 'Object distance', type: 'range', min: 3, max: 200, step: 1, env: true, fmt: function (v) { return v + ' cm'; } }],
     stamp: function (p, n, ctx) {

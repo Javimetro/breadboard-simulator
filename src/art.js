@@ -587,15 +587,15 @@
   DRAW.hcsr04 = function (p) {
     var v = p.vis || {};
     var s = pinDots(BB.PARTS.hcsr04.pinPos);
-    // the module stands up on its pins: seen from above it looks short
-    s += '<g transform="translate(0 -2) scale(1 .5)">';
+    // the module stands up on its pins, tilted back a little: close to its real 45 × 20 mm, round cans
+    s += '<g transform="translate(0 -2) scale(1 .85)">';
     s += '<rect x="-73" y="-82" width="176" height="80" rx="3" fill="#1d5fbe" filter="url(#fShadow)"/>';
     [-40, 70].forEach(function (cx) { s += '<circle cx="' + cx + '" cy="-46" r="31" fill="url(#gMetal)" stroke="#888"/><circle cx="' + cx + '" cy="-46" r="24" fill="url(#pMesh)"/>'; });
     s += '<rect x="5" y="-62" width="20" height="9" rx="4.5" fill="url(#gMetal)" stroke="#888" stroke-width=".4"/>';
     s += '</g>';
-    s += txt(-40, -4, 'T', 'pinlbl', ' text-anchor="middle"') + txt(70, -4, 'R', 'pinlbl', ' text-anchor="middle"') + txt(15, -36, 'HC-SR04', 'tiny', ' text-anchor="middle"');
+    s += txt(-40, -4, 'T', 'pinlbl', ' text-anchor="middle"') + txt(70, -4, 'R', 'pinlbl', ' text-anchor="middle"') + txt(15, -62, 'HC-SR04', 'tiny', ' text-anchor="middle"');
     ['Vcc', 'Trig', 'Echo', 'Gnd'].forEach(function (l, i) { s += txt(i * U, -4, l, 'pinlbl', ' text-anchor="middle"'); });
-    if (v.pinging) s += '<g class="ping"><path d="M-40 -46 q 15 -8 30 0" stroke="#7fe0ff" stroke-width="2" fill="none"/><path d="M-52 -54 q 27 -12 54 0" stroke="#7fe0ff" stroke-width="2" fill="none"/></g>';
+    if (v.pinging) s += '<g class="ping"><path d="M-55 -72 q 15 -8 30 0" stroke="#7fe0ff" stroke-width="2" fill="none"/><path d="M-67 -80 q 27 -12 54 0" stroke="#7fe0ff" stroke-width="2" fill="none"/></g>';
     return group(p, s);
   };
   DRAW.pir = function (p) {
