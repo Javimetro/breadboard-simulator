@@ -403,6 +403,7 @@
     // aimed at a hole hidden under a part: say so, do not quietly use the next free hole
     var near = this.sim.board.nearest(w.x, w.y, 0.5), cov = this.sim.covered();
     if (near && cov[near.id]) return { kind: 'covered', by: cov[near.id] };
+    if (near && this.sim.occupancy()[near.id]) return { kind: 'covered', full: true }; // one leg per hole, wires too
     var pnt = this.nearestPoint(w, tol);
     if (pnt) return { kind: 'wire', start: pnt };
     return { kind: 'empty' };
@@ -469,9 +470,11 @@
     }
     // dragging something near the edge of the bench moves the view, so a far hole can be reached
     if (d.kind === 'end' || d.kind === 'body' || d.kind === 'wire') {
-      var sz = this.size(), px = e.clientX - sz.left, py = e.clientY - sz.top, edge = 36, sx = 0, sy = 0;
+      var sz = this.size(), px = e.clientX - sz.left, py = e.clientY - sz.top, edge = 28, sx = 0, sy = 0;
       if (px < edge) sx = (edge - px) / 3; else if (px > sz.w - edge) sx = -(px - sz.w + edge) / 3;
       if (py < edge) sy = (edge - py) / 3; else if (py > sz.h - edge) sy = -(py - sz.h + edge) / 3;
+      // only after the finger has rested in the edge band for a moment: aiming at a hole near the edge must not scroll
+      if (sx || sy) { if (!d.edgeT) d.edgeT = Date.now(); if (Date.now() - d.edgeT < 600) sx = sy = 0; } else d.edgeT = 0;
       if (sx || sy) { this.view.tx += sx; this.view.ty += sy; this.applyView(); w = this.toWorld(e.clientX, e.clientY); }
     }
     if (d.kind === 'pan') {
@@ -616,7 +619,7 @@
         if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
         else if (this.wireStart === hit.start) this.wireStart = null;
         else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
-      } else if (hit.kind === 'covered') this.app.toast('The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      } else if (hit.kind === 'covered') this.app.toast(hit.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
       else this.wireStart = null;
       this.renderUi();
       return;

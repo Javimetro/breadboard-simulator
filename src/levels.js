@@ -461,7 +461,7 @@
     {
       id: 'nano', title: 'Arduino Nano: blink', icon: 'nano',
       intro: { pic: I.nano, text: 'The Arduino Nano is a {{microcontroller}} board. Put it across the middle gap, then let a {{pin}} blink an LED.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 31.5, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'red' } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [-2.2, -1.6, 33.2, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'red' } }, 'wire'],
       lock: ['r', 'color'],
       steps: [
         { text: 'Put the Arduino Nano across the middle gap.', check: function (L) { var n = L.of('nano')[0]; return n && !n.free; }, ok: 'Each Nano pin now has its own strip of free holes.' },

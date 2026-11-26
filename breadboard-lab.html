@@ -93,7 +93,7 @@ body.notray #tb .partsbtn { display: none; }
 .steps li { margin: 4px 0; color: var(--mut); }
 .steps li.cur { color: var(--text); font-weight: 600; }
 .steps .sn { display: none; font-size: 12px; color: var(--amber); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-.steps li.done { color: var(--good); text-decoration: line-through; text-decoration-color: rgba(61,220,132,.5); }
+.steps li.done { color: #9fdcb8; } .steps li.done::marker { content: '✓  '; color: var(--good); } /* done: a tick, still easy to read */
 .choices { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .choices button { min-height: 46px; padding: 0 20px; border-radius: 12px; border: 1px solid #3c6c80; background: #15303b; font-weight: 650; }
 .hint { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: #2b2616; border: 1px solid #4d421c; font-size: 15px; }
@@ -189,7 +189,7 @@ body.notray #tb .partsbtn { display: none; }
 
 /* ---------- mobile layout: panels become sheets ---------- */
 #left, #right { display: contents; }
-#goal { position: absolute; left: 8px; right: 60px; top: 8px; z-index: 5; max-height: 34%; overflow: auto; box-shadow: 0 6px 24px #0007; padding: 8px 10px; }
+#goal { position: absolute; left: 8px; right: 60px; top: 8px; z-index: 5; max-height: clamp(34%, 236px, 48%); /* short phones: room for the Hint button */ overflow: auto; box-shadow: 0 6px 24px #0007; padding: 8px 10px; }
 #goal .goodtxt { display: none; }
 #goal { font-size: 15px; }
 .gstep { display: none; font-size: 12px; color: var(--amber); font-weight: 700; white-space: nowrap; }
@@ -1250,7 +1250,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
           (p.st.burntBy ? 'About ' + fmtI(p.st.burntBy) + ' went through it. ' : '') +
           'An LED can take about 20 mA. With no resistor (or one that is too small, or one with both legs in the same strip) the current gets far too big. ' +
-          'Put a resistor in the loop, then tap the LED and press “New LED”.');
+          'Put a resistor in the loop, then tap the LED and press “New LED” (Undo moves parts back, but it cannot un-burn an LED).');
       } else if (i > 0.0305) {
         var left = i > 0.04 ? Math.max(1, Math.ceil((1 - (p.st.heat || 0)) / ((i / 0.04) / 6))) : 0; // seconds until heat() burns it
         ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. ' + (left ? 'It is getting hot and will burn out in about ' + left + ' s. ' : 'At this current it gets hot and wears out fast. ') + 'Use a bigger resistor.');
@@ -3655,6 +3655,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     // aimed at a hole hidden under a part: say so, do not quietly use the next free hole
     var near = this.sim.board.nearest(w.x, w.y, 0.5), cov = this.sim.covered();
     if (near && cov[near.id]) return { kind: 'covered', by: cov[near.id] };
+    if (near && this.sim.occupancy()[near.id]) return { kind: 'covered', full: true }; // one leg per hole, wires too
     var pnt = this.nearestPoint(w, tol);
     if (pnt) return { kind: 'wire', start: pnt };
     return { kind: 'empty' };
@@ -3721,9 +3722,11 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     }
     // dragging something near the edge of the bench moves the view, so a far hole can be reached
     if (d.kind === 'end' || d.kind === 'body' || d.kind === 'wire') {
-      var sz = this.size(), px = e.clientX - sz.left, py = e.clientY - sz.top, edge = 36, sx = 0, sy = 0;
+      var sz = this.size(), px = e.clientX - sz.left, py = e.clientY - sz.top, edge = 28, sx = 0, sy = 0;
       if (px < edge) sx = (edge - px) / 3; else if (px > sz.w - edge) sx = -(px - sz.w + edge) / 3;
       if (py < edge) sy = (edge - py) / 3; else if (py > sz.h - edge) sy = -(py - sz.h + edge) / 3;
+      // only after the finger has rested in the edge band for a moment: aiming at a hole near the edge must not scroll
+      if (sx || sy) { if (!d.edgeT) d.edgeT = Date.now(); if (Date.now() - d.edgeT < 600) sx = sy = 0; } else d.edgeT = 0;
       if (sx || sy) { this.view.tx += sx; this.view.ty += sy; this.applyView(); w = this.toWorld(e.clientX, e.clientY); }
     }
     if (d.kind === 'pan') {
@@ -3868,7 +3871,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
         else if (this.wireStart === hit.start) this.wireStart = null;
         else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
-      } else if (hit.kind === 'covered') this.app.toast('The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      } else if (hit.kind === 'covered') this.app.toast(hit.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
       else this.wireStart = null;
       this.renderUi();
       return;
@@ -4438,7 +4441,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     {
       id: 'nano', title: 'Arduino Nano: blink', icon: 'nano',
       intro: { pic: I.nano, text: 'The Arduino Nano is a {{microcontroller}} board. Put it across the middle gap, then let a {{pin}} blink an LED.' },
-      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [0, -1.6, 31.5, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'red' } }, 'wire'],
+      board: { cols: 30 }, view: [-0.8, -1.6, 31.5, 18.6], phone: [-2.2, -1.6, 33.2, 26], placeFree: ['nano'], tray: ['nano', { type: 'resistor', props: { r: 220 } }, { type: 'led', props: { color: 'red' } }, 'wire'],
       lock: ['r', 'color'],
       steps: [
         { text: 'Put the Arduino Nano across the middle gap.', check: function (L) { var n = L.of('nano')[0]; return n && !n.free; }, ok: 'Each Nano pin now has its own strip of free holes.' },
@@ -5039,7 +5042,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal'), tips = self.sim.pinPoints(mt);
         var x0 = Math.min(a.x0, m.x0), x1 = Math.max(a.x1, m.x1), y0 = a.y0 - 2;
         tips.forEach(function (q) { x0 = Math.min(x0, q.x - 1.5); x1 = Math.max(x1, q.x + 1.5); y0 = Math.min(y0, q.y - 1.5); }); // and the probe tips: the player moves them next
-        self.bench.fitRect(x0 - 1, y0, x1 + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
+        self.bench.fitRect(x0 - 1, y0, x1 + 1, m.y0 + (m.y1 - m.y0) * 0.84, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
         self.bench.renderUi();
       });
       if (bandStep && window.innerWidth < 1100) {
@@ -5448,7 +5451,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     // phones: make the selected part big enough to work on, and keep it above the sheet
     focusPart: function (p) {
       var bench = this.bench;
-      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
+      if (bench.drag) return; // never move the view while a finger drags
+      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102'; // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
       if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
@@ -5683,7 +5687,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (ev.type === 'fuse') { audio.blip(1800, 0.05, 'square', 0.05); audio.noise(0.06, 0.2); }
         if (ev.type === 'damage') { audio.noise(0.3, 0.3); }
         if (self.mode === 'level' && self.level && !self.level.done) self.level.mistakes++;
-        if (self.bench.sel === ev.part) self.onSelect(ev.part);
+        // show the new state (e.g. “New LED”), but never open the sheet or move the view under a dragging finger
+        if (self.bench.sel === ev.part && !self.bench.drag) self.onSelect(ev.part, !document.body.classList.contains('hassel'));
       });
       sim.events = [];
       if (this.mode === 'level' && this.level && !this.level.done) {
@@ -5715,6 +5720,9 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
       else if (this.mode === 'level' && this.level && !this.level.done && this.level.def.explain) {
         var t = null; try { t = this.level.def.explain(this.L()); } catch (e) { t = null; }
+        // a blinking pin makes the reason come and go every half second: keep it on screen for a while
+        var lvk = this.level, nowk = performance.now();
+        if (t) lvk.explainSeen = nowk; else if (lvk.lastExplain && lvk.explainSeen && nowk - lvk.explainSeen < 1500) t = lvk.lastExplain;
         if (t && this.level.acted) {
           // wait a little before explaining, so we do not nag while the player is still building
           var lv = this.level;

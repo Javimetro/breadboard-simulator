@@ -465,7 +465,7 @@
         ctx.issue(p, 'burnt', 'danger', 'The LED burned out',
           (p.st.burntBy ? 'About ' + fmtI(p.st.burntBy) + ' went through it. ' : '') +
           'An LED can take about 20 mA. With no resistor (or one that is too small, or one with both legs in the same strip) the current gets far too big. ' +
-          'Put a resistor in the loop, then tap the LED and press “New LED”.');
+          'Put a resistor in the loop, then tap the LED and press “New LED” (Undo moves parts back, but it cannot un-burn an LED).');
       } else if (i > 0.0305) {
         var left = i > 0.04 ? Math.max(1, Math.ceil((1 - (p.st.heat || 0)) / ((i / 0.04) / 6))) : 0; // seconds until heat() burns it
         ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. ' + (left ? 'It is getting hot and will burn out in about ' + left + ' s. ' : 'At this current it gets hot and wears out fast. ') + 'Use a bigger resistor.');

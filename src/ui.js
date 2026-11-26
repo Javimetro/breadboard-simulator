@@ -441,7 +441,7 @@
         var a = self.sim.bodyRect(mys), m = self.sim.bodyRect(mt), g = $('#goal'), tips = self.sim.pinPoints(mt);
         var x0 = Math.min(a.x0, m.x0), x1 = Math.max(a.x1, m.x1), y0 = a.y0 - 2;
         tips.forEach(function (q) { x0 = Math.min(x0, q.x - 1.5); x1 = Math.max(x1, q.x + 1.5); y0 = Math.min(y0, q.y - 1.5); }); // and the probe tips: the player moves them next
-        self.bench.fitRect(x0 - 1, y0, x1 + 1, m.y0 + (m.y1 - m.y0) * 0.55, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
+        self.bench.fitRect(x0 - 1, y0, x1 + 1, m.y0 + (m.y1 - m.y0) * 0.84, 6, g.offsetTop + g.offsetHeight + 8, 0, true);
         self.bench.renderUi();
       });
       if (bandStep && window.innerWidth < 1100) {
@@ -850,7 +850,8 @@
     // phones: make the selected part big enough to work on, and keep it above the sheet
     focusPart: function (p) {
       var bench = this.bench;
-      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard'; // the meter, batteries, Pi...: do not zoom into them
+      if (bench.drag) return; // never move the view while a finger drags
+      var big = PARTS[p.type].kind === 'module' || PARTS[p.type].kind === 'offboard' || p.type === 'mb102'; // the meter, batteries, Pi...: do not zoom into them
       // fold the task card only for small parts placed on the board; for boards and the meter the task tells what to pick in the sheet
       if (this.mode === 'level') document.body.classList.add('goalmin'); // the sheet shows the step text instead
       if (big) return; // the meter, batteries, the Pi...: keep the view where it is (the work is on the board)
@@ -1085,7 +1086,8 @@
         if (ev.type === 'fuse') { audio.blip(1800, 0.05, 'square', 0.05); audio.noise(0.06, 0.2); }
         if (ev.type === 'damage') { audio.noise(0.3, 0.3); }
         if (self.mode === 'level' && self.level && !self.level.done) self.level.mistakes++;
-        if (self.bench.sel === ev.part) self.onSelect(ev.part);
+        // show the new state (e.g. “New LED”), but never open the sheet or move the view under a dragging finger
+        if (self.bench.sel === ev.part && !self.bench.drag) self.onSelect(ev.part, !document.body.classList.contains('hassel'));
       });
       sim.events = [];
       if (this.mode === 'level' && this.level && !this.level.done) {
@@ -1117,6 +1119,9 @@
       if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
       else if (this.mode === 'level' && this.level && !this.level.done && this.level.def.explain) {
         var t = null; try { t = this.level.def.explain(this.L()); } catch (e) { t = null; }
+        // a blinking pin makes the reason come and go every half second: keep it on screen for a while
+        var lvk = this.level, nowk = performance.now();
+        if (t) lvk.explainSeen = nowk; else if (lvk.lastExplain && lvk.explainSeen && nowk - lvk.explainSeen < 1500) t = lvk.lastExplain;
         if (t && this.level.acted) {
           // wait a little before explaining, so we do not nag while the player is still building
           var lv = this.level;
