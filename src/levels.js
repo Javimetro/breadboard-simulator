@@ -118,7 +118,7 @@
     if (sign(1) === '+') return 'The short leg (−) is in a + rail. It must go toward −: move it to the blue − rail.';
     if (sign(0) === '-' && !lit(led)) return 'The long leg (+) is in a − rail. It must go toward +: move it, or flip the LED.';
     var railOf = function (k) { return pts[k].at && /^[TB][+-]\d+$/.test(pts[k].at) ? pts[k].at : null; };
-    if (L.alone(led, 1) && railOf(1)) return 'The short leg (−) is in a − rail, but nothing joins that rail to − yet. Add a wire from GND (a GND pin, or the battery’s −) to this rail.';
+    if (L.alone(led, 1) && railOf(1)) return 'The short leg (−) is in a − rail, but nothing joins that rail to − yet. Join it to the − of your power (the battery’s − rail, or a GND pin on a board).';
     if (L.alone(led, 0) && railOf(0)) return 'The long leg (+) is in a + rail, but that rail has no power yet. Join it to + with a wire (or use the rail the battery is in).';
     var dead = unpoweredPlusRail(L); if (dead) return dead;
     if (L.alone(led, 0)) return 'The long leg (+) is not connected to anything else. Its strip needs a path to + (through a resistor).';
@@ -132,7 +132,8 @@
   function boardWiring(L, n) {
     if (!n || !n.st.powered) return null;
     var def = BB.PARTS[n.type], P = BB.programs, prog = P.P[n.props.program || 'none'], gnds = anyGndNet(L, n);
-    var short = function (q) { return BB.PARTS[q.type].name.replace(/ \(.*\)$/, ''); };
+    var short = function (q) { return { oled: 'screen', lcd: 'LCD', mic: 'microphone', hcsr04: 'distance sensor', dht11: 'DHT11', pir: 'motion sensor' }[q.type] || BB.PARTS[q.type].name.replace(/ \(.*\)$/, ''); };
+    var dead = deadPlusRail(L); if (dead) return dead;
     var mods = L.sim.state.parts.filter(function (q) { var d = BB.PARTS[q.type]; return q !== n && !d.mcu && d.kind !== 'leads' && d.pins && d.pins.length >= 3; });
     for (var i = 0; i < mods.length; i++) {
       var q = mods[i], pins = BB.PARTS[q.type].pins, names = pins.map(function (x) { return x.n; });
@@ -140,7 +141,7 @@
       if (g < 0 || v < 0) continue;
       var started = pins.some(function (x, k) { return !L.alone(q, k); });
       if (!started) continue;
-      if (L.alone(q, v)) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin has no power. Wire it to the 5V pin.';
+      if (L.alone(q, v)) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin has no power. Wire it to the 5V pin (or to a + rail that is joined to 5V).';
       if (gnds.indexOf(L.net(q, g)) < 0) return 'The ' + short(q) + '’s ' + pins[g].n + ' pin is not joined to GND. Wire it to a GND pin (or to a − rail that is joined to GND).';
       var v33 = def.pins.findIndex(function (x) { return x.kind === 'v33'; });
       if (v33 >= 0 && (q.type === 'mic' || q.type === 'hcsr04') && L.net(q, v) === L.net(n, v33)) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin is on 3.3 V. This module needs 5V: move that wire to the 5V pin.';
@@ -156,11 +157,22 @@
       }
       if (!L.alone(n, k)) continue;
       var other = def.pins.filter(function (x, ok) { return x.kind === 'gpio' && rolePins.indexOf(x.n) < 0 && !(prog.display && (x.sda || x.scl)) && !L.alone(n, ok); })[0]; // I2C pins belong to the screen
-      if (other) return 'Something is wired to pin ' + other.n + ', but this program uses pin ' + pn + ' (' + role.label.toLowerCase() + '). Move that wire to a hole below ' + pn + '.';
+      if (other) return 'Something is wired to pin ' + other.n + ', but this program uses pin ' + pn + ' for: ' + role.label + '. Move that wire to a hole below ' + pn + '.';
     }
     return null;
   }
 
+  // A + rail that a part uses, with no voltage at all (nothing feeds it): e.g. the LDR or a module's + in B+ with no 5V wire
+  function deadPlusRail(L) {
+    var sim = L.sim, occ = sim.occupancy(), out = null;
+    sim.board.holes.some(function (h) {
+      if (h.kind !== 'rail' || !/\+/.test(h.row) || !occ[h.id]) return false;
+      var v = sim.holeVoltage(h.id);
+      if (v === null || v < 1) { out = 'The + rail at ' + h.id + ' has no power yet. Add a wire from the 5V pin to that rail.'; return true; }
+      return false;
+    });
+    return out;
+  }
   // A + rail that is used but has no voltage, while another + rail has power (e.g. the battery feeds only the top rails)
   function unpoweredPlusRail(L) {
     var sim = L.sim, occ = sim.occupancy(), live = null, deadH = null;
@@ -172,7 +184,7 @@
     });
     if (!live || !deadH) return null;
     var top = deadH.row.charAt(0) === 'T';
-    return 'The ' + (top ? 'top' : 'bottom') + ' + rail (' + deadH.id + ') has no power: the battery only feeds the ' + (top ? 'bottom' : 'top') + ' rails. Join the two + rails with a wire (like ' + live.row + live.col + ' → ' + deadH.row + live.col + '), or use the ' + (top ? 'bottom' : 'top') + ' + rail.';
+    return 'The ' + (top ? 'top' : 'bottom') + ' + rail (' + deadH.id + ') has no power: only the ' + (top ? 'bottom' : 'top') + ' rails get power now. Join the two + rails with a wire (like ' + live.row + live.col + ' → ' + deadH.row + live.col + '), or use the ' + (top ? 'bottom' : 'top') + ' + rail.';
   }
   // A wire end alone in its strip, while a part's leg sits in the same column on the other side of the gap:
   // the Level 1 lesson (rows a–e and f–j are not joined), said for this exact hole.
@@ -460,6 +472,11 @@
           return f.iLo !== undefined && f.iHi !== undefined && Math.max(f.iLo, f.iHi) > 0.012 && Math.min(f.iLo, f.iHi) < 0.002;
         }, ok: 'Bright and dim: the knob controls the current.' }
       ],
+      explainFirst: function (L) {
+        var p = L.of('pot')[0], l = L.of('led')[0], r = L.of('resistor')[0];
+        if (p && l && r && l.st.burnt && [L.net(p, 1), L.net(p, 0), L.net(p, 2)].indexOf(L.net(l, 0)) >= 0) return 'The current skipped the 470 Ω: the knob goes straight to the LED’s column. At 0 Ω on the knob nothing limits the current, so the LED burned. Wire the knob’s middle leg to column 14 (the 470 Ω), not to the LED. Then press “New LED”.';
+        return null;
+      },
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (!p) return 'The loop is open where the knob should be. Add the knob (Parts), then join + rail → knob → column 14.';
@@ -491,8 +508,10 @@
           });
         }, ok: '(5 − 2) V ÷ 220 Ω ≈ 14 mA. Just right!' }
       ],
+      explainFirst: function (L) { var l = L.of('led')[0]; return l && l.st.burnt ? 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω, then tap the LED and press “New LED”.' : null; },
       explain: function (L) {
         var mbp = L.part('mb');
+        if (mbp && mbp.props.top === '3.3' && mbp.props.bottom === '5') return 'The jumpers are swapped: the top rails get 3.3V and the bottom rails 5V. This level wants 5V on top. Tap each yellow jumper to change it.';
         if (mbp && !mbp.props.on && L.of('led').length) return 'The MB102 is switched off, so the rails have no power. Tap its white power button.';
         var l = L.of('led')[0], r = L.of('resistor').find(function (q) { return l && inSeries(l, q); });
         // the 10 kΩ lets so little through that the current test above cannot see it: find it by its nets
@@ -534,6 +553,9 @@
         var m = L.part('m'), r = (m && m.st.reading) || {};
         if (r.m === 'A' && L.connectedTo(m, 0, 'T+20') && L.connectedTo(m, 1, 'T-20')) return 'Never put the meter in mA mode across the rails: it is like a wire there.';
         if (r.m === 'V' && (L.connectedTo(m, 0, 'T-20') && L.connectedTo(m, 1, 'T+20'))) return 'The reading is negative: the probes are swapped. Red goes to +.';
+        if ((r.m === 'A' || r.m === 'V' || r.m === 'ohm') && m && L.net(m, 0) !== null && L.net(m, 0) === L.net(m, 1)) return 'Both probes are in the same strip, so the meter sees no difference. Put them in two different columns' + (L.stepIndex === 1 ? ': column 8 and column 12 (the gap).' : '.');
+        if (L.stepIndex === 3 && r.m === 'ohm' && m) { var tips8 = L.sim.pinPoints(m).map(function (q) { return q.at || ''; }); if (tips8.some(function (a) { return /^[a-e](22|27)$/.test(a); })) return 'The resistor is in row f, in the bottom half. Rows a–e of the same column are not joined to it. Put the probes in g22 and g27.'; }
+        if (L.stepIndex === 1 && r.m === 'A' && typeof r.val === 'number' && Math.abs(r.val) < 0.0005) return 'The meter shows 0 mA: no current goes through it. In mA mode the meter must be IN the path: red probe in column 8, black probe in column 12.';
         if (r.m === 'A' && typeof r.val === 'number' && r.val < -0.0005) return 'The reading is negative: the current goes into the black probe. Swap the probes: red on the side that comes from + (column 8), black on the LED side (column 12).';
         var led8 = L.of('led')[0];
         if (r.m === 'A' && led8 && !lit(led8) && [L.net(led8, 0), L.net(led8, 1)].indexOf(L.net(m, 0)) >= 0 && [L.net(led8, 0), L.net(led8, 1)].indexOf(L.net(m, 1)) >= 0) return 'In mA mode the meter is like a wire. Across the LED it takes all the current, so the LED goes out. Put the meter IN the path instead: in the gap between column 8 and column 12.';
@@ -623,6 +645,8 @@
           if (shared !== undefined && shared !== mcuPinNet(L, n, 'A0') && L.alone(n, BB.PARTS.nano.pins.findIndex(function (x) { return x.n === 'A0'; }))) return 'Your divider is built, but its middle is not joined to A0. Add a wire from the middle column (between the LDR and the 10 kΩ) to a hole below A0.';
         }
         if (L.stepIndex >= 1 && ldr && !r && [L.net(ldr, 0), L.net(ldr, 1)].indexOf(mcuPinNet(L, n, 'A0')) >= 0 && anyGndNet(L, n).some(function (g) { return [L.net(ldr, 0), L.net(ldr, 1)].indexOf(g) >= 0; })) return 'A0 reads 0 all the time: the LDR goes from A0 to GND, but nothing feeds A0 from 5V. Put the LDR between 5V and A0, and the 10 kΩ from A0 to GND.';
+        var hm10 = L.stepIndex >= 1 ? halfMiss(L) : null; if (hm10) return hm10;
+        var dp10 = L.stepIndex >= 1 ? deadPlusRail(L) : null; if (dp10) return dp10;
         if (L.stepIndex >= 1 && ldr && (!r || L.alone(r, 0) || L.alone(r, 1)) && v > (n.st.vcc || 5) - 0.2) return 'A0 reads 1023 all the time: with only the LDR, A0 is pulled all the way up to the supply. Add the 10 kΩ resistor from A0 to GND. Two resistors make a voltage divider.';
         var bwx = boardWiring(L, n); if (bwx) return bwx;
         return null;
@@ -652,6 +676,7 @@
           var d8 = mcuPinNet(L, n, 'D8'), gnd = anyGndNet(L, n);
           var sn = [L.net(s, 0), L.net(s, 1)];
           if (gnd.indexOf(sn[0]) < 0 && gnd.indexOf(sn[1]) < 0) return false;
+          if (sn.indexOf(d8) >= 0) return false; // the speaker sits right on D8: the resistor is not in its path
           return L.of('resistor').some(function (r) { var rn = [L.net(r, 0), L.net(r, 1)]; return rn.indexOf(d8) >= 0 && (rn.indexOf(sn[0]) >= 0 || rn.indexOf(sn[1]) >= 0); });
         }, ok: 'Good: the resistor keeps the pin current safe.' },
         { text: 'Tap the microphone and press 👏 Clap. The speaker should beep.', check: function (L) {
@@ -661,9 +686,22 @@
           return !!L.flags.beep;
         }, ok: 'Beep! Sound in, sound out.' }
       ],
+      explainFirst: function (L) { // the speaker right on D8: this says why D8 got hurt better than the pin warning
+        var n = L.part('nano'), spk = L.of('speaker')[0], d8n = mcuPinNet(L, n, 'D8');
+        if (!spk || d8n === null || [L.net(spk, 0), L.net(spk, 1)].indexOf(d8n) < 0) return null;
+        return L.of('resistor').some(function (r) { return [L.net(r, 0), L.net(r, 1)].indexOf(d8n) >= 0; })
+          ? 'The resistor is beside the speaker, not in its path: the speaker’s red wire is joined to D8 directly, so the pin gives far too much current. Put the resistor between D8 and the red wire. If D8 is damaged, tap the Nano and press “New board”.'
+          : 'There is no resistor between D8 and the speaker. The speaker is only 8 Ω, so the pin gives far too much current. Put the 220 Ω between D8 and the red wire. If D8 is damaged, tap the Nano and press “New board”.';
+      },
       explain: function (L) {
         var s = L.of('speaker')[0], n = L.part('nano');
-        var m = L.of('mic')[0], spk = L.of('speaker')[0];
+        var m = L.of('mic')[0], spk = L.of('speaker')[0], d8n = mcuPinNet(L, n, 'D8');
+        if (spk && d8n !== null && [L.net(spk, 0), L.net(spk, 1)].indexOf(d8n) >= 0) {
+          var beside = L.of('resistor').some(function (r) { return [L.net(r, 0), L.net(r, 1)].indexOf(d8n) >= 0; });
+          return beside ? 'The resistor is beside the speaker, not in its path: the speaker’s red wire is joined to D8 directly. Put the resistor between D8 and the red wire (D8 → resistor → speaker → GND).'
+            : 'There is no resistor between D8 and the speaker. The speaker is only 8 Ω: alone it would pull far too much current from the pin. Put the 220 Ω between D8 and the red wire.';
+        }
+        var hm11 = halfMiss(L); if (hm11) return hm11;
         if (spk && L.stepIndex >= 1 && L.of('resistor').length && [L.net(spk, 0), L.net(spk, 1)].every(function (x) { return x !== null && anyGndNet(L, n).indexOf(x) < 0; }) && !L.alone(spk, 1)) return 'The speaker’s black wire does not reach GND. Put it in a − rail that is joined to a GND pin (or in a GND strip).';
         if (m && (m.st.vcc || 0) > 4.5 && L.net(m, 0) !== null && L.net(m, 0) !== mcuPinNet(L, n, 'A0')) {
           var on = null; BB.PARTS[n.type].pins.forEach(function (pin, pk) { if (pin.analog && pin.n !== 'A0' && L.net(n, pk) === L.net(m, 0)) on = on || pin.n; });
@@ -713,6 +751,8 @@
       explainFirst: true, // its divider texts are more exact than the generic pin warning
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
+        var hc = L.of('hcsr04')[0];
+        if (hc && L.net(hc, 2) !== null && L.net(hc, 2) === mcuPinNet(L, e, '21')) return 'Pin 21 is on ECHO. The program sends the pulse on pin 21, so it must go to TRIG (the pin next to ECHO). ECHO goes to the divider, then to pin 33.';
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
         // the 2.2 kΩ goes to a − rail that is not joined to GND: the divider has no bottom
         var r22 = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];

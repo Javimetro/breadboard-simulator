@@ -1166,7 +1166,7 @@
       var iss = sim.res.issues.filter(function (i) { return !(lvl && i.kind === 'floating'); }).sort(function (a, b) { return (a.level === 'danger' ? 0 : 1) - (b.level === 'danger' ? 0 : 1); });
       var msg = null;
       var lvd = lvl && this.level && !this.level.done ? this.level.def : null, first = null;
-      if (iss.length && lvd && lvd.explainFirst && lvd.explain && this.level.acted) { try { first = lvd.explain(this.L()); } catch (e) { first = null; } }
+      if (iss.length && lvd && lvd.explainFirst && lvd.explain && this.level.acted) { try { first = typeof lvd.explainFirst === 'function' ? lvd.explainFirst(this.L()) : lvd.explain(this.L()); } catch (e) { first = null; } }
       if (first) msg = { level: iss[0].level, title: 'Why it does not work yet', text: first };
       else if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
       else if (this.mode === 'level' && this.level && !this.level.done && this.level.def.explain) {
@@ -1183,6 +1183,9 @@
           if (performance.now() - lv.explainT > 1800) msg = { level: 'info', title: 'Why it does not work yet', text: t };
         }
       }
+      var runningB = sim.state.parts.some(function (q) { return PARTS[q.type].mcu && q.props.program && q.props.program !== 'none'; }), nowB = performance.now();
+      if (msg) this._banHold = { msg: msg, t: nowB, step: lvl && this.level ? this.level.step : -1 };
+      else if (runningB && this._banHold && nowB - this._banHold.t < 1500 && this._banHold.step === (lvl && this.level ? this.level.step : -1)) msg = this._banHold.msg; // keep it steady through the blink
       var key = msg ? msg.level + msg.title + msg.text : '';
       if (key === this._banKey) return;
       this._banKey = key;
