@@ -483,15 +483,21 @@
       this.view.tx = d.v0.tx + dx; this.view.ty = d.v0.ty + dy; this.applyView();
     } else if (d.kind === 'hot') {
       var p = this.sim.part(d.hit.id), hk = d.hit.hot, hc = BB.rotate(hk.x, hk.y, p.rot || 0);
-      // turn with the finger's angle around the knob (270° = full range), so the mark stays under the finger;
-      // very near the centre the angle is shaky: then a plain swipe (right / up = more) works
-      var ax = w.x - (p.x + hc[0]), ay = w.y - (p.y + hc[1]);
-      if (Math.hypot(ax, ay) > 0.8) {
-        var ang = Math.atan2(ax, -ay) * 180 / Math.PI;
-        if (d.angPrev !== undefined) { var da = ang - d.angPrev; if (da > 180) da -= 360; if (da < -180) da += 360; d.turn = (d.turn || 0) + da; }
-        d.angPrev = ang;
+      // one way of turning for the whole drag, chosen where the finger went down (no jumps):
+      // started on the rim → turn with the finger's angle (270° = full range, the mark stays under the finger);
+      // started near the centre → a plain swipe (right / up = more)
+      var cxw = p.x + hc[0], cyw = p.y + hc[1];
+      if (d.knobMode === undefined) d.knobMode = Math.hypot(d.w0.x - cxw, d.w0.y - cyw) > 0.9 ? 'angle' : 'swipe';
+      if (d.knobMode === 'angle') {
+        var ax = w.x - cxw, ay = w.y - cyw;
+        if (Math.hypot(ax, ay) > 0.4) { // right on the centre the angle means nothing: wait
+          var ang = Math.atan2(ax, -ay) * 180 / Math.PI;
+          if (d.angPrev === undefined) d.angPrev = Math.atan2(d.w0.x - cxw, -(d.w0.y - cyw)) * 180 / Math.PI;
+          var da = ang - d.angPrev; if (da > 180) da -= 360; if (da < -180) da += 360;
+          d.turn = (d.turn || 0) + da; d.angPrev = ang;
+        }
         p.props.pos = Math.max(0, Math.min(1, d.pos0 + (d.turn || 0) / 270));
-      } else { d.angPrev = undefined; p.props.pos = Math.max(0, Math.min(1, d.pos0 + (d.turn || 0) / 270 + (dx - dy) / 160)); }
+      } else p.props.pos = Math.max(0, Math.min(1, d.pos0 + (dx - dy) / 160));
       this.sim.dirty(); this.app.onInteract('knob', p); this.app.refreshInspector();
     } else if (d.kind === 'end') {
       this.dragEnd(d, w, e);

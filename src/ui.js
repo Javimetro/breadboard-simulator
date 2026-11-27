@@ -1134,6 +1134,14 @@
           if (is.kind === 'short' && !lv.baseline.short && !lv.issueSeen.short) { lv.issueSeen.short = true; lv.mistakes++; }
         });
         if (!sim.res.issues.some(function (is) { return is.kind === 'short'; })) { lv.issueSeen.short = false; lv.baseline.short = false; }
+        // too much voltage on a board pin is a mistake too (once each time it happens)
+        var ovNow = {};
+        sim.res.issues.forEach(function (is) {
+          if (is.kind !== 'overvolt' || is.level !== 'danger') return;
+          var key = 'ov:' + is.part + ':' + is.pin; ovNow[key] = 1;
+          if (!lv.issueSeen[key]) { lv.issueSeen[key] = true; lv.mistakes++; }
+        });
+        Object.keys(lv.issueSeen).forEach(function (k) { if (k.slice(0, 3) === 'ov:' && !ovNow[k]) lv.issueSeen[k] = false; });
         this.checkLevel();
       }
       // sound from buzzers and speakers

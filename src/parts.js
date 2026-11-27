@@ -995,7 +995,7 @@
       var high = active && (ctx.pwmHigh ? ctx.pwmHigh(p.st.duty) : true);
       var s = n.node();
       p._e = n.V(s, 'p3', high ? v : 0);
-      n.R(s, 'p2', 10);
+      n.R(s, 'p2', 120); // a logic output: a few mA into a 3.3 V pin's clamp, not 100 mA
     },
     after: function (p, r, ctx) {
       var ok = needPower(p, r, ctx, 0, 3, 4.5, 5.5, 'HC-SR04');

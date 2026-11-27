@@ -160,7 +160,7 @@ test('Arduino Nano on USB (4.7 V after its diode) runs Blink on D13: LED blinks 
   assert.ok(minI < 1e-6, 'LED off part of the time');
 });
 
-test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k divider gives 5 × 2.2/(0.01+1+2.2) = 3.43 V (ECHO has 10 Ω inside) and reads HIGH', () => {
+test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k divider gives 5 × 2.2/(0.12+1+2.2) = 3.31 V (ECHO has 120 Ω inside) and reads HIGH', () => {
   function make(divider) {
     const parts = [
       ['esp32', { x: 6, y: 4, props: { program: 'distance' } }],   // long row b6..b21, short row h10..h21
@@ -178,8 +178,8 @@ test('ESP32: 5V from HC-SR04 ECHO straight into pin 33 is flagged; a 1k/2.2k div
   assert.ok(bad.res.issues.some(i => i.kind === 'overvolt' || i.kind === 'damaged'), 'over-voltage flagged (or the pin already died)');
   const good = make(true); run(good, 0.3);
   const esp = byType(good, 'esp32')[0];
-  near(esp.st.lastVpeak['33'], 5 * 2.2 / 3.21, 'pin 33 voltage while ECHO is HIGH');
-  near(esp.st.lastV['33'], 5 * 2.2 / 3.21 * (30 * 58e-6 / 0.06), 'average: ECHO is HIGH 58 µs/cm × 30 cm every 60 ms (2.9 %)', 0.05);
+  near(esp.st.lastVpeak['33'], 5 * 2.2 / 3.32, 'pin 33 voltage while ECHO is HIGH');
+  near(esp.st.lastV['33'], 5 * 2.2 / 3.32 * (30 * 58e-6 / 0.06), 'average: ECHO is HIGH 58 µs/cm × 30 cm every 60 ms (2.9 %)', 0.05);
   assert.ok(!good.res.issues.some(i => i.kind === 'overvolt'));
   assert.ok(esp.st.serial.some(s => s.startsWith('Distance: 30')), esp.st.serial.join('|'));
 });
@@ -440,16 +440,18 @@ test('Nano RST wired to GND: held in reset, Blink stops, the LED stays dark', ()
   assert.ok(sim.res.issues.some(i => i.kind === 'reset'));
 });
 
-test('ECHO (5 V pulses, 2.9 % of the time) straight into ESP32 pin 33: flagged at once, but the pin takes seconds (not ms) to die', () => {
+// ECHO has about 120 Ω inside. Into pin 33's clamp (3.3 V + ~0.6 V diode): peak (5 − 3.9) / 120 ≈ 9 mA, and only
+// 2.9 % of the time, so about 0.3 mA on average: well under the 20 mA pin limit. The pin sees ~3.9 V (> 3.6 V): flagged.
+test('ECHO (5 V pulses, 2.9 % of the time) straight into ESP32 pin 33: flagged as too much voltage, but the weak pulses do not kill it', () => {
   const parts = [['esp32', { x: 6, y: 4, props: { program: 'distance' } }], ['hcsr04', { x: 24, y: 3 }], ['wire', { ends: ['j12', 'b24'] }],
     ['wire', { ends: ['a9', 'T-9'] }], ['wire', { ends: ['T-27', 'b27'] }], ['wire', { ends: ['a21', 'b25'] }], ['wire', { ends: ['c26', 'i16'] }]];
   const sim = bench(parts);
   for (let k = 0; k < 30; k++) sim.step(1 / 60);
   const e = byType(sim, 'esp32')[0];
   assert.ok(sim.res.issues.some(i => i.kind === 'overvolt'), 'flagged within half a second');
-  assert.ok(!e.st.damaged['33'], 'not dead yet after 0.5 s');
   for (let k = 0; k < 600; k++) sim.step(1 / 60);
-  assert.ok(e.st.damaged['33'], 'dead after a while');
+  assert.ok(!e.st.damaged['33'], 'still alive after 10 s');
+  assert.ok(sim.res.issues.some(i => i.kind === 'overvolt'), 'still flagged');
 });
 
 test('Speed: a USB Nano and the MB102 with GNDs NOT joined still converges fast (no solver cliff)', () => {
