@@ -399,7 +399,7 @@
           st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * (peak / cfg.pinMax - 0.8) / 3;
           ctx.issue(p, 'pin', 'danger', 'Too much current from pin ' + pin.n + ': ' + fmtI(peak),
             'A pin of the ' + cfg.name + ' can give about ' + fmtI(cfg.pinSafe) + ' safely (' + fmtI(cfg.pinMax) + ' at most). More current damages the chip. Add a resistor (for an LED, 220 Ω or more).', i);
-          if (st.pinHeat[pin.n] > 1.0) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It had to give ' + fmtI(peak) + ', far more than the ' + fmtI(cfg.pinMax) + ' it can give.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
+          if (st.pinHeat[pin.n] > 1.0) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'It had to give ' + fmtI(peak) + '. A pin gives ' + fmtI(cfg.pinSafe) + ' safely (' + fmtI(cfg.pinMax) + ' at most). Put a resistor in series with what it drives.'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
         } else if (peak > cfg.pinSafe * 1.05) {
           ctx.issue(p, 'pinwarn', 'warn', 'Pin ' + pin.n + ' gives ' + fmtI(peak), 'This is more than the safe ' + fmtI(cfg.pinSafe) + '. Use a bigger resistor.', i);
         }

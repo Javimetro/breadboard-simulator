@@ -452,6 +452,9 @@
       ],
       explain: function (L) {
         var l = L.of('led')[0], r = L.of('resistor').find(function (q) { return l && inSeries(l, q); });
+        // the 10 kΩ lets so little through that the current test above cannot see it: find it by its nets
+        var r10 = l && L.of('resistor').find(function (q) { var ln = [L.net(l, 0), L.net(l, 1)]; return q.props.r === 10000 && (ln.indexOf(L.net(q, 0)) >= 0 || ln.indexOf(L.net(q, 1)) >= 0); });
+        if (l && r10 && !lit(l) && (l._i || 0) > 0.00005) return 'The LED only glows a little: (5 V − 2 V) ÷ 10 000 Ω = 0.3 mA. It needs about 15 mA. Use a smaller resistor.';
         if (l && r && r.props.r === 10000) return 'The LED only glows a little: (5 V − 2 V) ÷ 10 000 Ω = 0.3 mA. It needs about 15 mA. Use a smaller resistor.';
         if (l && l.st.burnt) return 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω.';
         if (l && lit(l) && r && [L.net(l, 0), L.net(r, 0), L.net(r, 1)].indexOf(L.hnet('T+20')) < 0) return 'The LED is on, but from the bottom rails (3.3V). This step wants the top rails (5V).';
@@ -523,6 +526,12 @@
         var l = L.of('led')[0], n = L.of('nano')[0];
         if (!n || n.props.program !== 'blink' || !l || lit(l) || (n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return null;
         // the LED's − side goes somewhere, but not back to the Nano's GND: say that, not "not connected"
+        // the resistor (or the LED) sits on another pin: Blink only switches D13
+        var nDef = BB.PARTS[n.type], wrongPin = null;
+        L.of('resistor').concat([l]).forEach(function (q) {
+          [0, 1].forEach(function (k) { var qn = L.net(q, k); if (qn === null) return; nDef.pins.forEach(function (pin, pk) { if (pin.kind === 'gpio' && pin.n !== 'D13' && L.net(n, pk) === qn) wrongPin = wrongPin || pin.n; }); });
+        });
+        if (wrongPin) return 'Your circuit is on pin ' + wrongPin + ', but Blink switches pin D13. Move it to a hole below D13 (the first pin of the bottom row).';
         var nk = L.net(l, 1);
         if (nk !== null && (!L.alone(l, 1) || /^[TB]-/.test(L.sim.pinPoints(l)[1].at || '')) && anyGndNet(L, n).indexOf(nk) < 0) return 'The LED’s short leg (−) is in a strip or rail that is not joined to the Nano’s GND. Current must flow back to the Nano. Add a wire from a GND pin to that rail.';
         return whyDark(L, l);
@@ -555,7 +564,13 @@
       explain: function (L) {
         var n = L.part('nano'), v = (n.st.lastV || {}).A0 || 0;
         var ldr = L.of('ldr')[0], r = L.of('resistor')[0];
-        if (L.stepIndex >= 1 && ldr && (!r || L.alone(r, 0) || L.alone(r, 1)) && v > 4.9) return 'A0 reads 1023 all the time: with only the LDR, A0 is pulled up to 5 V. Add the 10 kΩ resistor from A0 to GND. Two resistors make a voltage divider.';
+        var o = L.part('oled');
+        if (L.stepIndex === 0 && o.st.mcu && (o.st.vcc || 0) > 2.8 && (o.st.vcc || 0) < 4) return 'The screen is on 3.3 V. Real OLED screens like this also work on 3.3 V, but this step uses 5V: move the VCC wire to the 5V pin.';
+        if (L.stepIndex >= 1 && ldr && r && !dividerOk(L)) {
+          var gn = anyGndNet(L, n), a0 = mcuPinNet(L, n, 'A0'), rn = [L.net(r, 0), L.net(r, 1)];
+          if (rn.indexOf(a0) >= 0 && gn.indexOf(rn[0]) < 0 && gn.indexOf(rn[1]) < 0) return 'The 10 kΩ starts at A0, but its other end does not reach GND. Put it in a GND strip, or in a − rail that is joined to a GND pin.';
+        }
+        if (L.stepIndex >= 1 && ldr && (!r || L.alone(r, 0) || L.alone(r, 1)) && v > (n.st.vcc || 5) - 0.2) return 'A0 reads 1023 all the time: with only the LDR, A0 is pulled all the way up to the supply. Add the 10 kΩ resistor from A0 to GND. Two resistors make a voltage divider.';
         return null;
       },
       hints: ['5V, GND, A0, A4 and A5 are on the Nano’s bottom row. The free holes under them (rows h–j) are joined to them.', 'Use wires from those holes to the screen’s pins: GND, VCC, SCL, SDA.', 'Divider: put the LDR between the 5V column and the A0 column (use a wire or the rails), and 10 kΩ between A0 and GND.'],
@@ -594,7 +609,12 @@
       ],
       explain: function (L) {
         var s = L.of('speaker')[0], n = L.part('nano');
-        if (n.st.damaged && n.st.damaged.D8) return 'Pin D8 is damaged: the speaker is only 8 Ω, so without a resistor the pin gives about 150 mA. A pin gives 20 mA safely. Tap the Nano and press “New board”, then add the 220 Ω resistor.';
+        var m = L.of('mic')[0];
+        if (m && (m.st.vcc || 0) > 4.5 && L.net(m, 0) !== null && L.net(m, 0) !== mcuPinNet(L, n, 'A0')) {
+          var on = null; BB.PARTS[n.type].pins.forEach(function (pin, pk) { if (pin.analog && pin.n !== 'A0' && L.net(n, pk) === L.net(m, 0)) on = on || pin.n; });
+          if (on) return 'AO goes to ' + on + ', but the program listens on A0. Move the wire to a hole below A0.';
+        }
+        if (n.st.damaged && n.st.damaged.D8) return 'Pin D8 is damaged: the speaker is only 8 Ω, so without a resistor the pin gives about 150 mA. A pin gives 20 mA safely (40 mA at most). Tap the Nano and press “New board”, then add the 220 Ω resistor.';
         return null;
       },
       hints: ['Microphone pins: AO, G, +, DO. Run wires from their columns to the Nano’s A0, GND and 5V.', 'Speaker: 1. Put the resistor between a column joined to D8 and a free column. 2. Put the speaker’s red wire in that free column. 3. Put its black wire in the − rail, joined to GND.', 'Then tap the microphone and press 👏 Clap (or move its Sound slider up).'],
@@ -634,6 +654,7 @@
           return top && bot && (e.st.serial || []).some(function (x) { return /^Distance/.test(x); });
         }, ok: 'Pin 33 gets about 3.3 V: under the 3.6 V maximum, and still HIGH. The distance shows in the {{serial monitor}}.' }
       ],
+      explainFirst: true, // its divider texts are more exact than the generic pin warning
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
@@ -641,7 +662,7 @@
         var r22 = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];
         if (r22 && anyGndNet(L, e).indexOf(L.net(r22, 0)) < 0 && anyGndNet(L, e).indexOf(L.net(r22, 1)) < 0 && [L.net(r22, 0), L.net(r22, 1)].some(function (x) { return x === L.hnet('T-2') || x === L.hnet('B-2'); }))
           return 'The 2.2 kΩ goes to a − rail, but that rail is not joined to GND. Add a wire from the ESP32’s GND pin to that rail.';
-        if (v > 3.6) { L.mistake('pin33'); return 'Danger! Pin 33 gets ' + v.toFixed(2) + ' V. The ESP32 takes 3.3 V (3.6 V at most). Use the two resistors as a divider.'; }
+        if (v > 3.6) { return 'Danger! Pin 33 gets ' + v.toFixed(2) + ' V. The ESP32 takes 3.3 V (3.6 V at most). Use the two resistors as a divider.'; }
         if (v > 0.3 && v <= 2.47) return 'Pin 33 gets only ' + v.toFixed(2) + ' V. That is too low to read as HIGH (needs 2.5 V). Check the divider: 1 kΩ on top (from ECHO), 2.2 kΩ at the bottom (to GND).';
         return null;
       },

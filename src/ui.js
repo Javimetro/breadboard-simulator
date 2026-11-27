@@ -1165,12 +1165,17 @@
       var lvl = this.mode === 'level';
       var iss = sim.res.issues.filter(function (i) { return !(lvl && i.kind === 'floating'); }).sort(function (a, b) { return (a.level === 'danger' ? 0 : 1) - (b.level === 'danger' ? 0 : 1); });
       var msg = null;
-      if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
+      var lvd = lvl && this.level && !this.level.done ? this.level.def : null, first = null;
+      if (iss.length && lvd && lvd.explainFirst && lvd.explain && this.level.acted) { try { first = lvd.explain(this.L()); } catch (e) { first = null; } }
+      if (first) msg = { level: iss[0].level, title: 'Why it does not work yet', text: first };
+      else if (iss.length) msg = { level: iss[0].level, title: iss[0].title, text: iss[0].text };
       else if (this.mode === 'level' && this.level && !this.level.done && this.level.def.explain) {
         var t = null; try { t = this.level.def.explain(this.L()); } catch (e) { t = null; }
         // a blinking pin makes the reason come and go every half second: keep it on screen for a while
         var lvk = this.level, nowk = performance.now();
-        if (t) lvk.explainSeen = nowk; else if (lvk.lastExplain && lvk.explainSeen && nowk - lvk.explainSeen < 1500) t = lvk.lastExplain;
+        var running = sim.state.parts.some(function (q) { return PARTS[q.type].mcu && q.props.program && q.props.program !== 'none'; });
+        if (lvk.explainStep !== lvk.step) { lvk.explainStep = lvk.step; lvk.explainSeen = 0; lvk.lastExplain = null; }
+        if (t) lvk.explainSeen = nowk; else if (running && lvk.lastExplain && lvk.explainSeen && nowk - lvk.explainSeen < 1500) t = lvk.lastExplain; // a blinking pin: keep it steady
         if (t && this.level.acted) {
           // wait a little before explaining, so we do not nag while the player is still building
           var lv = this.level;
