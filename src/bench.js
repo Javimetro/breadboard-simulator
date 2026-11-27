@@ -240,9 +240,11 @@
         // move the tag down until it does not cover another tag
         // never smaller than about 12 px on screen: grow the tag when zoomed out
         var ks = Math.max(1, 12 / (10 * self.view.s));
-        var tx = q.x * U + 4, ty = q.y * U - 6, w = (v < 0 ? 30 : 26) * ks;
+        var tx = q.x * U + 4, ty = q.y * U - 6, w = (v < 0 ? 30 : 26) * ks, txt = v.toFixed(2);
+        // the same voltage already tagged close by (two pins of one supply): one tag is enough
+        if (boxes.some(function (bx) { return bx.t === txt && Math.hypot(bx.x - tx, bx.y - ty) < 60 * ks; })) return;
         for (var tries = 0; tries < 6 && boxes.some(function (bx) { return tx < bx.x + bx.w && tx + w > bx.x && ty - 7 * ks < bx.y + 3 * ks && ty + 3 * ks > bx.y - 7 * ks; }); tries++) ty += 11 * ks;
-        boxes.push({ x: tx, y: ty, w: w });
+        boxes.push({ x: tx, y: ty, w: w, t: txt });
         out += '<g transform="translate(' + tx + ' ' + ty + ') scale(' + ks.toFixed(2) + ')"><rect x="0" y="-7" width="' + w + '" height="10" rx="3"/><text x="2.5" y="0.5">' + v.toFixed(2) + 'V</text></g>';
       });
     });
@@ -480,8 +482,16 @@
     if (d.kind === 'pan') {
       this.view.tx = d.v0.tx + dx; this.view.ty = d.v0.ty + dy; this.applyView();
     } else if (d.kind === 'hot') {
-      var p = this.sim.part(d.hit.id);
-      p.props.pos = Math.max(0, Math.min(1, d.pos0 + (dx - dy) / 160));
+      var p = this.sim.part(d.hit.id), hk = d.hit.hot, hc = BB.rotate(hk.x, hk.y, p.rot || 0);
+      // turn with the finger's angle around the knob (270° = full range), so the mark stays under the finger;
+      // very near the centre the angle is shaky: then a plain swipe (right / up = more) works
+      var ax = w.x - (p.x + hc[0]), ay = w.y - (p.y + hc[1]);
+      if (Math.hypot(ax, ay) > 0.8) {
+        var ang = Math.atan2(ax, -ay) * 180 / Math.PI;
+        if (d.angPrev !== undefined) { var da = ang - d.angPrev; if (da > 180) da -= 360; if (da < -180) da += 360; d.turn = (d.turn || 0) + da; }
+        d.angPrev = ang;
+        p.props.pos = Math.max(0, Math.min(1, d.pos0 + (d.turn || 0) / 270));
+      } else { d.angPrev = undefined; p.props.pos = Math.max(0, Math.min(1, d.pos0 + (d.turn || 0) / 270 + (dx - dy) / 160)); }
       this.sim.dirty(); this.app.onInteract('knob', p); this.app.refreshInspector();
     } else if (d.kind === 'end') {
       this.dragEnd(d, w, e);
@@ -634,7 +644,7 @@
       else if (h.kind === 'dial') { var u3 = this.app.snapshot(); var order = ['off', 'V', 'A', 'ohm', 'diode']; p.props.mode = order[(order.indexOf(p.props.mode) + 1) % order.length]; this.app.commit(u3); this.app.onInteract('prop', p); }
       // pressing a button cap or turning a knob is just that: no sheet, no zoom
       // rebuild the panel (the dial / jumper buttons changed). Jumpers and the switch: on phones no sheet, it would cover the MB102
-      var quietHot = (h.kind === 'jumper' || h.kind === 'switch') && window.innerWidth < 1100;
+      var quietHot = (h.kind === 'jumper' || h.kind === 'switch' || h.kind === 'dial') && window.innerWidth < 1100; // the dial too: the sheet would cover it
       if (h.kind !== 'press' && h.kind !== 'knob') { if (this.sel === p.id) this.app.onSelect(p.id, quietHot || !document.body.classList.contains('hassel') && quietHot); else this.select(p.id, quietHot); }
       sim.dirty(); this.render();
       return;

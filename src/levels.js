@@ -111,6 +111,7 @@
     if (na === nk) return null; // the samerow issue explains it
     var va = L.pinV(led, 0), vk = L.pinV(led, 1);
     if (vk - va > 1) return null; // reversed issue explains it
+    var hm = halfMiss(L); if (hm) return hm; // a wire that stops on the wrong side of the gap: say exactly that
     if (L.alone(led, 0)) return 'The long leg (+) is not connected to anything else. Its strip needs a path to + (through a resistor).';
     if (L.alone(led, 1)) return 'The short leg (−) is not connected to anything else. Connect its strip to the − rail.';
     if ((led._i || 0) > 0.0002) return 'The LED is very dim: only ' + fmt.I(led._i) + '. The resistor is too big.';
@@ -129,7 +130,7 @@
         for (var r = 0; r < 5; r++) {
           var h = other[r] + m[2], o = occ[h], op = o && sim.part(o.id);
           if (op && op.type !== 'wire') {
-            msg = 'The wire end in ' + q.at + ' is in the ' + (top ? 'top half (rows a–e)' : 'bottom half (rows f–j)') + ', but the ' + BB.PARTS[op.type].name.toLowerCase().replace(/ \(.*\)$/, '') + ' leg in ' + h + ' is in the ' + (top ? 'bottom half' : 'top half') + '. The two halves of a column are not joined. Move the wire end to a hole in rows ' + (top ? 'f–j' : 'a–e') + ' of column ' + m[2] + '.';
+            msg = 'The wire end in ' + q.at + ' is in the ' + (top ? 'top half (rows a–e)' : 'bottom half (rows f–j)') + ', but the ' + BB.PARTS[op.type].name.replace(/ \(.*\)$/, '').replace(/^([A-Z])(?=[a-z])/, function (c) { return c.toLowerCase(); }) + ' leg in ' + h + ' is in the ' + (top ? 'bottom half' : 'top half') + '. The two halves of a column are not joined. Move the wire end to a hole in rows ' + (top ? 'f–j' : 'a–e') + ' of column ' + m[2] + '.';
             return true;
           }
         }
@@ -509,7 +510,7 @@
         return whyDark(L, l);
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A pin set HIGH gives about 4.7 V on USB with nothing on it, and about 4.4 V while it lights the LED (5 V from a supply). With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
+      done: 'On USB, a HIGH pin gives about 4.7 V. While it lights the LED, it gives about 4.4 V. With 220 Ω (plus about 25 Ω inside the pin) the LED gets about 11 mA, under the 20 mA a pin can give safely. D13 also drives the small “L” LED on the Nano.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'red' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -622,7 +623,7 @@
         var r22 = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];
         if (r22 && anyGndNet(L, e).indexOf(L.net(r22, 0)) < 0 && anyGndNet(L, e).indexOf(L.net(r22, 1)) < 0 && [L.net(r22, 0), L.net(r22, 1)].some(function (x) { return x === L.hnet('T-2') || x === L.hnet('B-2'); }))
           return 'The 2.2 kΩ goes to a − rail, but that rail is not joined to GND. Add a wire from the ESP32’s GND pin to that rail.';
-        if (v > 3.6) return 'Danger! Pin 33 gets ' + v.toFixed(2) + ' V. The ESP32 takes 3.3 V (3.6 V at most). Use the two resistors as a divider.';
+        if (v > 3.6) { L.mistake('pin33'); return 'Danger! Pin 33 gets ' + v.toFixed(2) + ' V. The ESP32 takes 3.3 V (3.6 V at most). Use the two resistors as a divider.'; }
         if (v > 0.3 && v <= 2.47) return 'Pin 33 gets only ' + v.toFixed(2) + ' V. That is too low to read as HIGH (needs 2.5 V). Check the divider: 1 kΩ on top (from ECHO), 2.2 kΩ at the bottom (to GND).';
         return null;
       },

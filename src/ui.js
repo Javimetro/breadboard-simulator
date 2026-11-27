@@ -191,7 +191,7 @@
       if (t === 'wire') this.toast('Wire: tap a hole, then another hole. Or drag from hole to hole.', 'info');
       this.bench.renderUi();
     },
-    setFlow: function (on) { this.bench.showFlow = on; $('#tb [data-act=flow]').classList.toggle('on', on); if (on) this.toast('Moving dots show the current (from + to −). Tags show the voltage at each point.', 'info'); this.bench.renderFlow(); },
+    setFlow: function (on) { this.bench.showFlow = on; $('#tb [data-act=flow]').classList.toggle('on', on); if (on) this.toast('Moving dots show the current (from + to −). Tags show the voltage at each point.', 'info', true); this.bench.renderFlow(); },
     setXray: function (on) { this.bench.xray = on; $('#tb [data-act=xray]').classList.toggle('on', on); this.bench.renderBoard(); if (this.mode === 'level' && this.level && this.level.ready) this.checkLevel(); },
     toggleSound: function () { audio.on = !audio.on; store.data.sound = audio.on; store.save(); if (!audio.on) audio.tones({}); else audio.init(); this.updateTop(); },
 
@@ -252,7 +252,7 @@
     },
 
     // ---------- levels ----------
-    startLevel: function (i) { this.clearToasts(); this.showIntro(LEVELS[i]); },
+    startLevel: function (i) { if (this.level) this.level.cancelDone = true; this.clearToasts(); this.showIntro(LEVELS[i]); }, // an old “done” box must not open over the new intro
     clearToasts: function () { $('#toasts').innerHTML = ''; this._banKey = null; $('#banner').hidden = true; $('#modal').hidden = true; },
     beginLevel: function (def, resume) {
       this.clearToasts();
@@ -321,6 +321,7 @@
         pinV: function (p, k) { var ks = nets.keys[p.id]; if (!ks || !sim.res) return 0; var v = sim.res.keyV[ks[k]]; return v === undefined ? 0 : v; },
         hnet: function (h) { var o = sim.board.byId[h]; return o ? nets.find('H:' + o.strip) : null; },
         connected: function (a, b) { return L.hnet(a) === L.hnet(b); },
+        mistake: function (key) { lv.mistakeKeys = lv.mistakeKeys || {}; if (!lv.mistakeKeys[key] && !lv.done) { lv.mistakeKeys[key] = 1; lv.mistakes++; } }, // counts once per level
         connectedTo: function (p, k, h) { return L.net(p, k) !== null && L.net(p, k) === L.hnet(h); },
         alone: function (p, k) {
           var n = L.net(p, k); if (n === null) return true;
@@ -384,7 +385,7 @@
       // first let the player see the result (the LED lighting up); never open under a finger that is still down
       var showDone = function () {
         if (Object.keys(self.bench.pointers).length) { setTimeout(showDone, 250); return; }
-        if (self.level !== lv) return;
+        if (self.level !== lv || lv.cancelDone) return;
         self.modal('<div class="done"><div class="bigstars">' + [1, 2, 3].map(function (k) { return '<span style="animation-delay:' + (k * 0.18) + 's">' + icon('star', k <= stars ? 'on' : '') + '</span>'; }).join('') + '</div>' +
           '<h2>Level ' + lv.def.n + ' done!</h2><p class="learned">' + rich(lv.def.done) + '</p>' +
           (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned parts and no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +

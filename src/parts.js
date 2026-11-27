@@ -714,7 +714,7 @@
     pins: [{ n: 'red', d: 'Red probe (V Ω mA)' }, { n: 'black', d: 'Black probe (COM)' }],
     size: [15.4, 26.6], leadFrom: [[13.02, 20.16], [13.02, 22.96]], // VΩmA and COM jacks (drawing × 0.7)
     defaults: { mode: 'V' },
-    props: [{ k: 'mode', label: 'Dial', type: 'seg', options: ['off', 'V', 'A', 'ohm', 'diode'], labels: ['OFF', 'DCV', 'DCA', 'Ω', '→|'] }],
+    props: [{ k: 'mode', label: 'Dial', type: 'seg', options: ['off', 'V', 'A', 'ohm', 'diode'], labels: ['OFF', 'DCV', 'DCA', 'Ω', '→| diode'] }],
     stamp: function (p, n) {
       var m = p.props.mode;
       p._e = { m: m };
