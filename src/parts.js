@@ -478,7 +478,7 @@
           'Both legs are in the same strip (or joined by a wire). The current goes around the LED, not through it. Put the legs in two different strips.');
       } else if (vrev > 1.0 && supplied) {
         ctx.issue(p, 'reversed', 'warn', 'The LED is in backwards',
-          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”. (If several LEDs look backwards, check that the battery’s red wire is in the + rail.)' + (vrev > 5 ? ' (LEDs are only rated for 5 V backwards. With a resistor in the loop almost no current flows, so it survives.)' : ''));
+          'The long leg (+) must go toward + and the short leg (−) toward −. Tap the LED and press “Flip”. (If several LEDs look backwards, check that your power is not in backwards: + must go to the red rail.)' + (vrev > 5 ? ' (LEDs are only rated for 5 V backwards. With a resistor in the loop almost no current flows, so it survives.)' : ''));
       } else if (i > 0.001) {
         // LEDs side by side on one resistor: the one with the lower voltage takes most current
         var na = ctx.netOfPin(p, 0), nk = ctx.netOfPin(p, 1);
