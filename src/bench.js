@@ -487,7 +487,7 @@
       // started on the rim → turn with the finger's angle (270° = full range, the mark stays under the finger);
       // started near the centre → a plain swipe (right / up = more)
       var cxw = p.x + hc[0], cyw = p.y + hc[1];
-      if (d.knobMode === undefined) d.knobMode = Math.hypot(d.w0.x - cxw, d.w0.y - cyw) > 0.9 ? 'angle' : 'swipe';
+      if (d.knobMode === undefined) d.knobMode = Math.hypot(d.w0.x - cxw, d.w0.y - cyw) > 0.65 * hk.r ? 'angle' : 'swipe'; // most of the cap swipes; only the outer ring turns by angle
       if (d.knobMode === 'angle') {
         var ax = w.x - cxw, ay = w.y - cyw;
         if (Math.hypot(ax, ay) > 0.4) { // right on the centre the angle means nothing: wait

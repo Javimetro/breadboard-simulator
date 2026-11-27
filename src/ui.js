@@ -380,7 +380,10 @@
       var next = LEVELS[lv.def.n];
       var why = [];
       if (lv.hints) why.push('you used ' + lv.hints + ' hint' + (lv.hints > 1 ? 's' : ''));
-      if (lv.mistakes) why.push('something burned or shorted ' + lv.mistakes + ' time' + (lv.mistakes > 1 ? 's' : ''));
+      var times = function (n) { return n === 1 ? 'once' : n === 2 ? 'twice' : n + ' times'; };
+      var burns = lv.mistakes - (lv.overv || 0);
+      if (burns > 0) why.push('something burned or shorted ' + times(burns));
+      if (lv.overv) why.push('a pin got too much voltage ' + times(lv.overv));
       if (lv.wrong) why.push('you gave ' + lv.wrong + ' wrong answer' + (lv.wrong > 1 ? 's' : ''));
       // first let the player see the result (the LED lighting up); never open under a finger that is still down
       var showDone = function () {
@@ -388,7 +391,7 @@
         if (self.level !== lv || lv.cancelDone) return;
         self.modal('<div class="done"><div class="bigstars">' + [1, 2, 3].map(function (k) { return '<span style="animation-delay:' + (k * 0.18) + 's">' + icon('star', k <= stars ? 'on' : '') + '</span>'; }).join('') + '</div>' +
           '<h2>Level ' + lv.def.n + ' done!</h2><p class="learned">' + rich(lv.def.done) + '</p>' +
-          (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned parts and no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
+          (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned or damaged parts, no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
           '<div class="mbtns">' + (next ? '<button class="primary" data-m="next">Next level</button>' : '<button class="primary" data-m="sand">Open the sandbox</button>') +
           '<button data-m="stay">Stay here</button><button data-m="home">All levels</button></div></div>', function (a) {
           if (a === 'next') self.startLevel(lv.def.n);
@@ -1139,7 +1142,7 @@
         sim.res.issues.forEach(function (is) {
           if (is.kind !== 'overvolt' || is.level !== 'danger') return;
           var key = 'ov:' + is.part + ':' + is.pin; ovNow[key] = 1;
-          if (!lv.issueSeen[key]) { lv.issueSeen[key] = true; lv.mistakes++; }
+          if (!lv.issueSeen[key]) { lv.issueSeen[key] = true; lv.mistakes++; lv.overv = (lv.overv || 0) + 1; }
         });
         Object.keys(lv.issueSeen).forEach(function (k) { if (k.slice(0, 3) === 'ov:' && !ovNow[k]) lv.issueSeen[k] = false; });
         this.checkLevel();

@@ -388,7 +388,7 @@
         if (injAvg > 0.001) st.pinHeat[pin.n] = (st.pinHeat[pin.n] || 0) + ctx.dt * Math.min(20, injAvg / 0.001) / 30;
         ctx.issue(p, 'overvolt', 'danger', lowSide ? 'Pin ' + pin.n + ' is pulled below GND' : 'Pin ' + pin.n + ' gets ' + fmtV(v) + '. That is too much!',
           (lowSide ? 'A pin must stay between GND and ' + cfg.vcc + ' V. Check that + and − are not swapped. ' :
-            'The ' + cfg.name + ' works at ' + cfg.vcc + ' V' + (st.powered ? '' : ' (and now it has no power at all)') + '. ' + fmtI(inj) + ' is pushed into the pin through its {{protection diode}}. More than about 1 mA can break the chip. ') +
+            'The ' + cfg.name + ' works at ' + cfg.vcc + ' V' + (st.powered ? '' : ' (and now it has no power at all)') + '. ' + fmtI(inj) + ' is pushed into the pin through its {{protection diode}}. More than about 1 mA for a long time can slowly damage the chip. ') +
           (cfg.vcc < 4 && !lowSide ? 'Use a voltage divider (two resistors) to bring 5 V down to about 3.3 V.' : ''), i);
         if (st.pinHeat[pin.n] > 1) { st.damaged[pin.n] = true; st.damageWhy[pin.n] = 'About ' + fmtI(inj) + ' was pushed into it (it got ' + fmtV(v) + ').'; st.smoke = ctx.t; ctx.event(p, 'damage', pin.n); ctx.dirty(); }
       }

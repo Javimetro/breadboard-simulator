@@ -499,7 +499,7 @@
             if (d2 && d2.level === 0 && f.on && !lit(l)) f.off = true;
           });
           return f.on && f.off;
-        }, ok: 'It blinks! On USB the pin gives about 4.7 V, and 220 Ω keeps the current near 11 mA.' }
+        }, ok: 'It blinks! The pin gives about 4.4 V, and 220 Ω keeps the current near 11 mA.' }
       ],
       explain: function (L) {
         var l = L.of('led')[0], n = L.of('nano')[0];
@@ -510,7 +510,7 @@
         return whyDark(L, l);
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
-      done: 'A HIGH pin gives about 4.4 V to the LED. With 220 Ω the LED gets about 11 mA: safe, because a pin can give 20 mA.',
+      done: 'A HIGH pin gives about 4.4 V. The LED takes about 2 V, so the 220 Ω resistor gets about 2.4 V: about 11 mA. That is safe, because a pin can give 20 mA.',
       solve: function (A) { var n = A.add('nano', { x: 8, y: 5 }); A.set(n, 'program', 'blink'); A.add('resistor', { props: { r: 220 }, ends: ['h8', 'h3'] }); A.add('led', { props: { color: 'red' }, ends: ['i3', 'B-4'] }); A.wire('h21', 'B-20'); A.wait(1.3); }
     },
     {
@@ -606,7 +606,7 @@
             var mid = a === echo ? b : a;
             return mid !== null && L.of('resistor').some(function (r2) { var c = L.net(r2, 0), d = L.net(r2, 1); return r2.props.r === 2200 && ((c === mid && gnds.indexOf(d) >= 0) || (d === mid && gnds.indexOf(c) >= 0)); });
           });
-        }, ok: 'The middle column now gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V while ECHO is HIGH.' },
+        }, ok: 'The middle column now gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V on paper. The sensor’s own output resistance makes it about 3.3 V while ECHO is HIGH.' },
         { text: 'Connect the middle column to pin 33 with a wire.', check: function (L) {
           var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0, s = L.of('hcsr04')[0];
           if (!s || !(v > 2.5 && v < 3.6) || (e.st.damaged && e.st.damaged['33'])) return false;
@@ -627,7 +627,7 @@
         if (v > 0.3 && v <= 2.47) return 'Pin 33 gets only ' + v.toFixed(2) + ' V. That is too low to read as HIGH (needs 2.5 V). Check the divider: 1 kΩ on top (from ECHO), 2.2 kΩ at the bottom (to GND).';
         return null;
       },
-      hints: ['USB is on the bottom row of pins. It gives 5V while the USB cable is plugged in. GND is on the top row.', 'Divider: ECHO column → 1 kΩ → a free middle column → 2.2 kΩ → − rail (joined to GND). Middle gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V.', 'Then a wire from the middle column to a hole below pin 33 (bottom row).'],
+      hints: ['USB is on the bottom row of pins. It gives 5V while the USB cable is plugged in. GND is on the top row.', 'Divider: ECHO column → 1 kΩ → a free middle column → 2.2 kΩ → − rail (joined to GND). Middle gets 5 × 2.2 ÷ 3.2 ≈ 3.4 V on paper (about 3.3 V in practice).', 'Then a wire from the middle column to a hole below pin 33 (bottom row).'],
       done: '5 V on a 3.3 V pin can break the chip. A 1 kΩ + 2.2 kΩ divider turns 5 V into about 3.3 V. That is under the ESP32’s 3.6 V maximum, and still reads HIGH.',
       solve: function (A) {
         A.add('hcsr04', { x: 24, y: 3 });
