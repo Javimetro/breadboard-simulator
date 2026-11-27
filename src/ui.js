@@ -391,7 +391,7 @@
         if (self.level !== lv || lv.cancelDone) return;
         self.modal('<div class="done"><div class="bigstars">' + [1, 2, 3].map(function (k) { return '<span style="animation-delay:' + (k * 0.18) + 's">' + icon('star', k <= stars ? 'on' : '') + '</span>'; }).join('') + '</div>' +
           '<h2>Level ' + lv.def.n + ' done!</h2><p class="learned">' + rich(lv.def.done) + '</p>' +
-          (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned or damaged parts, no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
+          (stars < 3 ? '<p class="mut small">3 stars: no hints, nothing burned, no pin with too much voltage, no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
           '<div class="mbtns">' + (next ? '<button class="primary" data-m="next">Next level</button>' : '<button class="primary" data-m="sand">Open the sandbox</button>') +
           '<button data-m="stay">Stay here</button><button data-m="home">All levels</button></div></div>', function (a) {
           if (a === 'next') self.startLevel(lv.def.n);
@@ -401,7 +401,7 @@
           if ((a === 'stay' || a === null) && window.innerWidth < 1100 && self.level === lv) { var gg = $('#goal'); self.bench.fitAll(gg.offsetTop + gg.offsetHeight + 8); self.bench.renderUi(); }
         }, 'bottom');
       };
-      setTimeout(showDone, this.doneDelay === undefined ? 1800 : this.doneDelay);
+      setTimeout(showDone, this.doneDelay === undefined ? 2600 : this.doneDelay); // time to see the result (the LED, the screen) first
     },
     renderGoal: function () {
       var lv = this.level, def = lv.def, self = this;

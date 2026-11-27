@@ -3945,6 +3945,15 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     var v = sim.holeVoltage(holeId);
     var occ = sim.occupancy()[holeId], what = '';
     if (occ) { var p = sim.part(occ.id), pin = PARTS[p.type].pins[occ.k]; what = '<br>' + PARTS[p.type].name + (pin && pin.n ? ' · ' + pin.n : ''); }
+    else if (h.kind === 'term') { // a free hole: name the board pin in its strip (the labels are tiny on a phone)
+      var allOcc = sim.occupancy(), self2 = this, names = [];
+      sim.board.holes.forEach(function (o) {
+        var oc = o.strip === h.strip && allOcc[o.id]; if (!oc) return;
+        var op = sim.part(oc.id), od = PARTS[op.type], opin = od.pins && od.pins[oc.k];
+        if (od.mcu && opin && opin.n) names.push(od.name + ' pin ' + opin.n);
+      });
+      if (names.length) what = '<br>Joined to ' + names[0];
+    }
     this.tip.innerHTML = '<b>' + sim.board.label(holeId) + '</b> · ' + st.label + what + '<br>' + (v === null ? '<span class="mut">No power here</span>' : '<b class="vv">' + v.toFixed(2) + ' V</b>');
     var sz = this.size();
     if (docked) {
@@ -4115,10 +4124,28 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     var va = L.pinV(led, 0), vk = L.pinV(led, 1);
     if (vk - va > 1) return null; // reversed issue explains it
     var hm = halfMiss(L); if (hm) return hm; // a wire that stops on the wrong side of the gap: say exactly that
+    // a leg alone in a rail: the rail itself is the problem, not the leg
+    var railOf = function (k) { return pts[k].at && /^[TB][+-]\d+$/.test(pts[k].at) ? pts[k].at : null; };
+    if (L.alone(led, 1) && railOf(1)) return 'The short leg (−) is in a − rail, but nothing joins that rail to − yet. Add a wire from GND (a GND pin, or the battery’s −) to this rail.';
+    if (L.alone(led, 0) && railOf(0)) return 'The long leg (+) is in a + rail, but that rail has no power yet. Join it to + with a wire (or use the rail the battery is in).';
+    var dead = unpoweredPlusRail(L); if (dead) return dead;
     if (L.alone(led, 0)) return 'The long leg (+) is not connected to anything else. Its strip needs a path to + (through a resistor).';
     if (L.alone(led, 1)) return 'The short leg (−) is not connected to anything else. Connect its strip to the − rail.';
     if ((led._i || 0) > 0.0002) return 'The LED is very dim: only ' + fmt.I(led._i) + '. The resistor is too big.';
     return halfMiss(L) || 'No full loop yet. Current must go from + through the resistor and the LED, and back to −.';
+  }
+  // A + rail that is used but has no voltage, while another + rail has power (e.g. the battery feeds only the top rails)
+  function unpoweredPlusRail(L) {
+    var sim = L.sim, occ = sim.occupancy(), live = null, deadH = null;
+    sim.board.holes.forEach(function (h) {
+      if (h.kind !== 'rail' || !/\+/.test(h.row)) return;
+      var v = sim.holeVoltage(h.id);
+      if (v !== null && v > 1) live = live || h;
+      else if (occ[h.id] && !deadH) deadH = h;
+    });
+    if (!live || !deadH) return null;
+    var top = deadH.row.charAt(0) === 'T';
+    return 'The ' + (top ? 'top' : 'bottom') + ' + rail (' + deadH.id + ') has no power: the battery only feeds the ' + (top ? 'bottom' : 'top') + ' rails. Join the two + rails with a wire (like ' + live.row + live.col + ' → ' + deadH.row + live.col + '), or use the ' + (top ? 'bottom' : 'top') + ' + rail.';
   }
   // A wire end alone in its strip, while a part's leg sits in the same column on the other side of the gap:
   // the Level 1 lesson (rows a–e and f–j are not joined), said for this exact hole.
@@ -4413,7 +4440,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (p && l && inSeries(p, l) && L.alone(p, 1)) return 'You use the two outer legs of the knob. Between them it is always the full ' + fmt.R(p.props.r) + ', so the LED stays dim and turning does nothing. Use one outer leg and the middle leg ({{wiper}}, marked W).';
         return whyDark(L, l);
       },
-      hints: ['Path: + rail → knob leg 1 → knob middle leg ({{wiper}}, W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the + rail to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
+      hints: ['Path: + rail → knob leg 1 → knob middle leg ({{wiper}}, W) → resistor in column 14 → LED → − rail.', 'Put the knob in the board. Add a wire from the top + rail (the one the battery feeds) to its leg 1.', 'Add a wire from the knob’s middle leg (W) to column 14 (a free hole like c14). Then drag the knob’s white mark.'],
       done: 'The knob changes the resistance, so the current and the brightness change. The fixed 470 Ω keeps the LED safe (about 15 mA) when the knob is at 0 Ω.',
       solve: function (A) { var p = A.add('pot', { x: 8, y: 10 }); A.wire('T+2', 'B+2'); A.wire('B+8', 'j8'); A.wire('j10', 'e14'); /* no wire end under the knob */ A.set(p, 'pos', 0); A.wait(0.3); A.set(p, 'pos', 1); A.wait(0.3); }
     },
@@ -4509,7 +4536,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (!n || n.props.program !== 'blink' || !l || lit(l) || (n.st.io && n.st.io.D13 && n.st.io.D13.level === 0)) return null;
         // the LED's − side goes somewhere, but not back to the Nano's GND: say that, not "not connected"
         var nk = L.net(l, 1);
-        if (nk !== null && !L.alone(l, 1) && anyGndNet(L, n).indexOf(nk) < 0) return 'The LED’s short leg (−) is in a strip or rail that is not joined to the Nano’s GND. Current must flow back to the Nano. Add a wire from a GND pin to that rail.';
+        if (nk !== null && (!L.alone(l, 1) || /^[TB]-/.test(L.sim.pinPoints(l)[1].at || '')) && anyGndNet(L, n).indexOf(nk) < 0) return 'The LED’s short leg (−) is in a strip or rail that is not joined to the Nano’s GND. Current must flow back to the Nano. Add a wire from a GND pin to that rail.';
         return whyDark(L, l);
       },
       hints: ['D13 is the first pin of the bottom row, next to the USB plug. The free holes below it, in the same column, are joined to it.', 'Put the resistor from a hole below D13 to a free column on the left (like column 3). Put the LED long leg in that column.', 'Connect GND: a wire from a hole below the bottom GND pin to the blue − rail. Put the LED short leg in that rail.'],
@@ -5039,7 +5066,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (self.level !== lv || lv.cancelDone) return;
         self.modal('<div class="done"><div class="bigstars">' + [1, 2, 3].map(function (k) { return '<span style="animation-delay:' + (k * 0.18) + 's">' + icon('star', k <= stars ? 'on' : '') + '</span>'; }).join('') + '</div>' +
           '<h2>Level ' + lv.def.n + ' done!</h2><p class="learned">' + rich(lv.def.done) + '</p>' +
-          (stars < 3 ? '<p class="mut small">3 stars: no hints, no burned or damaged parts, no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
+          (stars < 3 ? '<p class="mut small">3 stars: no hints, nothing burned, no pin with too much voltage, no wrong answers. This time ' + why.join(' and ') + '.</p>' : '') +
           '<div class="mbtns">' + (next ? '<button class="primary" data-m="next">Next level</button>' : '<button class="primary" data-m="sand">Open the sandbox</button>') +
           '<button data-m="stay">Stay here</button><button data-m="home">All levels</button></div></div>', function (a) {
           if (a === 'next') self.startLevel(lv.def.n);
@@ -5049,7 +5076,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
           if ((a === 'stay' || a === null) && window.innerWidth < 1100 && self.level === lv) { var gg = $('#goal'); self.bench.fitAll(gg.offsetTop + gg.offsetHeight + 8); self.bench.renderUi(); }
         }, 'bottom');
       };
-      setTimeout(showDone, this.doneDelay === undefined ? 1800 : this.doneDelay);
+      setTimeout(showDone, this.doneDelay === undefined ? 2600 : this.doneDelay); // time to see the result (the LED, the screen) first
     },
     renderGoal: function () {
       var lv = this.level, def = lv.def, self = this;

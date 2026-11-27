@@ -691,6 +691,15 @@
     var v = sim.holeVoltage(holeId);
     var occ = sim.occupancy()[holeId], what = '';
     if (occ) { var p = sim.part(occ.id), pin = PARTS[p.type].pins[occ.k]; what = '<br>' + PARTS[p.type].name + (pin && pin.n ? ' · ' + pin.n : ''); }
+    else if (h.kind === 'term') { // a free hole: name the board pin in its strip (the labels are tiny on a phone)
+      var allOcc = sim.occupancy(), self2 = this, names = [];
+      sim.board.holes.forEach(function (o) {
+        var oc = o.strip === h.strip && allOcc[o.id]; if (!oc) return;
+        var op = sim.part(oc.id), od = PARTS[op.type], opin = od.pins && od.pins[oc.k];
+        if (od.mcu && opin && opin.n) names.push(od.name + ' pin ' + opin.n);
+      });
+      if (names.length) what = '<br>Joined to ' + names[0];
+    }
     this.tip.innerHTML = '<b>' + sim.board.label(holeId) + '</b> · ' + st.label + what + '<br>' + (v === null ? '<span class="mut">No power here</span>' : '<b class="vv">' + v.toFixed(2) + ' V</b>');
     var sz = this.size();
     if (docked) {
