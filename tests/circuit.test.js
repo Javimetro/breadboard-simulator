@@ -316,11 +316,14 @@ test('USB current limit: Nano 5V pin into 5.5 Ω is held at 0.5 A (not 5/5.7 = 0
   assert.ok(n.st.usbTripped || sim.res.issues.some(i => i.kind === 'short'), 'USB port trips');
 });
 
-test('Nano 3V3 pin straight into a red LED: held at the 50 mA limit (not 117 mA)', () => {
+// The 3.3 V source gives 50 mA at most; the board's own 330 Ω rail load takes Vf/330 of it.
+// By hand (red LED: junction 1.8 V at 20 mA, n·Vt = 51.7 mV, 10 Ω inside), substitute twice:
+// I = 50 mA − Vf/330, Vf = 1.8 + 0.0517·ln(I/20 mA) + 10·I → Vf ≈ 2.271 V, I ≈ 43.1 mA.
+test('Nano 3V3 pin straight into a red LED: held at the 50 mA limit (43 mA after the rail load, not 117 mA)', () => {
   const sim = bench([['nano', { x: 8, y: 5 }], ['led', { ends: ['h9', 'h12'] }]]); // 3V3 = bottom index 1 (column 9); LED − to column 12, joined to GND below
   sim.state.parts.push(BB.newPart('wire', { ends: ['i12', 'i21'] })); sim.dirty();
   for (let k = 0; k < 10; k++) sim.step(1 / 60);
-  near(byType(sim, 'led')[0]._i, 0.05, 'LED current', 0.02);
+  near(byType(sim, 'led')[0]._i, 0.0431, 'LED current', 0.02);
 });
 
 test('A USB port cannot take current back: 9 V on the 5V pin of a USB-powered Nano kills it', () => {
@@ -457,4 +460,14 @@ test('Speed: a USB Nano and the MB102 with GNDs NOT joined still converges fast 
   const ms = (Date.now() - t0) / 50;
   assert.ok(sim.res.converged, 'converged');
   assert.ok(ms < 6, `${ms.toFixed(2)} ms per step`);
+});
+
+// D13 HIGH (4.7 V on USB, 25 Ω inside) through 220 Ω into the Nano's own 3V3 pin: the rail load (330 Ω, 10 mA)
+// takes the (4.7 − 3.3) / 245 = 5.7 mA, so the rail stays at 3.3 V and nothing breaks.
+test('Nano D13 → 220 Ω → its own 3V3 pin: the rail stays near 3.3 V, the board lives', () => {
+  const sim = bench([['nano', { x: 8, y: 5, props: { program: 'blink' } }], ['resistor', { props: { r: 220 }, ends: ['j8', 'j9'] }]]);
+  for (let k = 0; k < 180; k++) sim.step(1 / 60);
+  const n = byType(sim, 'nano')[0];
+  assert.ok(!n.st.dead, 'Nano alive');
+  assert.ok(!sim.res.issues.some(i => i.part === n.id && i.kind === 'overvolt'), 'no over-voltage on 3V3');
 });

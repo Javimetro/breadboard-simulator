@@ -160,7 +160,7 @@
         var sz = self.bench.size();
         if (b.dataset.z === 'in') self.bench.zoomAt(sz.left + sz.w / 2, sz.top + sz.h / 2, 1.35);
         if (b.dataset.z === 'out') self.bench.zoomAt(sz.left + sz.w / 2, sz.top + sz.h / 2, 1 / 1.35);
-        if (b.dataset.z === 'fit') self.bench.fitAll(); // the whole board and every part
+        if (b.dataset.z === 'fit') { var gf = $('#goal'); self.bench.fitAll(window.innerWidth < 1100 && self.mode === 'level' && gf.offsetParent ? gf.offsetTop + gf.offsetHeight + 8 : 0); } // the whole board and every part (phones: below the task card)
         self.bench.renderUi();
       });
       $('#topbar').addEventListener('click', function (e) {
@@ -351,6 +351,7 @@
     stepDone: function (msg) {
       var lv = this.level;
       $('#toasts').innerHTML = ''; // the last step's message is old news
+      document.body.classList.remove('pulseparts'); // the player found the parts (or this step needs none)
       lv.step++;
       var stp = document.querySelector('#inspector .steptask'); // keep the sheet's step text in step with the goal card
       if (stp) { var nh = this.stepTaskHtml(); if (nh) stp.outerHTML = nh; else stp.remove(); }
@@ -1041,7 +1042,10 @@
       if (ser) { var t = (p.st.serial || []).join('\n') || (p.st.powered ? '' : '(no power)'); if (ser.textContent !== t) ser.textContent = t; }
       // the mic's label follows what it hears (a clap is loud even with the slider on quiet)
       var so = p.type === 'mic' && document.querySelector('#inspector [data-out=sound]');
-      if (so) { var sd = (def.props[0].fmt)(Math.max(p.props.sound || 0, p.st.level || 0)); if (so.textContent !== sd) so.textContent = sd; }
+      if (so) {
+        var lvS = Math.max(p.props.sound || 0, p.st.level || 0), sd = (def.props[0].fmt)(lvS); if (so.textContent !== sd) so.textContent = sd;
+        var sIn = document.querySelector('#inspector input[data-k=sound]'); if (sIn && document.activeElement !== sIn && +sIn.value !== lvS) sIn.value = lvS; // the thumb shows the clap too (the setting is unchanged)
+      }
       var pos = document.querySelector('#inspector input[data-k=pos]');
       if (pos && document.activeElement !== pos && +pos.value !== p.props.pos) { pos.value = p.props.pos; var o = document.querySelector('#inspector [data-out=pos]'); if (o) o.textContent = Math.round(p.props.pos * 100) + ' %'; }
     },

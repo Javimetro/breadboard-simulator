@@ -114,7 +114,29 @@
     if (L.alone(led, 0)) return 'The long leg (+) is not connected to anything else. Its strip needs a path to + (through a resistor).';
     if (L.alone(led, 1)) return 'The short leg (−) is not connected to anything else. Connect its strip to the − rail.';
     if ((led._i || 0) > 0.0002) return 'The LED is very dim: only ' + fmt.I(led._i) + '. The resistor is too big.';
-    return 'No full loop yet. Current must go from + through the resistor and the LED, and back to −.';
+    return halfMiss(L) || 'No full loop yet. Current must go from + through the resistor and the LED, and back to −.';
+  }
+  // A wire end alone in its strip, while a part's leg sits in the same column on the other side of the gap:
+  // the Level 1 lesson (rows a–e and f–j are not joined), said for this exact hole.
+  function halfMiss(L) {
+    var sim = L.sim, occ = sim.occupancy(), msg = null;
+    L.of('wire').some(function (w) {
+      return sim.pinPoints(w).some(function (q, k) {
+        var m = q.at && /^([a-j])(\d+)$/.exec(q.at); if (!m) return false;
+        var top = 'abcde'.indexOf(m[1]) >= 0, mine = top ? 'abcde' : 'fghij', other = top ? 'fghij' : 'abcde';
+        // nothing else in this wire end's own strip (a wire joins nets, so look at the holes, not the net)
+        for (var r0 = 0; r0 < 5; r0++) { var o0 = occ[mine[r0] + m[2]]; if (o0 && !(o0.id === w.id && o0.k === k)) return false; }
+        for (var r = 0; r < 5; r++) {
+          var h = other[r] + m[2], o = occ[h], op = o && sim.part(o.id);
+          if (op && op.type !== 'wire') {
+            msg = 'The wire end in ' + q.at + ' is in the ' + (top ? 'top half (rows a–e)' : 'bottom half (rows f–j)') + ', but the ' + BB.PARTS[op.type].name.toLowerCase().replace(/ \(.*\)$/, '') + ' leg in ' + h + ' is in the ' + (top ? 'bottom half' : 'top half') + '. The two halves of a column are not joined. Move the wire end to a hole in rows ' + (top ? 'f–j' : 'a–e') + ' of column ' + m[2] + '.';
+            return true;
+          }
+        }
+        return false;
+      });
+    });
+    return msg;
   }
 
   // ---------- small animated intro pictures (viewBox 0 0 320 180) ----------
@@ -371,8 +393,9 @@
           if (!p || !l || l.st.burnt) return false;
           // count only the two ends of the knob, while it really is in the LED's path: both ways, as the step says
           if (inSeries(p, l)) {
-            if (p.props.pos <= 0.08) f.iLo = l._i || 0;
-            if (p.props.pos >= 0.92) f.iHi = l._i || 0;
+            // keep the reading taken nearest each end (not the last one on the way out of the end zone)
+            if (p.props.pos <= 0.08 && (f.pLo === undefined || p.props.pos <= f.pLo)) { f.pLo = p.props.pos; f.iLo = l._i || 0; }
+            if (p.props.pos >= 0.92 && (f.pHi === undefined || p.props.pos >= f.pHi)) { f.pHi = p.props.pos; f.iHi = l._i || 0; }
           }
           return f.iLo !== undefined && f.iHi !== undefined && Math.max(f.iLo, f.iHi) > 0.012 && Math.min(f.iLo, f.iHi) < 0.002;
         }, ok: 'Bright and dim: the knob controls the current.' }

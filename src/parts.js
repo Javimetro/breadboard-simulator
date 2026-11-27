@@ -210,6 +210,9 @@
         else n.R('p' + i, g, via === '5V' ? (def.mcu === 'pi5' ? 4.2 : LOAD[def.mcu]) : 1e6); // Pi 5 needs over 1 A to boot
       } else if (pin.kind === 'v33') {
         if (i !== first.v33) return;
+        // the 3.3 V rail always feeds something on the board (the USB chip on a Nano, the chip itself elsewhere):
+        // a little current pushed in from outside just goes there, it does not lift the rail
+        n.R(n.pin(i), g, def.mcu === 'nano' ? 330 : 100);
         if (st.powered && via !== '3V') e.srcs.push(Object.assign(limSrc(n, st, 'v33', g, n.pin(i), 3.3, def.mcu === 'nano' ? 2 : 0.3, cfg.v33Max), { label: pin.n, what: 'v33', idx: i }));
         else n.R('p' + i, g, via === '3V' ? 41 : 1e6);
       } else if (pin.kind === 'vin') {
@@ -467,8 +470,7 @@
           'An LED can take about 20 mA. With no resistor (or one that is too small, or one with both legs in the same strip) the current gets far too big. ' +
           'Put a resistor in the loop, then tap the LED and press “New LED” (Undo moves parts back, but it cannot un-burn an LED).');
       } else if (i > 0.0305) {
-        var left = i > 0.04 ? Math.max(1, Math.ceil((1 - (p.st.heat || 0)) / ((i / 0.04) / 6))) : 0; // seconds until heat() burns it
-        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. ' + (left ? 'It is getting hot and will burn out in about ' + left + ' s. ' : 'At this current it gets hot and wears out fast. ') + 'Use a bigger resistor.');
+        ctx.issue(p, 'overI', 'danger', 'Too much current: ' + fmtI(i), 'An LED takes 20 mA at most. ' + (i > 0.04 ? 'It is getting hot and will burn out within seconds. ' : 'At this current it gets hot and wears out fast. ') + 'Use a bigger resistor.');
       } else if (i > 0.0205) {
         ctx.issue(p, 'overI', 'warn', 'A bit too much current: ' + fmtI(i), 'An LED takes 20 mA at most (10–15 mA is best). Above that it gets hot and wears out fast. Use a slightly bigger resistor.');
       } else if (sameNet && ctx.nodeSupplied(p, 0)) {
