@@ -506,6 +506,10 @@
     } else if (d.kind === 'wire') {
       var tol = Math.max(0.9, this.tolPx(e) / this.view.s / U);
       d.cur = w; d.snap = this.nearestPoint(w, tol);
+      // aimed at a hole hidden under a part (or one with a leg in it): no quiet jump to a neighbour hole
+      var nh = this.sim.board.nearest(w.x, w.y, 0.5), cv = nh && this.sim.covered()[nh.id], oc = nh && !cv && this.sim.occupancy()[nh.id];
+      d.blocked = cv ? { by: cv } : oc ? { full: true } : null;
+      if (d.blocked) d.snap = null;
       this.renderUi();
       this.showLoupe(e.clientX, e.clientY, d.snap ? this.pointPos(d.snap) : w);
     }
@@ -600,6 +604,7 @@
     if (!d.moved) { this.releasePress(); this.tap(d, e); this.renderUi(); return; }
     if (d.kind === 'wire') {
       if (d.snap && d.snap !== d.hit.start) this.app.addWire(d.hit.start, d.snap);
+      else if (d.blocked) this.app.toast(d.blocked.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[this.sim.part(d.blocked.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
       this.renderUi(); return;
     }
     if (d.kind === 'body' || d.kind === 'end') {

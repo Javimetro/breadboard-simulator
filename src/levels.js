@@ -141,6 +141,11 @@
       if (g < 0 || v < 0) continue;
       var started = pins.some(function (x, k) { return !L.alone(q, k); });
       if (!started) continue;
+      var p5n = (def.pins.filter(function (x) { return x.kind === 'v5'; })[0] || {}).n || '5V';
+      var onSig = function (mk) { var hit = null; def.pins.forEach(function (x, xk) { if (x.kind === 'gpio' && L.net(n, xk) !== null && L.net(n, xk) === L.net(q, mk)) hit = hit || x.n; }); return hit; };
+      var vSig = onSig(v), gSig = onSig(g);
+      if (vSig) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin is on pin ' + vSig + ', a signal pin. ' + pins[v].n + ' must go to the ' + p5n + ' pin (power).';
+      if (gSig) return 'The ' + short(q) + '’s ' + pins[g].n + ' pin is on pin ' + gSig + ', a signal pin. ' + pins[g].n + ' must go to a GND pin.';
       if (L.alone(q, v)) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin has no power. Wire it to the 5V pin (or to a + rail that is joined to 5V).';
       if (gnds.indexOf(L.net(q, g)) < 0) return 'The ' + short(q) + '’s ' + pins[g].n + ' pin is not joined to GND. Wire it to a GND pin (or to a − rail that is joined to GND).';
       var v33 = def.pins.findIndex(function (x) { return x.kind === 'v33'; });
@@ -167,6 +172,8 @@
     var sim = L.sim, occ = sim.occupancy(), out = null;
     sim.board.holes.some(function (h) {
       if (h.kind !== 'rail' || !/\+/.test(h.row) || !occ[h.id]) return false;
+      var oq = sim.part(occ[h.id].id), opin = oq && BB.PARTS[oq.type].pins && BB.PARTS[oq.type].pins[occ[h.id].k];
+      if (opin && /^(GND|G|−|-)$/.test(opin.n)) { out = 'The ' + (oq.type === 'led' ? 'LED’s short leg (−)' : oq.type === 'speaker' ? 'speaker’s black wire' : BB.PARTS[oq.type].name.replace(/ \(.*\)$/, '') + '’s ' + opin.n + ' pin') + ' is in a red + rail (' + h.id + '). It must go toward −: use a blue − rail that is joined to GND.'; return true; }
       var net = L.hnet(h.id), mcus = sim.state.parts.filter(function (q) { return BB.PARTS[q.type].mcu; });
       if (mcus.some(function (q) { return anyGndNet(L, q).indexOf(net) >= 0; })) return false; // a red rail used as GND: odd, but it works, so no "why it does not work"
       var v = sim.holeVoltage(h.id);
@@ -763,6 +770,7 @@
         var hc = L.of('hcsr04')[0];
         var r22e = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];
         if (hc && r22e && L.net(hc, 2) !== null && [L.net(r22e, 0), L.net(r22e, 1)].indexOf(L.net(hc, 2)) >= 0) return 'The 2.2 kΩ is on ECHO. Swap the two resistors: the 1 kΩ goes on ECHO (top), and the 2.2 kΩ goes from the middle to GND (bottom).';
+        if (hc && L.net(hc, 1) !== null && L.net(hc, 1) === mcuPinNet(L, e, '33')) return 'TRIG is on pin 33, but the program sends the pulse on pin 21. Move the TRIG wire to a hole below pin 21. Pin 33 is for ECHO (through the divider).';
         if (hc && L.net(hc, 2) !== null && L.net(hc, 2) === mcuPinNet(L, e, '21')) return 'Pin 21 is on ECHO. The program sends the pulse on pin 21, so it must go to TRIG (the pin next to ECHO). ECHO goes to the divider, then to pin 33.';
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
         // the 2.2 kΩ goes to a − rail that is not joined to GND: the divider has no bottom

@@ -191,7 +191,7 @@
       if (t === 'wire') this.toast('Wire: tap a hole, then another hole. Or drag from hole to hole.', 'info');
       this.bench.renderUi();
     },
-    setFlow: function (on) { this.bench.showFlow = on; $('#tb [data-act=flow]').classList.toggle('on', on); if (on) this.toast('Moving dots show the current (from + to −). Tags show the voltage at each point.', 'info', true); this.bench.renderFlow(); },
+    setFlow: function (on) { $('#banner').classList.remove('open'); /* the toast would cover an open “why” panel */ this.bench.showFlow = on; $('#tb [data-act=flow]').classList.toggle('on', on); if (on) this.toast('Moving dots show the current (from + to −). Tags show the voltage at each point.', 'info', true); this.bench.renderFlow(); },
     setXray: function (on) { this.bench.xray = on; $('#tb [data-act=xray]').classList.toggle('on', on); this.bench.renderBoard(); if (this.mode === 'level' && this.level && this.level.ready) this.checkLevel(); },
     toggleSound: function () { audio.on = !audio.on; store.data.sound = audio.on; store.save(); if (!audio.on) audio.tones({}); else audio.init(); this.updateTop(); },
 
