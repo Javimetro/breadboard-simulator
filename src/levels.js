@@ -151,8 +151,8 @@
     for (var j = 0; j < roles.length; j++) {
       var pn = rolePins[j], k = def.pins.findIndex(function (x) { return x.n === pn; }), role = prog.roles[roles[j]];
       if (k < 0) continue;
-      if (role.analog) { // DO (digital out) where the program needs an analog value
-        var doMod = mods.filter(function (q) { var dk = BB.PARTS[q.type].pins.findIndex(function (x) { return x.n === 'DO'; }); return dk >= 0 && L.net(q, dk) === L.net(n, k); })[0];
+      if (role.analog) { // DO (digital out) wired to a board pin, when the program needs an analog value
+        var doMod = mods.filter(function (q) { var dk = BB.PARTS[q.type].pins.findIndex(function (x) { return x.n === 'DO'; }); return dk >= 0 && !L.alone(q, dk) && def.pins.some(function (x, xk) { return x.kind === 'gpio' && L.net(n, xk) === L.net(q, dk); }); })[0];
         if (doMod) return 'You used the ' + short(doMod) + '’s DO pin (digital out: only on/off). The program needs AO (analog out, a voltage that follows the sound). Move the wire from DO to AO.';
       }
       if (!L.alone(n, k)) continue;
@@ -167,8 +167,11 @@
     var sim = L.sim, occ = sim.occupancy(), out = null;
     sim.board.holes.some(function (h) {
       if (h.kind !== 'rail' || !/\+/.test(h.row) || !occ[h.id]) return false;
+      var net = L.hnet(h.id), mcus = sim.state.parts.filter(function (q) { return BB.PARTS[q.type].mcu; });
+      if (mcus.some(function (q) { return anyGndNet(L, q).indexOf(net) >= 0; })) return false; // a red rail used as GND: odd, but it works, so no "why it does not work"
       var v = sim.holeVoltage(h.id);
-      if (v === null || v < 1) { out = 'The + rail at ' + h.id + ' has no power yet. Add a wire from the 5V pin to that rail.'; return true; }
+      var pin5 = mcus.length ? (BB.PARTS[mcus[0].type].pins.filter(function (x) { return x.kind === 'v5'; })[0] || {}).n || '5V' : '5V';
+      if (v === null || v < 1) { out = 'The + rail at ' + h.id + ' has no power yet. Add a wire from the ' + pin5 + ' pin' + (pin5 === '5V' ? '' : ' (5 V)') + ' to that rail.'; return true; }
       return false;
     });
     return out;
@@ -190,7 +193,7 @@
   // the Level 1 lesson (rows a–e and f–j are not joined), said for this exact hole.
   function halfMiss(L) {
     var sim = L.sim, occ = sim.occupancy(), msg = null;
-    L.of('wire').concat(L.of('resistor')).some(function (w) {
+    L.of('wire').concat(L.of('resistor'), L.of('ldr'), L.of('speaker')).some(function (w) {
       return sim.pinPoints(w).some(function (q, k) {
         var m = q.at && /^([a-j])(\d+)$/.exec(q.at); if (!m) return false;
         var top = 'abcde'.indexOf(m[1]) >= 0, mine = top ? 'abcde' : 'fghij', other = top ? 'fghij' : 'abcde';
@@ -199,7 +202,7 @@
         for (var r = 0; r < 5; r++) {
           var h = other[r] + m[2], o = occ[h], op = o && sim.part(o.id);
           if (op && op.type !== 'wire') {
-            msg = 'The ' + (w.type === 'wire' ? 'wire end' : 'resistor leg') + ' in ' + q.at + ' is in the ' + (top ? 'top half (rows a–e)' : 'bottom half (rows f–j)') + ', but the ' + BB.PARTS[op.type].name.replace(/ \(.*\)$/, '').replace(/^([A-Z])(?=[a-z])/, function (c) { return c.toLowerCase(); }) + ' leg in ' + h + ' is in the ' + (top ? 'bottom half' : 'top half') + '. The two halves of a column are not joined. Move the ' + (w.type === 'wire' ? 'wire end' : 'resistor leg') + ' to a hole in rows ' + (top ? 'f–j' : 'a–e') + ' of column ' + m[2] + '.';
+            msg = 'The ' + ({ wire: 'wire end', resistor: 'resistor leg', ldr: 'LDR leg', speaker: 'speaker wire' }[w.type]) + ' in ' + q.at + ' is in the ' + (top ? 'top half (rows a–e)' : 'bottom half (rows f–j)') + ', but the ' + BB.PARTS[op.type].name.replace(/ \(.*\)$/, '').replace(/^([A-Z])(?=[a-z])/, function (c) { return c.toLowerCase(); }) + ' leg in ' + h + ' is in the ' + (top ? 'bottom half' : 'top half') + '. The two halves of a column are not joined. Move the ' + ({ wire: 'wire end', resistor: 'resistor leg', ldr: 'LDR leg', speaker: 'speaker wire' }[w.type]) + ' to a hole in rows ' + (top ? 'f–j' : 'a–e') + ' of column ' + m[2] + '.';
             return true;
           }
         }
@@ -294,7 +297,7 @@
     var s = '<rect x="20" y="40" width="280" height="100" rx="8" class="iboard"/><rect x="20" y="86" width="280" height="8" class="ichan"/>';
     s += '<rect x="60" y="56" width="170" height="68" rx="4" fill="#0e5aa7"/><rect x="48" y="78" width="16" height="24" fill="#c9ccd1"/>';
     for (var i = 0; i < 15; i++) { s += '<circle cx="' + (70 + i * 11) + '" cy="62" r="2.6" fill="#d4a530"/><circle cx="' + (70 + i * 11) + '" cy="118" r="2.6" fill="#d4a530"/>'; }
-    s += '<text x="180" y="76" class="itxt w s">D2</text><path d="M180 62 Q240 20 270 60" class="iwire"/><circle cx="272" cy="70" r="16" class="iledglow blink"/><circle cx="272" cy="70" r="9" class="iled blink"/>';
+    s += '<text x="180" y="76" class="itxt w s">D13</text><path d="M180 62 Q240 20 270 60" class="iwire"/><circle cx="272" cy="70" r="16" class="iledglow blink"/><circle cx="272" cy="70" r="9" class="iled blink"/>';
     s += '<text x="160" y="165" class="itxt" text-anchor="middle">Across the gap, every pin gets its own strip.</text>';
     return s;
   };
@@ -458,7 +461,8 @@
         { text: 'Add the knob so the current goes: + rail → knob → resistor (column 14) → LED.', check: function (L) {
           // in the loop through the middle leg (wiper), at any knob position: even dim counts, turning it is step 2
           var p = L.of('pot')[0], l = L.of('led')[0];
-          return p && l && !l.st.burnt && inSeries(p, l) && !L.alone(p, 1) && (l._i || 0) > 0.0003;
+          var skips = p && l && [L.net(p, 0), L.net(p, 1), L.net(p, 2)].indexOf(L.net(l, 0)) >= 0; // the knob goes straight to the LED: the 470 Ω is not in the path
+          return p && l && !l.st.burnt && !skips && inSeries(p, l) && !L.alone(p, 1) && (l._i || 0) > 0.0003;
         }, ok: 'The knob is in the loop. The LED is dim or bright depending on where the knob is.' },
         { text: 'Turn the knob all the way one way, then the other. Watch the LED.', check: function (L) {
           var p = L.of('pot')[0], l = L.of('led')[0], f = L.flags;
@@ -480,6 +484,7 @@
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
         if (!p) return 'The loop is open where the knob should be. Add the knob (Parts), then join + rail → knob → column 14.';
+        if (p && l && !l.st.burnt && [L.net(p, 0), L.net(p, 1), L.net(p, 2)].indexOf(L.net(l, 0)) >= 0) return 'The knob goes straight to the LED’s column, so the current skips the 470 Ω. At 0 Ω on the knob nothing would limit the current and the LED would burn. Wire the knob’s middle leg to column 14 (the 470 Ω), not to the LED.';
         if (p && l && inSeries(p, l) && !L.alone(p, 1) && !lit(l) && (l._i || 0) > 0.0003) return 'Good wiring! The LED is dim because the knob is set to a high resistance. Turn the knob to make it brighter.';
         if (p && lit(l) && !inSeries(p, l)) return 'The LED lights, but not through the knob. The current must go through the knob’s middle leg.';
         // the knob is in the loop, but through its two outer legs: always the full 10 kΩ, so the LED is dim and never changes
@@ -508,7 +513,7 @@
           });
         }, ok: '(5 − 2) V ÷ 220 Ω ≈ 14 mA. Just right!' }
       ],
-      explainFirst: function (L) { var l = L.of('led')[0]; return l && l.st.burnt ? 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω, then tap the LED and press “New LED”.' : null; },
+      explainFirst: function (L) { var l = L.of('led')[0]; if (l && l.st.burnt && !L.of('resistor').some(function (r) { var ln = [L.net(l, 0), L.net(l, 1)]; return ln.indexOf(L.net(r, 0)) >= 0 || ln.indexOf(L.net(r, 1)) >= 0; })) return 'There was no resistor in the LED’s loop: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through it (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Put a 220 Ω in the loop, then tap the LED and press “New LED”.'; return l && l.st.burnt ? 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω, then tap the LED and press “New LED”.' : null; },
       explain: function (L) {
         var mbp = L.part('mb');
         if (mbp && mbp.props.top === '3.3' && mbp.props.bottom === '5') return 'The jumpers are swapped: the top rails get 3.3V and the bottom rails 5V. This level wants 5V on top. Tap each yellow jumper to change it.';
@@ -518,6 +523,7 @@
         var r10 = l && L.of('resistor').find(function (q) { var ln = [L.net(l, 0), L.net(l, 1)]; return q.props.r === 10000 && (ln.indexOf(L.net(q, 0)) >= 0 || ln.indexOf(L.net(q, 1)) >= 0); });
         if (l && r10 && !lit(l) && (l._i || 0) > 0.00005) return 'The LED only glows a little: (5 V − 2 V) ÷ 10 000 Ω = 0.3 mA. It needs about 15 mA. Use a smaller resistor.';
         if (l && r && r.props.r === 10000) return 'The LED only glows a little: (5 V − 2 V) ÷ 10 000 Ω = 0.3 mA. It needs about 15 mA. Use a smaller resistor.';
+        if (l && l.st.burnt && !L.of('resistor').some(function (q) { var ln = [L.net(l, 0), L.net(l, 1)]; return ln.indexOf(L.net(q, 0)) >= 0 || ln.indexOf(L.net(q, 1)) >= 0; })) return 'There was no resistor in the LED’s loop: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through it (it can take 20 mA). Put a 220 Ω in the loop, then tap the LED and press “New LED”.';
         if (l && l.st.burnt) return 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω.';
         if (l && lit(l) && r && [L.net(l, 0), L.net(r, 0), L.net(r, 1)].indexOf(L.hnet('T+20')) < 0) return 'The LED is on, but from the bottom rails (3.3V). This step wants the top rails (5V).';
         if (l && lit(l) && !r) return 'The LED is on, but there is no resistor in its loop. Put the resistor in the loop.';
@@ -556,6 +562,8 @@
         if ((r.m === 'A' || r.m === 'V' || r.m === 'ohm') && m && L.net(m, 0) !== null && L.net(m, 0) === L.net(m, 1)) return 'Both probes are in the same strip, so the meter sees no difference. Put them in two different columns' + (L.stepIndex === 1 ? ': column 8 and column 12 (the gap).' : '.');
         if (L.stepIndex === 3 && r.m === 'ohm' && m) { var tips8 = L.sim.pinPoints(m).map(function (q) { return q.at || ''; }); if (tips8.some(function (a) { return /^[a-e](22|27)$/.test(a); })) return 'The resistor is in row f, in the bottom half. Rows a–e of the same column are not joined to it. Put the probes in g22 and g27.'; }
         if (L.stepIndex === 1 && r.m === 'A' && typeof r.val === 'number' && Math.abs(r.val) < 0.0005) return 'The meter shows 0 mA: no current goes through it. In mA mode the meter must be IN the path: red probe in column 8, black probe in column 12.';
+        var ledA = L.of('led')[0];
+        if (L.stepIndex === 1 && r.m === 'A' && typeof r.val === 'number' && r.val > 0.001 && ledA && !lit(ledA)) return 'In mA mode the meter is like a wire. Here it gives the current a way around the LED, so the LED goes dark. Put the meter IN the gap instead: red probe in column 8, black probe in column 12.';
         if (r.m === 'A' && typeof r.val === 'number' && r.val < -0.0005) return 'The reading is negative: the current goes into the black probe. Swap the probes: red on the side that comes from + (column 8), black on the LED side (column 12).';
         var led8 = L.of('led')[0];
         if (r.m === 'A' && led8 && !lit(led8) && [L.net(led8, 0), L.net(led8, 1)].indexOf(L.net(m, 0)) >= 0 && [L.net(led8, 0), L.net(led8, 1)].indexOf(L.net(m, 1)) >= 0) return 'In mA mode the meter is like a wire. Across the LED it takes all the current, so the LED goes out. Put the meter IN the path instead: in the gap between column 8 and column 12.';
@@ -646,6 +654,7 @@
         }
         if (L.stepIndex >= 1 && ldr && !r && [L.net(ldr, 0), L.net(ldr, 1)].indexOf(mcuPinNet(L, n, 'A0')) >= 0 && anyGndNet(L, n).some(function (g) { return [L.net(ldr, 0), L.net(ldr, 1)].indexOf(g) >= 0; })) return 'A0 reads 0 all the time: the LDR goes from A0 to GND, but nothing feeds A0 from 5V. Put the LDR between 5V and A0, and the 10 kΩ from A0 to GND.';
         var hm10 = L.stepIndex >= 1 ? halfMiss(L) : null; if (hm10) return hm10;
+        if (L.stepIndex >= 1 && ldr) { var lnn = [L.net(ldr, 0), L.net(ldr, 1)], g10 = anyGndNet(L, n), p5 = mcuPinNet(L, n, '5V'); if (lnn.indexOf(p5) >= 0 && (g10.indexOf(lnn[0]) >= 0 || g10.indexOf(lnn[1]) >= 0)) return 'The LDR goes straight from 5V to GND, so A0 is not between the two parts. A divider needs the middle: LDR from 5V to A0, and the 10 kΩ from A0 to GND.'; }
         var dp10 = L.stepIndex >= 1 ? deadPlusRail(L) : null; if (dp10) return dp10;
         if (L.stepIndex >= 1 && ldr && (!r || L.alone(r, 0) || L.alone(r, 1)) && v > (n.st.vcc || 5) - 0.2) return 'A0 reads 1023 all the time: with only the LDR, A0 is pulled all the way up to the supply. Add the 10 kΩ resistor from A0 to GND. Two resistors make a voltage divider.';
         var bwx = boardWiring(L, n); if (bwx) return bwx;
@@ -752,6 +761,8 @@
       explain: function (L) {
         var e = L.part('esp'), v = (e.st.lastVpeak || {})['33'] || 0;
         var hc = L.of('hcsr04')[0];
+        var r22e = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];
+        if (hc && r22e && L.net(hc, 2) !== null && [L.net(r22e, 0), L.net(r22e, 1)].indexOf(L.net(hc, 2)) >= 0) return 'The 2.2 kΩ is on ECHO. Swap the two resistors: the 1 kΩ goes on ECHO (top), and the 2.2 kΩ goes from the middle to GND (bottom).';
         if (hc && L.net(hc, 2) !== null && L.net(hc, 2) === mcuPinNet(L, e, '21')) return 'Pin 21 is on ECHO. The program sends the pulse on pin 21, so it must go to TRIG (the pin next to ECHO). ECHO goes to the divider, then to pin 33.';
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
         // the 2.2 kΩ goes to a − rail that is not joined to GND: the divider has no bottom
