@@ -335,6 +335,10 @@
     checkLevel: function () {
       var lv = this.level;
       if (!lv || !lv.ready) return;
+      // never judge while a leg, part or wire is still being dragged: the circuit passes through wrong states on the way.
+      // The drop calls onInteract → checkLevel again. (Turning a knob or holding a button is judged live.)
+      var dg = this.bench && this.bench.drag;
+      if (dg && (dg.kind === 'end' || dg.kind === 'body' || dg.kind === 'wire') && dg.moved) return;
       // several steps may already be true at once (e.g. both rails joined): check again after each
       for (var guard = 0; guard < 10 && lv && !lv.done; guard++) {
         var step = lv.def.steps[lv.step];
@@ -443,6 +447,7 @@
       if (bandStep && this.bench.sel && window.innerWidth < 1100) { this.bench.select(null); document.body.classList.remove('goalmin'); } // the picker needs the card, the resistor needs the board
       var wasBand = document.body.classList.contains('bandstep');
       document.body.classList.toggle('bandstep', bandStep);
+      if (step && step.ready && window.innerWidth < 1100 && lv.step > 0) requestAnimationFrame(function () { self.fitView(); self.bench.renderUi(); }); // the question box made the card taller: keep the holes below it
       if (wasBand && !bandStep) requestAnimationFrame(function () { // zoomed on the resistor: now show the resistor and the meter, the next step's work
         var mys = self.sim.state.parts.filter(function (q) { return q.hideValue; })[0], mt = self.sim.state.parts.filter(function (q) { return q.type === 'meter'; })[0];
         if (!mys || !mt || window.innerWidth >= 1100) { self.fitView(); self.bench.renderUi(); return; }
@@ -1199,7 +1204,7 @@
 
     placeBanner: function () {
       var ban = $('#banner'), g = $('#goal');
-      if (window.innerWidth >= 1100) { ban.style.top = ''; return; }
+      if (window.innerWidth >= 1100) { ban.style.top = ''; var tb = $('#toasts'); if (tb) tb.style.bottom = ban.hidden ? '' : (ban.offsetHeight + 28) + 'px'; return; } // toasts stay above the banner
       var top = 8;
       if (this.mode === 'level' && g.offsetParent) top = g.offsetTop + g.offsetHeight + 6;
       ban.style.top = top + 'px';

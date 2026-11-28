@@ -178,6 +178,8 @@
       if (opin && /^(GND|G|−|-)$/.test(opin.n)) { out = 'The ' + (oq.type === 'led' ? 'LED’s short leg (−)' : oq.type === 'speaker' ? 'speaker’s black wire' : BB.PARTS[oq.type].name.replace(/ \(.*\)$/, '') + '’s ' + opin.n + ' pin') + ' is in a red + rail (' + h.id + '). It must go toward −: use a blue − rail that is joined to GND.'; return true; }
       var net = L.hnet(h.id), mcus = sim.state.parts.filter(function (q) { return BB.PARTS[q.type].mcu; });
       if (mcus.some(function (q) { return anyGndNet(L, q).indexOf(net) >= 0; })) return false; // a red rail used as GND: odd, but it works, so no "why it does not work"
+      var feedIn = null; mcus.forEach(function (mq) { BB.PARTS[mq.type].pins.forEach(function (x, xk) { if ((x.kind === 'vin' || x.kind === 'bat') && L.net(mq, xk) === net) feedIn = feedIn || x.n; }); });
+      if (feedIn) { out = 'The + rail at ' + h.id + ' is joined to ' + feedIn + '. ' + feedIn + ' is an input (for a battery going in): it does not give out 5 V. Move that wire to the 5V pin.'; return true; }
       var v = sim.holeVoltage(h.id);
       var pin5 = mcus.length ? (BB.PARTS[mcus[0].type].pins.filter(function (x) { return x.kind === 'v5'; })[0] || {}).n || '5V' : '5V';
       if (v === null || v < 1) { out = 'The + rail at ' + h.id + ' has no power yet. Add a wire from the ' + pin5 + ' pin' + (pin5 === '5V' ? '' : ' (5 V)') + ' to that rail.'; return true; }
@@ -450,7 +452,9 @@
       ],
       explainFirst: function (L) { // a button in a rail joins the LED's legs: say why, not just "both legs joined"
         var b = L.of('button')[0], q = b && L.sim.pinPoints(b).filter(function (p) { return p.at && /^[TB][+-]/.test(p.at); })[0];
-        return q ? 'Two of the button’s legs are in a rail (' + q.at + '). Inside, those legs are always joined, so the rail now joins the resistor and the LED to −. Put the button across the middle gap: legs in e8, e10, f8 and f10.' : null;
+        if (!q) return null;
+        var l5 = L.of('led')[0], plus = q.at.charAt(1) === '+';
+        return 'Two of the button’s legs are in a rail (' + q.at + '). Inside, those legs are always joined, so the rail now joins ' + (plus ? 'the LED straight to +: the 470 Ω is skipped' + (l5 && l5.st.burnt ? ' and the LED burned (tap it and press “New LED”)' : '') : 'the resistor and the LED to −') + '. Put the button across the middle gap: legs in e8, e10, f8 and f10.';
       },
       explain: function (L) {
         var b = L.of('button')[0], l = L.of('led')[0];
@@ -502,6 +506,8 @@
       },
       explain: function (L) {
         var p = L.of('pot')[0], l = L.of('led')[0];
+        if (p && l) { var negs = [L.hnet('T-4'), L.hnet('B-4')], outerNeg = [0, 2].filter(function (k) { return negs.indexOf(L.net(p, k)) >= 0; })[0];
+          if (outerNeg !== undefined && !L.alone(p, 1)) return 'Your knob is wired as a divider: leg ' + (outerNeg + 1) + ' goes to −, so at one end it sends the current to − instead of through the LED. For a dimmer use only two legs: leg 1 to +, the middle leg (W) to column 14. Remove the wire from leg ' + (outerNeg + 1) + '.'; }
         if (!p) return 'The loop is open where the knob should be. Add the knob (Parts), then join + rail → knob → column 14.';
         if (p && l && !l.st.burnt && [L.net(p, 0), L.net(p, 1), L.net(p, 2)].indexOf(L.net(l, 0)) >= 0) return 'The knob goes straight to the LED’s column, so the current skips the 470 Ω. At 0 Ω on the knob nothing would limit the current and the LED would burn. Wire the knob’s middle leg to column 14 (the 470 Ω), not to the LED.';
         if (p && l && inSeries(p, l) && !L.alone(p, 1) && !lit(l) && (l._i || 0) > 0.0003) return 'Good wiring! The LED is dim because the knob is set to a high resistance. Turn the knob to make it brighter.';
@@ -731,7 +737,8 @@
             : 'There is no resistor between D8 and the speaker. The speaker is only 8 Ω: alone it would pull far too much current from the pin. Put the 220 Ω between D8 and the red wire.';
         }
         var hm11 = halfMiss(L); if (hm11) return hm11;
-        if (spk && L.stepIndex >= 1 && L.of('resistor').length && [L.net(spk, 0), L.net(spk, 1)].every(function (x) { return x !== null && anyGndNet(L, n).indexOf(x) < 0; }) && !L.alone(spk, 1)) return 'The speaker’s black wire does not reach GND. Put it in a − rail that is joined to a GND pin (or in a GND strip).';
+        var spkRail = spk && /^[TB]-/.test(L.sim.pinPoints(spk)[1].at || '');
+        if (spk && L.stepIndex >= 1 && L.of('resistor').length && [L.net(spk, 0), L.net(spk, 1)].every(function (x) { return x !== null && anyGndNet(L, n).indexOf(x) < 0; }) && (!L.alone(spk, 1) || spkRail)) return 'The speaker’s black wire does not reach GND. Put it in a − rail that is joined to a GND pin (or in a GND strip).';
         if (m && (m.st.vcc || 0) > 4.5 && L.net(m, 0) !== null && L.net(m, 0) !== mcuPinNet(L, n, 'A0')) {
           var on = null; BB.PARTS[n.type].pins.forEach(function (pin, pk) { if (pin.analog && pin.n !== 'A0' && L.net(n, pk) === L.net(m, 0)) on = on || pin.n; });
           if (on) return 'AO goes to ' + on + ', but the program listens on A0. Move the wire to a hole below A0.';

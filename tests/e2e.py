@@ -309,6 +309,28 @@ def burn_during_drag(page, tag):
     page.evaluate("BB.app.bench.select(null)")
 
 
+def no_accept_mid_drag(page, tag):
+    """Dragging a leg THROUGH the right hole to a wrong one must not finish the level on the way."""
+    if page.is_visible('#modal'):
+        page.evaluate("document.getElementById('modal').hidden = true")
+    page.evaluate("BB.store.data.levelSave = null; BB.app.startLevel(2)"); page.click('#introGo'); page.wait_for_timeout(200)
+    page.evaluate("(() => { const A = BB.app.actions(); A.add('resistor', { props: { r: 470 }, ends: ['T+10', 'a10'] }); A.add('led', { props: { color: 'red' }, ends: ['c12', 'T-12'] }); A.wait(0.1); BB.app.bench.select(null); })()")
+    cdp = page.context.new_cdp_session(page)
+    pos = lambda js: page.evaluate("(() => { const q = " + js + "; const s = BB.app.bench.toScreen(q.x, q.y); const r = BB.app.bench.size(); return [s.x + r.left, s.y + r.top]; })()")
+    a = pos("BB.app.sim.pinPoints(BB.app.sim.state.parts.find(p => p.type === 'led'))[0]")
+    mid = pos("BB.app.sim.board.byId['c10']"); b = pos("BB.app.sim.board.byId['c8']")
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': a[0], 'y': a[1]}]})
+    for t in range(1, 9):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': a[0] + (mid[0] - a[0]) * t / 8, 'y': a[1]}]})
+    page.wait_for_timeout(400)  # rest on c10 (the right hole) for a moment
+    for t in range(1, 9):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': mid[0] + (b[0] - mid[0]) * t / 8, 'y': a[1]}]})
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    page.wait_for_timeout(500)
+    end = page.evaluate("BB.app.sim.state.parts.find(p => p.type === 'led').ends[0].at")
+    check(end == 'c8' and not page.evaluate("BB.app.level.done"), f'{tag}: no level accept while a leg passes through the right hole (ended in {end})')
+
+
 def touch_targets(page, tag):
     small = page.evaluate("""(() => { const out = [];
       document.querySelectorAll('#play button, #home button, #intro button').forEach(b => {
@@ -350,6 +372,7 @@ with sync_playwright() as pw:
     pinch(page)
     ui_level3_by_pointer(page, 'mobile')
     burn_during_drag(page, 'mobile')
+    no_accept_mid_drag(page, 'mobile')
     touch_targets(page, 'mobile play')
     sandbox_every_part(page, 'mobile')
     page.evaluate("BB.app.bench.select(BB.app.sim.state.parts.find(p => p.type === 'nano').id)")
