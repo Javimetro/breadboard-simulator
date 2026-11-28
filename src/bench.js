@@ -604,7 +604,7 @@
     if (!d.moved) { this.releasePress(); this.tap(d, e); this.renderUi(); return; }
     if (d.kind === 'wire') {
       if (d.snap && d.snap !== d.hit.start) this.app.addWire(d.hit.start, d.snap);
-      else if (d.blocked) this.app.toast(d.blocked.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[this.sim.part(d.blocked.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      else if (d.blocked) this.app.toast(d.blocked.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[this.sim.part(d.blocked.by).type].name + ' covers that hole. Use a free hole in the same strip, above or below the part (they are joined).', 'info');
       this.renderUi(); return;
     }
     if (d.kind === 'body' || d.kind === 'end') {
@@ -643,7 +643,7 @@
         if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
         else if (this.wireStart === hit.start) this.wireStart = null;
         else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
-      } else if (hit.kind === 'covered') this.app.toast(hit.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      } else if (hit.kind === 'covered') this.app.toast(hit.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Use a free hole in the same strip, above or below the part (they are joined).', 'info');
       else this.wireStart = null;
       this.renderUi();
       return;

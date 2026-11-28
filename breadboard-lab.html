@@ -3858,7 +3858,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
     if (!d.moved) { this.releasePress(); this.tap(d, e); this.renderUi(); return; }
     if (d.kind === 'wire') {
       if (d.snap && d.snap !== d.hit.start) this.app.addWire(d.hit.start, d.snap);
-      else if (d.blocked) this.app.toast(d.blocked.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[this.sim.part(d.blocked.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      else if (d.blocked) this.app.toast(d.blocked.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[this.sim.part(d.blocked.by).type].name + ' covers that hole. Use a free hole in the same strip, above or below the part (they are joined).', 'info');
       this.renderUi(); return;
     }
     if (d.kind === 'body' || d.kind === 'end') {
@@ -3897,7 +3897,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (!this.wireStart) { this.wireStart = hit.start; this.app.say('wireStart'); }
         else if (this.wireStart === hit.start) this.wireStart = null;
         else { this.app.addWire(this.wireStart, hit.start); this.wireStart = null; }
-      } else if (hit.kind === 'covered') this.app.toast(hit.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Pick a hole next to it.', 'info');
+      } else if (hit.kind === 'covered') this.app.toast(hit.full ? 'That hole already has a leg in it. Use a free hole in the same strip (they are joined).' : 'The ' + PARTS[sim.part(hit.by).type].name + ' covers that hole. Use a free hole in the same strip, above or below the part (they are joined).', 'info');
       else this.wireStart = null;
       this.renderUi();
       return;
@@ -4161,6 +4161,8 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
       var p5n = (def.pins.filter(function (x) { return x.kind === 'v5'; })[0] || {}).n || '5V';
       var onSig = function (mk) { var hit = null; def.pins.forEach(function (x, xk) { if (x.kind === 'gpio' && L.net(n, xk) !== null && L.net(n, xk) === L.net(q, mk)) hit = hit || x.n; }); return hit; };
       var vSig = onSig(v), gSig = onSig(g);
+      var powIn = null; def.pins.forEach(function (x, xk) { if (['vin', 'bat', 'nc', 'rst', 'en'].indexOf(x.kind) >= 0 && L.net(n, xk) !== null && L.net(n, xk) === L.net(q, v)) powIn = powIn || x; });
+      if (powIn) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin is on ' + powIn.n + '. ' + ({ vin: 'VIN is an input for 7–12 V: it does not give out 5 V.', bat: 'BAT is for a battery going in: it does not give out 5 V.', nc: powIn.n + ' is not a power pin.', rst: 'RST is the reset pin, not power.', en: 'EN switches the board on and off: it is not power.' }[powIn.kind]) + ' Move it to the ' + p5n + ' pin.';
       if (vSig) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin is on pin ' + vSig + ', a signal pin. ' + pins[v].n + ' must go to the ' + p5n + ' pin (power).';
       if (gSig) return 'The ' + short(q) + '’s ' + pins[g].n + ' pin is on pin ' + gSig + ', a signal pin. ' + pins[g].n + ' must go to a GND pin.';
       if (L.alone(q, v)) return 'The ' + short(q) + '’s ' + pins[v].n + ' pin has no power. Wire it to the 5V pin (or to a + rail that is joined to 5V).';
@@ -4391,7 +4393,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         { text: 'Tap Wire (bottom bar), then tap a + hole on the left and a + hole on the right of the gap.', check: function (L) { return L.connected('T+26', 'T+38') && !L.connected('T+26', 'T-26'); }, ok: 'The two halves of the + rail are joined now.' },
         { text: 'Now join the two halves of the top blue − rail too.', check: function (L) { return L.connected('T-26', 'T-38') && L.connected('T+26', 'T+38') && !L.connected('T+26', 'T-26'); }, ok: 'Both rails now run along the whole board.' }
       ],
-      explain: function (L) { if (L.connected('T+26', 'T-26')) return 'A wire now joins the + rail to the − rail. With power on, that is a {{short circuit}}! Tap that wire and press Delete.'; return null; },
+      explain: function (L) { if (L.connected('T+26', 'T-26') || L.connected('T+38', 'T-38') || L.connected('T+26', 'T-38') || L.connected('T+38', 'T-26')) return 'A wire now joins the + rail to the − rail. With power on, that is a {{short circuit}}! Tap that wire and press Delete.'; return null; },
       hints: ['The gap is between column 30 and column 32. Look at the red line.', 'Tap Wire (bottom bar). Tap the + hole at column 30, then the + hole at column 32.', 'Do the same in the blue − row: column 30 to column 32.'],
       done: 'Rails carry power along the board. If a long board splits them, two short wires join the halves.',
       solve: function (A) { A.tap('T+20'); A.tap('T+26'); A.tap('T+38'); A.choose(1); A.wire('T+30', 'T+32'); A.wire('T-30', 'T-32'); }
@@ -4457,12 +4459,22 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
           if (!b || b.free) return false;
           var nets = [0, 1, 2, 3].map(function (k) { return L.net(b, k); });
           var r = L.of('resistor')[0];
+          var rows = L.sim.pinPoints(b).map(function (q) { return (q.at || '').charAt(0); });
+          if (rows.some(function (c) { return 'abcdefghij'.indexOf(c) < 0 || !c; })) return false; // a leg in a rail: not across the gap
           return nets.indexOf(L.net(r, 1)) >= 0 && nets.indexOf(L.net(l, 0)) >= 0 && !b.st.pressed && !lit(l);
         }, ok: 'Good. The LED is off: the gap is open.' },
         { text: 'Now press and hold the button (its round cap). The LED should light.', check: function (L) { var b = L.of('button')[0], l = L.of('led')[0]; return b && b.st.pressed && lit(l) && safe(l); }, ok: 'Pressed: the gap closes and the LED lights.' }
       ],
+      explainFirst: function (L) { // a button in a rail joins the LED's legs: say why, not just "both legs joined"
+        var b = L.of('button')[0], q = b && L.sim.pinPoints(b).filter(function (p) { return p.at && /^[TB][+-]/.test(p.at); })[0];
+        return q ? 'Two of the button’s legs are in a rail (' + q.at + '). Inside, those legs are always joined, so the rail now joins the resistor and the LED to −. Put the button across the middle gap: legs in e8, e10, f8 and f10.' : null;
+      },
       explain: function (L) {
         var b = L.of('button')[0], l = L.of('led')[0];
+        var bRail = b && L.sim.pinPoints(b).filter(function (q) { return q.at && /^[TB][+-]/.test(q.at); })[0];
+        if (bRail) return 'Two of the button’s legs are in a rail (' + bRail.at + '). The rail joins them to everything else there. Put the button across the middle gap: legs in e8, e10, f8 and f10.';
+        var bw = L.of('wire').filter(function (w) { var wn = [L.net(w, 0), L.net(w, 1)], rn = L.of('resistor')[0] && L.net(L.of('resistor')[0], 1); return l && wn.indexOf(rn) >= 0 && wn.indexOf(L.net(l, 0)) >= 0; })[0];
+        if (bw && lit(l) && !(b && b.st.pressed)) return 'A wire joins column 8 and column 10, so the LED is always on. The button must be the only way between them. Tap that wire and press Delete.';
         var bp = b && L.sim.pinPoints(b).map(function (q) { var m = q.at && /^[a-j](\d+)$/.exec(q.at); return m ? +m[1] : null; });
         if (bp && bp.every(function (c) { return c !== null; }) && !(bp.indexOf(8) >= 0 && bp.indexOf(10) >= 0)) return 'The button is in columns ' + Math.min.apply(0, bp) + ' and ' + Math.max.apply(0, bp) + '. It must join column 8 (the resistor) and column 10 (the LED). Drag it so its legs sit in e8, e10, f8 and f10.';
         if (b && !b.st.pressed && lit(l)) return 'The LED is on without a press. The button is turned the wrong way: two of its legs are always joined inside, and they now join the two columns. Tap the button and press Rotate.';
@@ -4551,6 +4563,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         if (l && l.st.burnt) return 'The resistor was too small: about ' + fmt.I(l.st.burntBy || 0.1) + ' went through the LED (it can take 20 mA). For 15 mA: (5 V − 2 V) ÷ 0.015 A = 200 Ω. Use 220 Ω.';
         if (l && lit(l) && r && [L.net(l, 0), L.net(r, 0), L.net(r, 1)].indexOf(L.hnet('T+20')) < 0) return 'The LED is on, but from the bottom rails (3.3V). This step wants the top rails (5V).';
         if (l && lit(l) && !r) return 'The LED is on, but there is no resistor in its loop. Put the resistor in the loop.';
+        if (l && lit(l) && (l._i || 0) < 0.008) return 'The LED is on, but only ' + fmt.I(l._i) + '. Aim for about 15 mA: (5 V − 2 V) ÷ 0.015 A ≈ 200 Ω, so one 220 Ω. More resistance means less current.';
         return whyDark(L, l);
       },
       hints: ['Ohm’s law: R = V ÷ I. The resistor gets 5 V − 2 V = 3 V. For 15 mA: 3 ÷ 0.015 = 200 Ω.', 'The closest one is 220 Ω (red, red, brown bands).', 'Resistor from the top + rail to a hole (like a12). LED long leg in that column, short leg in the top − rail.'],
@@ -4787,6 +4800,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
         var hc = L.of('hcsr04')[0];
         var r22e = L.of('resistor').filter(function (q) { return q.props.r === 2200; })[0];
         if (hc && r22e && L.net(hc, 2) !== null && [L.net(r22e, 0), L.net(r22e, 1)].indexOf(L.net(hc, 2)) >= 0) return 'The 2.2 kΩ is on ECHO. Swap the two resistors: the 1 kΩ goes on ECHO (top), and the 2.2 kΩ goes from the middle to GND (bottom).';
+        if (hc && L.of('resistor').length >= 2 && L.net(hc, 2) !== null && L.net(hc, 2) === mcuPinNet(L, e, '33')) return 'Pin 33 is on ECHO, above the divider, so it still gets the full 5 V pulses. Move the pin-33 wire to the middle column, between the 1 kΩ and the 2.2 kΩ.';
         if (hc && L.net(hc, 1) !== null && L.net(hc, 1) === mcuPinNet(L, e, '33')) return 'TRIG is on pin 33, but the program sends the pulse on pin 21. Move the TRIG wire to a hole below pin 21. Pin 33 is for ECHO (through the divider).';
         if (hc && L.net(hc, 2) !== null && L.net(hc, 2) === mcuPinNet(L, e, '21')) return 'Pin 21 is on ECHO. The program sends the pulse on pin 21, so it must go to TRIG (the pin next to ECHO). ECHO goes to the divider, then to pin 33.';
         if (e.st.damaged && e.st.damaged['33']) return 'Pin 33 got 5 V and is damaged. On a real ESP32 this can break the chip. Tap the ESP32 and press “New board”, then use the divider.';
@@ -6038,7 +6052,7 @@ body.wiretool #bench g[data-type=hcsr04], body.wiretool #bench g[data-type=mic],
           box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
           box.style.bottom = 'auto';
         } else { box.style.top = 'auto'; box.style.bottom = 'calc(74px + env(safe-area-inset-bottom, 0px))'; }
-      } else { box.style.top = ''; box.style.bottom = ''; }
+      } else { var bn = $('#banner'); box.style.top = ''; box.style.bottom = bn && !bn.hidden && bn.offsetHeight ? (bn.offsetHeight + 28) + 'px' : ''; } // desktop: above the problem banner, never on it
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },

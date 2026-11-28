@@ -1221,7 +1221,7 @@
           box.style.top = Math.round((gr ? gr.bottom : (tb.offsetParent ? tb.getBoundingClientRect().bottom : 8)) + 6) + 'px';
           box.style.bottom = 'auto';
         } else { box.style.top = 'auto'; box.style.bottom = 'calc(74px + env(safe-area-inset-bottom, 0px))'; }
-      } else { box.style.top = ''; box.style.bottom = ''; }
+      } else { var bn = $('#banner'); box.style.top = ''; box.style.bottom = bn && !bn.hidden && bn.offsetHeight ? (bn.offsetHeight + 28) + 'px' : ''; } // desktop: above the problem banner, never on it
       setTimeout(function () { t.classList.add('out'); setTimeout(function () { t.remove(); }, 400); }, kind === 'info' ? 3400 : 4200);
     },
     say: function (what) { if (what === 'wireStart') this.toast('Now tap the second hole.', 'info'); },
